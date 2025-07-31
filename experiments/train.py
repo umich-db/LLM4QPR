@@ -21,12 +21,19 @@ os.makedirs(log_dir, exist_ok=True)
 main_logger, inference_logger = utilsTrain.setup_loggers(argsP.log_file, argsP.log_file.replace(".log", "_inference.log"))
 argsP.inference_logger = inference_logger
 
-hf_token = "XXX"
+# Get Hugging Face token from environment variable
+token = os.getenv("HF_TOKEN")
+
 try:
-    # Avoid logging in again if already authenticated
+    # Works if HF_TOKEN is set or you've previously run `hf auth login`
     HfApi().whoami()
-except:
-    login(hf_token)
+except Exception:
+    if token:
+        login(token=token)  # will also cache it locally
+    else:
+        raise RuntimeError(
+            "No Hugging Face token found. Set HF_TOKEN environment variable or run `hf auth login`."
+        )
 
 
 db = argsP.db

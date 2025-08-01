@@ -7,21 +7,27 @@ All results in the paper were produced on Ubuntu 22.04 with CUDA‑enabled NVIDI
 
 ## 📊 Dataset Structure
 
-The experiments use query plans from four datasets: **TPC-H**, **TPC-DS**, **IMDB**, and **STATS**. The data is organized as follows:
+The experiments use query plans from four datasets: **TPC-H**, **TPC-DS**, **IMDB**, and **STATS**.
 
 ### Required Data Files
 - **`queryPlans/`** (1.42 GB) - Pre-generated query plans for all datasets
+
+**Download**: See [queryPlans/README.md](queryPlans/README.md) for download instructions.
+
+---
+
+## 🔄 Reproducing Query Plans
+
+If you want to reproduce the query plans from scratch, you'll need the following additional data:
+
+### Required for Reproduction
 - **`queries/`** - SQL queries used to generate the query plans
+- **Database data** - Raw data for each dataset
 
 ### Data Sources
 - **TPC-H & TPC-DS**: Generated using official TPC toolkits
 - **IMDB**: Downloaded from [Learning-based-cost-estimator](https://github.com/greatji/Learning-based-cost-estimator?tab=readme-ov-file) repository
 - **STATS**: Downloaded from [End-to-End-CardEst-Benchmark](https://github.com/wuziniu/End-to-End-CardEst-Benchmark/tree/master/datasets/stats_simplified) repository
-
-### Data Access
-Due to size constraints, the query plans are hosted externally:
-- **Google Drive**: [Download queryPlans.zip](https://drive.google.com/file/d/YOUR_FILE_ID/view?usp=sharing)
-- Extract to the project root directory
 
 ---
 
@@ -102,8 +108,7 @@ git clone https://github.com/umich-db/LLM4QPR.git
 cd LLM4QPR
 
 # 2. Download and extract query plans
-# Download from Google Drive and extract to project root
-# OR use: wget [YOUR_GOOGLE_DRIVE_LINK] && unzip queryPlans.zip
+# See queryPlans/README.md for download instructions
 
 # 3. Set up Hugging Face token
 export HF_TOKEN="your_hf_token_here"

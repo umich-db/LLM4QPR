@@ -1,5 +1,3 @@
-#!/bin/bash
-# e.g. call as: ./run.sh "syn job tpch" "stats" 0.2 False meta-llama/Llama-3.1-8B meta-llama-Llama-3.1-8B 42
 
 # 1) split the first arg into an array of workloads:
 IFS=' ' read -r -a TRAIN_WLS <<< "$1"
@@ -14,7 +12,7 @@ SEED=$7
 DAT_PATHS=()
 for wl in "${TRAIN_WLS[@]}"; do
   if [[ "$wl" == "syn" || "$wl" == "job" ]]; then
-    DAT_PATHS+=( "../data/imdb/postgres/" )
+    DAT_PATHS+=( "../queryPlans/imdb/postgres/" )
   elif [[ "$wl" == "genome" || "$wl" == "financial" || "$wl" == "movielens" || \
           "$wl" == "geneea" || "$wl" == "seznam" || "$wl" == "tpc_h" || \
           "$wl" == "walmart" || "$wl" == "airline" || "$wl" == "carcinogenesis" || \
@@ -24,13 +22,13 @@ for wl in "${TRAIN_WLS[@]}"; do
           "$wl" == "credit" || "$wl" == "hepatitis" ]]; then
     DAT_PATHS+=( "../deepdb_augmented/$wl/" )
   else
-    DAT_PATHS+=( "../data/$wl/postgres/" )
+    DAT_PATHS+=( "../queryPlans/$wl/postgres/" )
   fi
 done
 
 # one test path
 if [[ "$WORKLOAD_TEST" == "syn" || "$WORKLOAD_TEST" == "job" ]]; then
-  DAT_PATH_TEST="../data/imdb/postgres/"
+  DAT_PATH_TEST="../queryPlans/imdb/postgres/"
 elif [[ "$WORKLOAD_TEST" == "synthetic" || "$WORKLOAD_TEST" == "job-light" ]]; then
   DAT_PATH_TEST="../deepdb_augmented/imdb/"
 elif [[ "$WORKLOAD_TEST" == "genome" || "$WORKLOAD_TEST" == "financial" || "$WORKLOAD_TEST" == "movielens" || \
@@ -42,7 +40,7 @@ elif [[ "$WORKLOAD_TEST" == "genome" || "$WORKLOAD_TEST" == "financial" || "$WOR
         "$WORKLOAD_TEST" == "credit" || "$WORKLOAD_TEST" == "hepatitis" ]]; then
   DAT_PATH_TEST="../deepdb_augmented/$WORKLOAD_TEST/"
 else
-  DAT_PATH_TEST="../data/$WORKLOAD_TEST/postgres/"
+  DAT_PATH_TEST="../queryPlans/$WORKLOAD_TEST/postgres/"
 fi
 
 TRAIN_WLS_HYPHEN="${TRAIN_WLS[0]}"

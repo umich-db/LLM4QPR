@@ -1,6 +1,3 @@
-#!/usr/bin/env bash
-# e.g. call as: ./run.sh "syn job tpch" "stats" 0.2 42
-
 # 1) split the first arg into an array of workloads:
 IFS=' ' read -r -a TRAIN_WLS <<< "$1"
 WORKLOAD_TEST=$2
@@ -11,17 +8,17 @@ SEED=$4
 DAT_PATHS=()
 for wl in "${TRAIN_WLS[@]}"; do
   if [[ "$wl" == "syn" || "$wl" == "job" ]]; then
-    DAT_PATHS+=( "../data/imdb/postgres/" )
+    DAT_PATHS+=( "../queryPlans/imdb/postgres/" )
   else
-    DAT_PATHS+=( "../data/$wl/postgres/" )
+    DAT_PATHS+=( "../queryPlans/$wl/postgres/" )
   fi
 done
 
 # one test path
 if [[ "$WORKLOAD_TEST" == "syn" || "$WORKLOAD_TEST" == "job" ]]; then
-  DAT_PATH_TEST="../data/imdb/postgres/"
+  DAT_PATH_TEST="../queryPlans/imdb/postgres/"
 else
-  DAT_PATH_TEST="../data/$WORKLOAD_TEST/postgres/"
+  DAT_PATH_TEST="../queryPlans/$WORKLOAD_TEST/postgres/"
 fi
 
 

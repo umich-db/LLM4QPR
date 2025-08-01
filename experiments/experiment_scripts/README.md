@@ -4,17 +4,17 @@ This directory contains individual experiment scripts that were extracted from t
 
 ## Available Experiments
 
-### 1. `run_model_size_comparison.sh`
+### 1. `run_baseline_comparison.sh`
+**Purpose**: Compares LLM performance against prior state-of-the-art methods  
+**Model**: Llama-3.1-8B  
+**Workloads**: TPC-H, TPC-DS, JOB, SYN, STATS  
+**Seeds**: 42
+
+### 2. `run_model_size_comparison.sh`
 **Purpose**: Compares performance across different Llama model sizes  
 **Models**: Llama-3.2-1B, Llama-3.2-3B, Llama-3.1-8B, Llama-3.1-70B  
 **Workloads**: TPC-H, TPC-DS, STATS  
 **Seeds**: 42, 43, 44
-
-### 2. `run_baseline_comparison.sh`
-**Purpose**: Compares LLM performance against baseline methods  
-**Model**: Llama-3.1-8B  
-**Workloads**: TPC-H, TPC-DS, JOB, SYN, STATS  
-**Seeds**: 42
 
 ### 3. `run_training_ratio_analysis.sh`
 **Purpose**: Analyzes performance with different training data ratios  
@@ -30,20 +30,13 @@ This directory contains individual experiment scripts that were extracted from t
 **Training Ratio**: 0.1 (finetuning)  
 **Seeds**: 42, 43, 44
 
-### 5. `run_cross_workload_generalization.sh`
-**Purpose**: Tests model generalization across different workloads  
+### 5. `run_cross_workload_experiments.sh`
+**Purpose**: Tests model generalization across different workloads with and without finetuning  
 **Model**: Llama-3.1-8B  
 **Test Workloads**: TPC-H, synthetic, job-light  
 **Training**: All other workloads except test workload  
+**Experiments**: Both without finetuning (1.0 ratio) and with finetuning (0.1 ratio)  
 **Seeds**: 42, 43, 44
-
-### 6. `run_finetune_cross_workload.sh`
-**Purpose**: Tests finetuning performance across different workloads  
-**Model**: Llama-3.1-8B  
-**Test Workloads**: TPC-H, synthetic  
-**Training**: All other workloads except test workload  
-**Training Ratio**: 0.1 (finetuning)  
-**Seeds**: 42
 
 ## Core Scripts
 

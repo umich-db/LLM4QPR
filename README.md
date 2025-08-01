@@ -1,6 +1,6 @@
 ## 📑 Project Overview
 
-This repository contains the code and experiments for **"Empirical Evaluation of Off-the-shelf LLMs for Query Plan Representation."**
+This repository contains the code and experiments for **"An Empirical Evaluation of Pretrained LLMs for Query Plan Representation."**
 All results in the paper were produced on Ubuntu 22.04 with CUDA‑enabled NVIDIA GPUs.
 
 ---
@@ -25,7 +25,7 @@ If you want to reproduce the query plans from scratch, you'll need the following
 - **Database data** - Raw data for each dataset
 
 ### Data Sources
-- **TPC-H & TPC-DS**: Generated using official TPC toolkits
+- **TPC-H & TPC-DS**: Generated using official TPC toolkits (https://www.tpc.org/)
 - **IMDB**: Downloaded from [Learning-based-cost-estimator](https://github.com/greatji/Learning-based-cost-estimator?tab=readme-ov-file) repository
 - **STATS**: Downloaded from [End-to-End-CardEst-Benchmark](https://github.com/wuziniu/End-to-End-CardEst-Benchmark/tree/master/datasets/stats_simplified) repository
 
@@ -55,52 +55,57 @@ $env:HF_TOKEN="hf_xxx"      # current session
 setx HF_TOKEN "hf_xxx"      # persist for new sessions
 ```
 
-**Note**: This approach is more secure and follows best practices for token management.
-
 ---
 
 ## ⚙️ Environment Setup
 
-| Option                       | When to use                                                       | Guarantees                                           |
-| ---------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------- |
-| **A. Docker (one‑liner)**    | You have Docker + NVIDIA Container Toolkit                        | Bit‑for‑bit identical to paper                       |
-| **B. Manual (shell script)** | You prefer a local/conda venv or need to tweak CUDA, Python, etc. | Same package versions, but you choose CUDA / drivers |
+| Option                       | When to use                                                                      |
+| ---------------------------- | -------------------------------------------------------------------------------- |
+| **A. Docker (automated)**    | You have Docker + NVIDIA GPU support                                             |
+| **B. Manual (shell script)** | You prefer a local/conda virtual environment or need to tweak CUDA, Python, etc. |
 
-### A. Reproduce with Docker (recommended)
+### A. Reproduce with Docker (automated setup)
 
 ```bash
 # 1. Build the image (takes ~5 min)
-docker build -t llm‑qp .
+docker build -t llm4qpr .
 
 # 2. Run with GPU passthrough and mount your workspace
 docker run --gpus all -it \
   -v $(pwd):/workspace \
-  llm‑qp /bin/bash
+  llm4qpr /bin/bash
 # Inside the container you are ready to run:
 bash run_experiments.sh
 ```
 
 The Dockerfile (see `Dockerfile`) is based on **`nvidia/cuda:12.1.1‑devel‑ubuntu22.04`** and installs:
 
+> **Note**: "NVIDIA GPU support" means you have Docker with NVIDIA Container Toolkit installed. This allows Docker containers to access your NVIDIA GPU. If you don't have this set up, see [NVIDIA Container Toolkit installation guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html).
+
 * Python 3.11 (isolated in `/venv`)
 * CUDA 12.x toolkit & driver headers
 * `transformers==4.49.0`, `peft==0.15.2`, `bitsandbytes==0.46.0`
 * `flash‑attn==2.8.0.post2` built with the same compiler flags we used
 
-> **Tip:** If your host GPU only supports CUDA 11.x, edit the first line of the Dockerfile to a compatible base image (e.g. `nvidia/cuda:11.8.0‑devel‑ubuntu22.04`) and rebuild.
-
-### B. Manual installation (tested on bare‑metal & WSL2)
+### B. Manual installation
 
 ```bash
 # Run the manual installation script
 bash setup_manual.sh
 ```
 
-**Note**: The script installs CUDA 12.4, Python packages, and sets up environment variables. If your GPU requires CUDA 11.x, edit the script before running.
+**Note**: The script installs CUDA 12.4, Python packages, and sets up environment variables.
 
 ---
 
 ## 🏃 Quick Start
+
+### Prerequisites
+1. **NVIDIA GPU** with CUDA support
+2. **Docker** (for automated setup) OR **Python 3.11** (for manual setup)
+3. **Hugging Face account** with access to Llama models
+
+### Step-by-Step Setup
 
 ```bash
 # 1. Clone and enter the repo
@@ -119,7 +124,14 @@ export HF_TOKEN="your_hf_token_here"
 bash run_experiments.sh
 ```
 
-Results (logs + model checkpoints) appear in `outputs/`.
+### Output Files
+
+After running experiments, you'll find:
+- **`results/`** - CSV files with error distributions and performance metrics
+- **`logs/`** - Training and inference logs
+- **`embeddings/`** - Saved query plan embeddings
+- **`finetuned_models/`** - Finetuned LLM models
+
 
 ---
 

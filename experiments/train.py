@@ -18,8 +18,14 @@ import csv
 argsP = utilsTrain.parse_args()
 log_dir = os.path.dirname(argsP.log_file)
 os.makedirs(log_dir, exist_ok=True)
-main_logger, inference_logger = utilsTrain.setup_loggers(argsP.log_file, argsP.log_file.replace(".log", "_inference.log"))
-argsP.inference_logger = inference_logger
+
+# Only create inference logger for LLM algorithms
+if "llm" in argsP.algo:
+    main_logger, inference_logger = utilsTrain.setup_loggers(argsP.log_file, argsP.log_file.replace(".log", "_inference.log"))
+    argsP.inference_logger = inference_logger
+else:
+    main_logger, inference_logger = utilsTrain.setup_loggers(argsP.log_file)
+    argsP.inference_logger = None
 
 # Get Hugging Face token from environment variable
 token = os.getenv("HF_TOKEN")
@@ -54,7 +60,7 @@ if "llm" in argsP.algo:
     device = LLM.model.device if hasattr(LLM.model, 'device') else torch.device("cuda" if torch.cuda.is_available() else "cpu")
     LLM.to(device)
     if argsP.algo == "llm" and argsP.llm_pretrained:
-      llm_path = f"best_model/{'-'.join(argsP.workloads_train)}_{argsP.llm_pretrained_task}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_llm.pt"
+      llm_path = f"finetuned_models/{'-'.join(argsP.workloads_train)}_{argsP.llm_pretrained_task}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_llm.pt"
       state_dict = torch.load(llm_path, map_location=device)
       LLM.model.load_state_dict(state_dict, strict=False)
       print(f"✅  Loaded LLM weights from {llm_path}")
@@ -62,33 +68,13 @@ if "llm" in argsP.algo:
     LLM = None
 
 
-# seed = 0
-seed = argsP.seed
-torch.manual_seed(seed)
-torch.cuda.manual_seed_all(seed)
+# Set up device and seed
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+torch.manual_seed(argsP.seed)
+torch.cuda.manual_seed_all(argsP.seed)
 torch.backends.cudnn.deterministic = True 
 torch.backends.cudnn.benchmark = False
-class Args:
-    #device = 'cuda:0'
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    bs = argsP.batch_size
-    epochs = argsP.num_epoch # 200
-    lr = argsP.learning_rate # Originally 1e-3
-    save_path = "best_model/"
-    hid_units = argsP.hid_units
-    algo = argsP.algo
-    log_file = argsP.log_file
-    card = argsP.card
-    main_logger = main_logger
-    seed = argsP.seed
 
-args = Args()
-import os
-save_path = args.save_path 
-if not os.path.exists(save_path):
-    os.makedirs(save_path)
-
-device = args.device
 def llm_collate(batch):
     # batch is a list of tuples: [(text1, cost1), (text2, cost2), …]
     texts, costs = zip(*batch)                      # two tuples of length B
@@ -105,14 +91,14 @@ if "llm" in argsP.algo:
             test_roots,  test_js_nodes,  test_costs,  \
             ds,  val_ds,  test_ds,  \
             train_loader,  val_loader,  test_loader,  \
-            test_lengths, test_templates = utilsTrain.load_data(argsP, args, dat_path, dat_paths_train_list, dat_path_test, dat_dict, LLM, llm_collate)
+            test_lengths, test_templates = utilsTrain.load_data(argsP, dat_path, dat_paths_train_list, dat_path_test, dat_dict, LLM, llm_collate)
 else:
   ds_info, train_roots, train_js_nodes, train_costs, \
             val_roots,   val_js_nodes,   val_costs,   \
             test_roots,  test_js_nodes,  test_costs,  \
             ds,  val_ds,  test_ds,  \
             train_loader,  val_loader,  test_loader,  \
-            test_lengths, test_templates = utilsTrain.load_data(argsP, args, dat_path, dat_paths_train_list, dat_path_test, dat_dict)
+            test_lengths, test_templates = utilsTrain.load_data(argsP, dat_path, dat_paths_train_list, dat_path_test, dat_dict)
 
 from trainer import *
 
@@ -131,23 +117,23 @@ elif argsP.algo == "postgres":
 
 if argsP.algo == "aimai":
   input_dim = len(ds_info.nodeParallels) * 5
-  MLP = Prediction(input_dim, args.hid_units)
+  MLP = Prediction(input_dim, argsP.hid_units)
   model_comb = MLP
 elif argsP.algo == "qf":
   from algorithms.queryformer.model import *
   model = QueryFormer(emb_size=64, use_sample = True, use_hist = True)
   input_dim = 393
-  MLP = Prediction(input_dim, args.hid_units)
+  MLP = Prediction(input_dim, argsP.hid_units)
   model_comb = nn.Sequential(model, MLP)
 elif argsP.algo == "llm":
   print(f"embedding size: {argsP.embed_size}")
   input_dim = argsP.embed_size
-  MLP = Prediction(input_dim, args.hid_units)
+  MLP = Prediction(input_dim, argsP.hid_units)
   model_comb = MLP
 elif argsP.algo == "llm_finetune":
   print(f"embedding size: {argsP.embed_size}")
   input_dim = argsP.embed_size
-  MLP = Prediction(input_dim, args.hid_units)
+  MLP = Prediction(input_dim, argsP.hid_units)
   model_comb = nn.Sequential(LLM, MLP)
 # originally 64
 # prediction = Prediction(393) #197, 393
@@ -156,12 +142,16 @@ elif argsP.algo == "llm_finetune":
 
 crit = nn.MSELoss()
 training_start = timer()
-best_model, best_model_path = train(model_comb, train_loader, val_loader, ds_info, args, crit=crit)
+trained_model = train(model_comb, train_loader, val_loader, ds_info, argsP, crit=crit)
 training_time = timer() - training_start
-args.main_logger.info(f"[Final] Training total — {training_time*1000:.2f} ms")
+argsP.main_logger.info(f"[Train] Training total — {training_time*1000:.2f} ms")
 
 if argsP.algo == "llm_finetune":
-    save_dir = os.path.dirname(args.save_path)
+    # Create save directory
+    save_path = "finetuned_models/"
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+    save_dir = os.path.dirname(save_path)
     if save_dir and not os.path.exists(save_dir):
         os.makedirs(save_dir, exist_ok=True)
 
@@ -177,21 +167,21 @@ else:
   # Log testing time for all other algorithms
   test_start = timer()
   if not argsP.card:
-    q_errors, abs_errors, q_errors_dist, abs_errors_dist = evaluate(best_model, args, test_loader, ds_info.cost_norm, args.device, data_sec="test",
+    q_errors, abs_errors, q_errors_dist, abs_errors_dist = evaluate(trained_model, argsP, test_loader, ds_info.cost_norm, device, data_sec="test",
                                                                     save_embeddings=(argsP.workload_test in ["tpch", "tpcds"] and test_templates is not None),
                                                                     test_embeddings=(test_ds.tensors[0].cpu().numpy() if argsP.algo == "llm" and hasattr(test_ds, 'tensors') else None),
                                                                     test_templates=test_templates,
                                                                     output_dir_qerror=argsP.output_dir_qerror,
                                                                     workload_test=argsP.workload_test)
   else:
-    q_errors, abs_errors, q_errors_dist, abs_errors_dist = evaluate(best_model, args, test_loader, ds_info.card_norm, args.device, data_sec="test",
+    q_errors, abs_errors, q_errors_dist, abs_errors_dist = evaluate(trained_model, argsP, test_loader, ds_info.card_norm, device, data_sec="test",
                                                                     save_embeddings=(argsP.workload_test in ["tpch", "tpcds"] and test_templates is not None),
                                                                     test_embeddings=(test_ds.tensors[0].cpu().numpy() if argsP.algo == "llm" and hasattr(test_ds, 'tensors') else None),
                                                                     test_templates=test_templates,
                                                                     output_dir_qerror=argsP.output_dir_qerror,
                                                                     workload_test=argsP.workload_test)
   test_time = timer() - test_start
-  args.main_logger.info(f"[Test] Testing took {test_time*1000:.2f} ms")
+  argsP.main_logger.info(f"[Test] Testing took {test_time*1000:.2f} ms")
 
   save_error_cdf(q_errors_dist, argsP.output_dir_qerror, error_type="Qerror")
   save_error_cdf(abs_errors_dist, argsP.output_dir_abs, error_type="abs_error")

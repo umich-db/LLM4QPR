@@ -1,15 +1,15 @@
 #!/bin/bash
-# Finetune Cross-Workload Experiments
-# Tests finetuning performance across different workloads
+# Cross-Workload Experiments
+# Tests model generalization across different workloads with and without finetuning
 
-echo "Running Finetune Cross-Workload Experiments..."
+echo "Running Cross-Workload Experiments..."
 
 model_name=meta-llama/Llama-3.1-8B
 model_name1="${model_name//\//-}"
 ALL_WORKLOADS="genome financial movielens geneea seznam tpc_h walmart airline carcinogenesis baseball imdb accidents ssb basketball employee fhnk consumer tournament credit hepatitis"
-WORKLOAD_TEST_OPTIONS="tpc_h synthetic"
+WORKLOAD_TEST_OPTIONS="tpc_h synthetic job-light"
 
-for SEED in 42; do
+for SEED in 42 43 44; do
   for WORKLOAD_TEST in $WORKLOAD_TEST_OPTIONS; do
     # build a string of "the WORKLOADS_TRAIN"
     WORKLOADS_TRAIN=""
@@ -27,8 +27,17 @@ for SEED in 42; do
 
     echo "Testing on: $WORKLOAD_TEST"
     echo "Training on: $WORKLOADS_TRAIN"
-    bash core_scripts/run_llm_time.sh "$WORKLOADS_TRAIN" "$WORKLOAD_TEST" 0.1 True $model_name $model_name1 $SEED
+    
+    # Without finetuning
+    echo "Running without finetuning..."
+    bash core_scripts/run_llm_time.sh "$WORKLOADS_TRAIN" "$WORKLOAD_TEST" 1.0 False $model_name $model_name1 $SEED
+    
+    # With finetuning (only for tpc_h and synthetic)
+    if [[ $WORKLOAD_TEST == "tpc_h" || $WORKLOAD_TEST == "synthetic" ]]; then
+        echo "Running with finetuning..."
+        bash core_scripts/run_llm_time.sh "$WORKLOADS_TRAIN" "$WORKLOAD_TEST" 0.1 True $model_name $model_name1 $SEED
+    fi
   done
 done
 
-echo "Finetune Cross-Workload Experiments completed!" 
+echo "Cross-Workload Experiments completed!" 

@@ -6,7 +6,7 @@ This folder contains the pre-generated query plans used in the LLM4QPR experimen
 
 Due to size constraints (1.42 GB), the query plans are hosted externally:
 
-**Google Drive**: [Download queryPlans.zip](https://drive.google.com/file/d/YOUR_FILE_ID/view?usp=sharing)
+**Google Drive**: [Download queryPlans.zip](https://drive.google.com/file/d/1bnto7FilrTMu7ugOKG0mgRG220Y4SVYV/view?usp=drive_link)
 
 ## Usage
 
@@ -17,16 +17,6 @@ Due to size constraints (1.42 GB), the query plans are hosted externally:
    - `tpcds/`
    - `imdb/`
    - `stats/`
-
-## Structure
-
-```
-queryPlans/
-├── tpch/          # TPC-H query plans
-├── tpcds/         # TPC-DS query plans  
-├── imdb/          # IMDB query plans
-└── stats/         # STATS query plans
-```
 
 ## Note
 

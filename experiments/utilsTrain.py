@@ -15,7 +15,6 @@ from algorithms.queryformer import *
 from algorithms.queryformer.dataset_utils import *
 from algorithms.queryformer.model import *
 from algorithms.aimeetsai import *
-from time import time as timer
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -61,17 +60,8 @@ def parse_args():
     return parser.parse_args()
 
 
-def setup_loggers(main_log_path, inf_log_path):
-    # 1) Inference‐only logger
-    inference_logger = logging.getLogger("inference_logger")
-    inference_logger.setLevel(logging.INFO)
-    inference_logger.propagate = False
-    inf_handler = logging.FileHandler(inf_log_path, mode="a")  # append mode
-    inf_fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
-    inf_handler.setFormatter(inf_fmt)
-    inference_logger.addHandler(inf_handler)
-
-    # 2) Main‐only logger
+def setup_loggers(main_log_path, inf_log_path=None):
+    # 1) Main logger (always needed)
     main_logger = logging.getLogger("main_logger")
     main_logger.setLevel(logging.INFO)
     main_logger.propagate = False
@@ -79,6 +69,17 @@ def setup_loggers(main_log_path, inf_log_path):
     main_fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
     main_handler.setFormatter(main_fmt)
     main_logger.addHandler(main_handler)
+
+    # 2) Inference logger (only for LLM algorithms)
+    inference_logger = None
+    if inf_log_path:
+        inference_logger = logging.getLogger("inference_logger")
+        inference_logger.setLevel(logging.INFO)
+        inference_logger.propagate = False
+        inf_handler = logging.FileHandler(inf_log_path, mode="a")  # append mode
+        inf_fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+        inf_handler.setFormatter(inf_fmt)
+        inference_logger.addHandler(inf_handler)
 
     return main_logger, inference_logger
 
@@ -146,7 +147,7 @@ def prepare_paths(argsP):
         print("done running get_new")
     return dat_paths_train_list, dat_path_test, dat_dict
 
-def load_data(argsP, args, dat_path, dat_paths_train_list, dat_path_test, dat_dict, predictor=None, llm_collate=None):
+def load_data(argsP, dat_path, dat_paths_train_list, dat_path_test, dat_dict, predictor=None, llm_collate=None):
     ds_info = dat_dict['ds_info']
 
     train_js_nodes = dat_dict['train_js_nodes']
@@ -170,48 +171,36 @@ def load_data(argsP, args, dat_path, dat_paths_train_list, dat_path_test, dat_di
             max_node = 35
         elif argsP.workload_test == "tpcds":
             max_node = 120
-        transform_start = timer()
         ds = QueryFormerDataset(hist_file = hist_file, table_sample = table_sample, \
                                 nodes=train_roots, encoding=encoding, labels=train_costs, ds_info=ds_info, max_node=max_node, argsP=argsP)
-        transform_time = timer() - transform_start
-        argsP.inference_logger.info(f"[Transform] QueryFormer training dataset creation took {transform_time*1000:.2f} ms")
 
         val_ds = QueryFormerDataset(hist_file = hist_file, table_sample = table_sample, \
                                     nodes=val_roots, encoding=encoding, labels=val_costs, ds_info=ds_info, max_node=max_node, argsP=argsP)
         
-        transform_start = timer()
         test_ds = QueryFormerDataset(hist_file = hist_file, table_sample = table_sample, \
                                     nodes=test_roots, encoding=encoding, labels=test_costs, ds_info=ds_info, max_node=max_node, argsP=argsP)
-        transform_time = timer() - transform_start
-        argsP.inference_logger.info(f"[Transform] QueryFormer testing dataset creation took {transform_time*1000:.2f} ms")
 
         train_loader = DataLoader(dataset=ds,
-                                batch_size = args.bs,
+                                batch_size = argsP.batch_size,
                                 collate_fn=collator,
                                 shuffle=True,
                                 generator=torch.Generator().manual_seed(argsP.seed if hasattr(argsP, 'seed') else 42))
         val_loader = DataLoader(dataset=val_ds,
-                                batch_size = args.bs,
+                                batch_size = argsP.batch_size,
                                 collate_fn=collator,
                                 shuffle=False)
         test_loader = DataLoader(dataset=test_ds,
                                 batch_size = 1,
-                                # batch_size = args.bs,
+                                # batch_size = argsP.batch_size,
                                 collate_fn=collator,
                                 shuffle=False)
     elif argsP.algo == "aimai" or argsP.algo == "llm":
         if argsP.algo == "aimai":
-            transform_start = timer()
             ds = get_aimeetsai_ds(ds_info, train_roots, train_costs, argsP)
-            transform_time = timer() - transform_start
-            argsP.inference_logger.info(f"[Transform] AiMeetsAi training dataset creation took {transform_time*1000:.2f} ms")
             
             val_ds = get_aimeetsai_ds(ds_info, val_roots, val_costs, argsP)
             
-            transform_start = timer()
             test_ds = get_aimeetsai_ds(ds_info, test_roots, test_costs, argsP)
-            transform_time = timer() - transform_start
-            argsP.inference_logger.info(f"[Transform] AiMeetsAi testing dataset creation took {transform_time*1000:.2f} ms")
         elif argsP.algo == "llm":
             from utilsLLM import QueryPlanDataset, QueryPlanPredictor, get_llm_ds_from_csv
             ds, val_ds, test_ds, val_costs, test_costs, test_lengths, test_templates = get_llm_ds_from_csv(predictor, dat_paths_train_list, dat_path_test, ds_info, argsP)
@@ -220,11 +209,11 @@ def load_data(argsP, args, dat_path, dat_paths_train_list, dat_path_test, dat_di
             torch.cuda.empty_cache()
 
         train_loader = DataLoader(dataset=ds,
-                                batch_size = args.bs,
+                                batch_size = argsP.batch_size,
                                 shuffle=True,
                                 generator=torch.Generator().manual_seed(argsP.seed if hasattr(argsP, 'seed') else 42))
         val_loader = DataLoader(dataset=val_ds,
-                                batch_size = args.bs,
+                                batch_size = argsP.batch_size,
                                 shuffle=False)
         test_loader = DataLoader(dataset=test_ds,
                                 batch_size = 1,
@@ -233,12 +222,12 @@ def load_data(argsP, args, dat_path, dat_paths_train_list, dat_path_test, dat_di
         from utilsLLM import QueryPlanDataset, QueryPlanPredictor, get_llm_ds_from_csv
         ds, val_ds, test_ds, val_costs, test_costs, test_lengths, test_templates = get_llm_ds_from_csv(predictor, dat_paths_train_list, dat_path_test, ds_info, argsP)
         train_loader = DataLoader(dataset=ds,
-                                batch_size = args.bs,
+                                batch_size = argsP.batch_size,
                                 shuffle=True,
                                 collate_fn=llm_collate,
                                 generator=torch.Generator().manual_seed(argsP.seed if hasattr(argsP, 'seed') else 42))
         val_loader = DataLoader(dataset=val_ds,
-                                batch_size = args.bs,
+                                batch_size = argsP.batch_size,
                                 shuffle=False,
                                 collate_fn=llm_collate)
         test_loader = DataLoader(dataset=test_ds,

@@ -409,8 +409,8 @@ def train(model, train_loader, val_loader, \
         np.random.seed(args.seed)
 
     bs, device, epochs = \
-        args.bs, args.device, args.epochs
-    lr = args.lr
+        args.batch_size, args.device, args.num_epoch
+    lr = args.learning_rate
 
     if not optimizer:
         optimizer = torch.optim.Adam(model.parameters(), lr=lr)
@@ -424,8 +424,6 @@ def train(model, train_loader, val_loader, \
     best_prev = 999999
 
     model.to(device)
-    
-    best_model_path = None
     
     for epoch in range(epochs):
         epoch_start = timer()
@@ -477,21 +475,14 @@ def train(model, train_loader, val_loader, \
         if record:
             if epoch > 20:
                 if not args.card:
-                    q_errors, abs_errors, _, _ = evaluate(model, args, val_loader, ds_info.cost_norm, device, prints=True,data_sec = "val")
+                    _, _, _, _ = evaluate(model, args, val_loader, ds_info.cost_norm, device, prints=True,data_sec = "val")
                 else:
-                    q_errors, abs_errors, _, _ = evaluate(model, args, val_loader, ds_info.card_norm, device, prints=True,data_sec = "val")
-
-                if q_errors['q_mean'] < best_prev: ## mean mse
-                    best_model_path = Logging(args, epoch, q_errors, abs_errors, time.time()-t0, filename = 'log.csv', save_model = True, model = model)
-                    best_prev = q_errors['q_mean']
+                    _, _, _, _ = evaluate(model, args, val_loader, ds_info.card_norm, device, prints=True,data_sec = "val")
 
         ##############
         scheduler.step()   
 
-    total_training_time = time.time() - t0
-    args.main_logger.info(f"[Train] Total training time — {total_training_time:.2f} s")
-
-    return model, best_model_path
+    return model
 
 
 import torch.nn.init as init

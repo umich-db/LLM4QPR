@@ -571,6 +571,7 @@ def get_embeddings(predictor, ds_info, dat_path, argsP, batch_size=1, normalize_
         update_ds_info_minmax(ds_info, costs, cards)
     else:
         print(f"embedding file {cache_path} not found, creating a new one")
+        argsP.inference_logger.info(f"Creating new embedding file for dat_path: {dat_path}")
         if dat_path.endswith("c8220.json"):
             texts, costs, cards, lengths, templates = read_json_and_clean_v2(predictor, ds_info, dat_path, argsP, all=True)
         else:

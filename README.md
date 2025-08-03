@@ -23,11 +23,9 @@ If you want to reproduce the query plans from scratch, you'll need the following
 ### Required for Reproduction
 - **`queries/`** - SQL queries used to generate the query plans
 - **Database data** - Raw data for each dataset
-
-### Data Sources
-- **TPC-H & TPC-DS**: Generated using official TPC toolkits (https://www.tpc.org/)
-- **IMDB**: Downloaded from [Learning-based-cost-estimator](https://github.com/greatji/Learning-based-cost-estimator?tab=readme-ov-file) repository
-- **STATS**: Downloaded from [End-to-End-CardEst-Benchmark](https://github.com/wuziniu/End-to-End-CardEst-Benchmark/tree/master/datasets/stats_simplified) repository
+  - **TPC-H & TPC-DS**: Generated using official TPC toolkits (https://www.tpc.org/)
+  - **IMDB**: Downloaded from [Learning-based-cost-estimator](https://github.com/greatji/Learning-based-cost-estimator?tab=readme-ov-file) repository
+  - **STATS**: Downloaded from [End-to-End-CardEst-Benchmark](https://github.com/wuziniu/End-to-End-CardEst-Benchmark/tree/master/datasets/stats_simplified) repository
 
 ---
 

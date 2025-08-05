@@ -125,10 +125,10 @@ bash experiments/run_experiments.sh
 ### Output Files
 
 After running experiments, you'll find:
-- **`results/`** - CSV files with error distributions and performance metrics
-- **`logs/`** - Training and inference logs
-- **`embeddings/`** - Saved query plan embeddings
-- **`finetuned_models/`** - Finetuned LLM models
+- **`experiments/results/`** - CSV files with error distributions
+- **`experiments/logs/`** - Training and inference logs
+- **`experiments/embeddings/`** - Saved query plan embeddings
+- **`experiments/finetuned_models/`** - Finetuned LLM models
 
 
 ---

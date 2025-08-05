@@ -1,14 +1,15 @@
 # Experiment Scripts
 
-This directory contains individual experiment scripts that were extracted from the original `master.sh` file.
-
 ## Available Experiments
 
 ### 1. `run_baseline_comparison.sh`
 **Purpose**: Compares LLM performance against prior state-of-the-art methods  
-**Model**: Llama-3.1-8B  
+**Model**: Llama-3.1-8B, QueryFormer, Bao, AiMeetsAi  
 **Workloads**: TPC-H, TPC-DS, JOB, SYN, STATS  
-**Seeds**: 42
+**Experiments**: 
+- Cost estimation: All workloads (TPC-H, TPC-DS, JOB, SYN, STATS)
+- Cardinality estimation: JOB, SYN, STATS only
+**Seeds**: 42, 43, 44
 
 ### 2. `run_model_size_comparison.sh`
 **Purpose**: Compares performance across different Llama model sizes  
@@ -21,21 +22,26 @@ This directory contains individual experiment scripts that were extracted from t
 **Model**: Llama-3.1-8B  
 **Training Ratios**: 0.2, 0.4, 0.6, 0.8, 1.0  
 **Workloads**: TPC-H, TPC-DS, JOB, SYN, STATS  
+**Experiments**: 
+- Cost estimation: All workloads (TPC-H, TPC-DS, JOB, SYN, STATS)
+- Cardinality estimation: JOB, SYN, STATS only
 **Seeds**: 42, 43, 44
 
 ### 4. `run_finetuning_experiments.sh`
 **Purpose**: Tests LLM finetuning performance  
 **Model**: Llama-3.1-8B  
 **Workloads**: TPC-H, TPC-DS, STATS  
-**Training Ratio**: 0.1 (finetuning)  
+**Training Ratio (finetuning)**: 
+- TPC-H/TPC-DS: 1.0 for cost estimation only  
+- STATS: 0.1 for both cardinality and cost estimation
 **Seeds**: 42, 43, 44
 
 ### 5. `run_cross_workload_experiments.sh`
-**Purpose**: Tests model generalization across different workloads with and without finetuning  
+**Purpose**: Tests model generalization across different workloads without and with finetuning  
 **Model**: Llama-3.1-8B  
-**Test Workloads**: TPC-H, synthetic, job-light  
+**Test Workloads**: TPC-H, SYN, JOB  
 **Training**: All other workloads except test workload  
-**Experiments**: Both without finetuning (1.0 ratio) and with finetuning (0.1 ratio)  
+**Experiments**: Both without finetuning and with finetuning
 **Seeds**: 42, 43, 44
 
 ## Core Scripts
@@ -43,13 +49,13 @@ This directory contains individual experiment scripts that were extracted from t
 The `core_scripts/` directory contains the fundamental execution scripts:
 
 ### `run_baseline.sh`
-Executes baseline algorithms (BAO, PostgreSQL, etc.) for comparison.
+Executes prior state-of-the-art algorithms (PostgreSQL, QueryFormer, Bao, AiMeetsAi) for comparison.
 
 ### `run_llm_card.sh`
 Runs LLM-based cardinality estimation experiments.
 
 ### `run_llm_time.sh`
-Runs LLM-based execution time prediction experiments.
+Runs LLM-based cost estimation experiments.
 
 ## Usage
 
@@ -62,7 +68,7 @@ bash run_experiments.sh
 ### Direct Execution
 ```bash
 cd experiments
-bash experiment_scripts/run_model_size_comparison.sh
+bash experiment_scripts/run_baseline_comparison.sh
 ```
 
 ## Directory Structure
@@ -74,13 +80,12 @@ experiments/
 │   ├── core_scripts/                     # Core execution scripts
 │   │   ├── run_baseline.sh              # Baseline algorithm runner
 │   │   ├── run_llm_card.sh              # LLM cardinality estimation
-│   │   └── run_llm_time.sh              # LLM execution time prediction
-│   ├── run_model_size_comparison.sh     # Model size experiments
+│   │   └── run_llm_time.sh              # LLM cost estimation
 │   ├── run_baseline_comparison.sh       # Baseline comparison
+│   ├── run_model_size_comparison.sh     # Model size experiments
 │   ├── run_training_ratio_analysis.sh   # Training ratio experiments
 │   ├── run_finetuning_experiments.sh    # Finetuning experiments
-│   ├── run_cross_workload_generalization.sh  # Cross-workload tests
-│   └── run_finetune_cross_workload.sh   # Finetune cross-workload
+│   └── run_cross_workload_experiments.sh # Cross-workload tests
 ├── train.py                             # Main training script
 └── utils*.py                            # Utility modules
 ```
@@ -94,6 +99,7 @@ experiments/
 ## Output
 
 Results are saved to:
-- `results/` - CSV files with error distributions
-- `logs/` - Training and inference logs
-- `best_model/` - Saved model checkpoints 
+- **`results/`** - CSV files with error distributions
+- **`logs/`** - Training and inference logs
+- **`embeddings/`** - Saved query plan embeddings
+- **`finetuned_models/`** - Finetuned LLM models

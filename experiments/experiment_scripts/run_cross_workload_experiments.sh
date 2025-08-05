@@ -32,11 +32,9 @@ for SEED in 42 43 44; do
     echo "Running without finetuning..."
     bash core_scripts/run_llm_time.sh "$WORKLOADS_TRAIN" "$WORKLOAD_TEST" 1.0 False $model_name $model_name1 $SEED
     
-    # With finetuning (only for tpc_h and synthetic)
-    if [[ $WORKLOAD_TEST == "tpc_h" || $WORKLOAD_TEST == "synthetic" ]]; then
-        echo "Running with finetuning..."
-        bash core_scripts/run_llm_time.sh "$WORKLOADS_TRAIN" "$WORKLOAD_TEST" 0.1 True $model_name $model_name1 $SEED
-    fi
+    # With finetuning
+    echo "Running with finetuning..."
+    bash core_scripts/run_llm_time.sh "$WORKLOADS_TRAIN" "$WORKLOAD_TEST" 0.1 True $model_name $model_name1 $SEED
   done
 done
 

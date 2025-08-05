@@ -84,23 +84,23 @@ if [ "$finetune" == "True" ]; then
   algo=llm_finetune
   hid_units=2048
   lr=0.0001
-  batch_size=2     
+  batch_size=1     
 
-  # llm_mode=last
-  # echo "finetune: last"
-  # python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-  #                                     --log_file logs/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_last_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}.log \
-  #                                     --db postgres \
-  #                                     --workloads_train "${TRAIN_WLS[@]}" \
-  #                                     --workload_test ${WORKLOAD_TEST} \
-  #                                     --algo ${algo} \
-  #                                     --learning_rate $lr \
-  #                                     --batch_size $batch_size \
-  #                                     --hid_units $hid_units \
-  #                                     --model_name $model_name \
-  #                                     --train_ratio $train_ratio \
-  #                                     --llm_mode $llm_mode \
-  #                                     --num_epoch 1
+  llm_mode=last
+  echo "finetune: last"
+  python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
+                                      --log_file logs/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_last_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}.log \
+                                      --db postgres \
+                                      --workloads_train "${TRAIN_WLS[@]}" \
+                                      --workload_test ${WORKLOAD_TEST} \
+                                      --algo ${algo} \
+                                      --learning_rate $lr \
+                                      --batch_size $batch_size \
+                                      --hid_units $hid_units \
+                                      --model_name $model_name \
+                                      --train_ratio $train_ratio \
+                                      --llm_mode $llm_mode \
+                                      --num_epoch 1
 
 
   llm_mode=lora
@@ -126,28 +126,27 @@ if [ "$finetune" == "True" ]; then
   lr=0.0001
   batch_size=64     
 
-  # llm_pretrained=last
-  # echo "inference: pre-trained last"
-  # python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-  #                                     --output_dir_qerror results/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}_seed${SEED}.csv \
-  #                                     --output_dir_abs results/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}_seed${SEED}_abs.txt \
-  #                                     --log_file logs/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}_seed${SEED}.log \
-  #                                     --db postgres \
-  #                                     --workloads_train "${TRAIN_WLS[@]}" \
-  #                                     --workload_test ${WORKLOAD_TEST} \
-  #                                     --algo ${algo} \
-  #                                     --learning_rate $lr \
-  #                                     --batch_size $batch_size \
-  #                                     --hid_units $hid_units \
-  #                                     --model_name $model_name \
-  #                                     --embed_size $embed_size \
-  #                                     --train_ratio 1.0 \
-  #                                     --llm_mode inference \
-  #                                     --num_epoch 200 \
-  #                                     --llm_pretrained $llm_pretrained \
-  #                                     --llm_pretrained_task $llm_pretrained_task \
-  #                                     --seed $SEED \
-  #                                     --embeddings_exist
+  llm_pretrained=last
+  echo "inference: pre-trained last"
+  python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
+                                      --output_dir_qerror results/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}_seed${SEED}.csv \
+                                      --output_dir_abs results/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}_seed${SEED}_abs.txt \
+                                      --log_file logs/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}_seed${SEED}.log \
+                                      --db postgres \
+                                      --workloads_train "${TRAIN_WLS[@]}" \
+                                      --workload_test ${WORKLOAD_TEST} \
+                                      --algo ${algo} \
+                                      --learning_rate $lr \
+                                      --batch_size $batch_size \
+                                      --hid_units $hid_units \
+                                      --model_name $model_name \
+                                      --embed_size $embed_size \
+                                      --train_ratio 1.0 \
+                                      --llm_mode inference \
+                                      --num_epoch 200 \
+                                      --llm_pretrained $llm_pretrained \
+                                      --llm_pretrained_task $llm_pretrained_task \
+                                      --seed $SEED
 
 
   llm_pretrained=lora                              

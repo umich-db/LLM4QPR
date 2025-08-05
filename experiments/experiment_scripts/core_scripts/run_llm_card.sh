@@ -81,47 +81,47 @@ if [ "$finetune" == "False" ]; then
 fi
 
 if [ "$finetune" == "True" ]; then
-  # #########################finetune#########################
-  # algo=llm_finetune
-  # hid_units=2048
-  # lr=0.0001
-  # batch_size=2     
+  #########################finetune#########################
+  algo=llm_finetune
+  hid_units=2048
+  lr=0.0001
+  batch_size=1     
 
-  # llm_mode=last
-  # echo "finetune: last"
-  # python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-  #                                     --log_file logs/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_last_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}.log \
-  #                                     --db postgres \
-  #                                     --workloads_train "${TRAIN_WLS[@]}" \
-  #                                     --workload_test ${WORKLOAD_TEST} \
-  #                                     --algo ${algo} \
-  #                                     --learning_rate $lr \
-  #                                     --batch_size $batch_size \
-  #                                     --hid_units $hid_units \
-  #                                     --model_name $model_name \
-  #                                     --train_ratio $train_ratio \
-  #                                     --llm_mode $llm_mode \
-  #                                     --num_epoch 1 \
-  #                                     --card \
-  #                                     --seed $SEED
+  llm_mode=last
+  echo "finetune: last"
+  python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
+                                      --log_file logs/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_last_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}.log \
+                                      --db postgres \
+                                      --workloads_train "${TRAIN_WLS[@]}" \
+                                      --workload_test ${WORKLOAD_TEST} \
+                                      --algo ${algo} \
+                                      --learning_rate $lr \
+                                      --batch_size $batch_size \
+                                      --hid_units $hid_units \
+                                      --model_name $model_name \
+                                      --train_ratio $train_ratio \
+                                      --llm_mode $llm_mode \
+                                      --num_epoch 1 \
+                                      --card \
+                                      --seed $SEED
 
-  # llm_mode=lora
-  # echo "finetune: lora"
-  # python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-  #                                     --log_file logs/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_lora_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}.log \
-  #                                     --db postgres \
-  #                                     --workloads_train "${TRAIN_WLS[@]}" \
-  #                                     --workload_test ${WORKLOAD_TEST} \
-  #                                     --algo ${algo} \
-  #                                     --learning_rate $lr \
-  #                                     --batch_size $batch_size \
-  #                                     --hid_units $hid_units \
-  #                                     --model_name $model_name \
-  #                                     --train_ratio $train_ratio \
-  #                                     --llm_mode $llm_mode \
-  #                                     --num_epoch 1 \
-  #                                     --card \
-  #                                     --seed $SEED
+  llm_mode=lora
+  echo "finetune: lora"
+  python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
+                                      --log_file logs/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_lora_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}.log \
+                                      --db postgres \
+                                      --workloads_train "${TRAIN_WLS[@]}" \
+                                      --workload_test ${WORKLOAD_TEST} \
+                                      --algo ${algo} \
+                                      --learning_rate $lr \
+                                      --batch_size $batch_size \
+                                      --hid_units $hid_units \
+                                      --model_name $model_name \
+                                      --train_ratio $train_ratio \
+                                      --llm_mode $llm_mode \
+                                      --num_epoch 1 \
+                                      --card \
+                                      --seed $SEED
 
   #########################inference: pre-trained#########################
   algo=llm
@@ -151,8 +151,7 @@ if [ "$finetune" == "True" ]; then
                                       --llm_pretrained $llm_pretrained \
                                       --llm_pretrained_task $llm_pretrained_task \
                                       --card \
-                                      --seed $SEED \
-                                      --embeddings_exist
+                                      --seed $SEED
 
   llm_pretrained=lora                              
   echo "inference: pre-trained lora"
@@ -175,6 +174,5 @@ if [ "$finetune" == "True" ]; then
                                       --llm_pretrained $llm_pretrained \
                                       --llm_pretrained_task $llm_pretrained_task \
                                       --card \
-                                      --seed $SEED \
-                                      --embeddings_exist
+                                      --seed $SEED
 fi

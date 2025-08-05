@@ -11,8 +11,10 @@ for SEED in 42 43 44; do
   for WORKLOAD in "tpch" "tpcds" "stats"; do        
       if [[ $WORKLOAD == "stats" ]]; then
           bash core_scripts/run_llm_card.sh $WORKLOAD $WORKLOAD 0.1 True $model_name $model_name1 $SEED
+          bash core_scripts/run_llm_time.sh $WORKLOAD $WORKLOAD 0.1 True $model_name $model_name1 $SEED
+      else
+          bash core_scripts/run_llm_time.sh $WORKLOAD $WORKLOAD 1.0 True $model_name $model_name1 $SEED
       fi
-      bash core_scripts/run_llm_time.sh $WORKLOAD $WORKLOAD 0.1 True $model_name $model_name1 $SEED
   done
 done
 

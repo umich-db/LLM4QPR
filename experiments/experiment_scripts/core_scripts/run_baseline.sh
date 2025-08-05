@@ -22,41 +22,43 @@ else
 fi
 
 
-# algo=postgres
-# hid_units=99999999
-# lr=-1
-# batch_size=99999999
-# #time
-# echo "${algo} time"
-# python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-#                                     --output_dir_qerror results/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}.csv \
-#                                     --output_dir_abs results/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}_abs.txt \
-#                                     --log_file logs/logs_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}.log \
-#                                     --db postgres \
-#                                     --workloads_train "${TRAIN_WLS[@]}" \
-#                                     --workload_test ${WORKLOAD_TEST} \
-#                                     --algo ${algo} \
-#                                     --learning_rate $lr \
-#                                     --batch_size $batch_size \
-#                                     --hid_units $hid_units \
-#                                     --train_ratio $train_ratio \
-#                                     --seed $SEED
+algo=postgres
+hid_units=99999999
+lr=-1
+batch_size=99999999
+#time
+echo "${algo} time"
+python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
+                                    --output_dir_qerror results/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}.csv \
+                                    --output_dir_abs results/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}_abs.txt \
+                                    --log_file logs/logs_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}.log \
+                                    --db postgres \
+                                    --workloads_train "${TRAIN_WLS[@]}" \
+                                    --workload_test ${WORKLOAD_TEST} \
+                                    --algo ${algo} \
+                                    --learning_rate $lr \
+                                    --batch_size $batch_size \
+                                    --hid_units $hid_units \
+                                    --train_ratio $train_ratio \
+                                    --seed $SEED
 
-# #card
-# echo "${algo} card"
-# python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-#                                     --output_dir_qerror results/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}.csv \
-#                                     --output_dir_abs results/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}_abs.txt \
-#                                     --log_file logs/logs_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}.log \
-#                                     --db postgres \
-#                                     --workloads_train "${TRAIN_WLS[@]}" \
-#                                     --workload_test ${WORKLOAD_TEST} \
-#                                     --algo ${algo} \
-#                                     --learning_rate $lr \
-#                                     --batch_size $batch_size \
-#                                     --train_ratio $train_ratio \
-#                                     --card \
-#                                     --seed $SEED
+#card
+if [[ "$WORKLOAD_TEST" == "job" || "$WORKLOAD_TEST" == "syn" || "$WORKLOAD_TEST" == "stats" ]]; then
+    echo "${algo} card"
+    python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
+                                        --output_dir_qerror results/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}.csv \
+                                        --output_dir_abs results/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}_abs.txt \
+                                        --log_file logs/logs_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}.log \
+                                        --db postgres \
+                                        --workloads_train "${TRAIN_WLS[@]}" \
+                                        --workload_test ${WORKLOAD_TEST} \
+                                        --algo ${algo} \
+                                        --learning_rate $lr \
+                                        --batch_size $batch_size \
+                                        --train_ratio $train_ratio \
+                                        --card \
+                                        --seed $SEED
+fi
 
 
 algo=bao
@@ -77,21 +79,23 @@ python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TE
                                     --batch_size $batch_size \
                                     --train_ratio $train_ratio \
                                     --seed $SEED
-# #card
-# echo "${algo} card"
-# python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-#                                     --output_dir_qerror results/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}.csv \
-#                                     --output_dir_abs results/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}_abs.txt \
-#                                     --log_file logs/logs_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}.log \
-#                                     --db postgres \
-#                                     --workloads_train "${TRAIN_WLS[@]}" \
-#                                     --workload_test ${WORKLOAD_TEST} \
-#                                     --algo ${algo} \
-#                                     --learning_rate $lr \
-#                                     --batch_size $batch_size \
-#                                     --train_ratio $train_ratio \
-#                                     --card \
-#                                     --seed $SEED
+#card
+if [[ "$WORKLOAD_TEST" == "job" || "$WORKLOAD_TEST" == "syn" || "$WORKLOAD_TEST" == "stats" ]]; then
+    echo "${algo} card"
+    python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
+                                        --output_dir_qerror results/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}.csv \
+                                        --output_dir_abs results/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}_abs.txt \
+                                        --log_file logs/logs_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}.log \
+                                        --db postgres \
+                                        --workloads_train "${TRAIN_WLS[@]}" \
+                                        --workload_test ${WORKLOAD_TEST} \
+                                        --algo ${algo} \
+                                        --learning_rate $lr \
+                                        --batch_size $batch_size \
+                                        --train_ratio $train_ratio \
+                                        --card \
+                                        --seed $SEED
+fi
 
 
 algo=aimai
@@ -114,21 +118,23 @@ python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TE
                                     --train_ratio $train_ratio \
                                     --seed $SEED
 
-# # card
-# echo "${algo} card"
-# python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-#                                     --output_dir_qerror results/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}.csv \
-#                                     --output_dir_abs results/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}_abs.txt \
-#                                     --log_file logs/logs_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}.log \
-#                                     --db postgres \
-#                                     --workloads_train "${TRAIN_WLS[@]}" \
-#                                     --workload_test ${WORKLOAD_TEST} \
-#                                     --algo ${algo} \
-#                                     --learning_rate $lr \
-#                                     --batch_size $batch_size \
-#                                     --train_ratio $train_ratio \
-#                                     --card \
-#                                     --seed $SEED
+# card
+if [[ "$WORKLOAD_TEST" == "job" || "$WORKLOAD_TEST" == "syn" || "$WORKLOAD_TEST" == "stats" ]]; then
+    echo "${algo} card"
+    python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
+                                        --output_dir_qerror results/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}.csv \
+                                        --output_dir_abs results/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}_abs.txt \
+                                        --log_file logs/logs_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}.log \
+                                        --db postgres \
+                                        --workloads_train "${TRAIN_WLS[@]}" \
+                                        --workload_test ${WORKLOAD_TEST} \
+                                        --algo ${algo} \
+                                        --learning_rate $lr \
+                                        --batch_size $batch_size \
+                                        --train_ratio $train_ratio \
+                                        --card \
+                                        --seed $SEED
+fi
 
 
 
@@ -151,18 +157,20 @@ python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TE
                                     --train_ratio $train_ratio \
                                     --seed $SEED
 
-# #card
-# echo "${algo} card"
-# python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-#                                     --output_dir_qerror results/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}.csv \
-#                                     --output_dir_abs results/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}_abs.txt \
-#                                     --log_file logs/logs_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}.log \
-#                                     --db postgres \
-#                                     --workloads_train "${TRAIN_WLS[@]}" \
-#                                     --workload_test ${WORKLOAD_TEST} \
-#                                     --algo ${algo} \
-#                                     --learning_rate $lr \
-#                                     --batch_size $batch_size \
-#                                     --train_ratio $train_ratio \
-#                                     --card \
-#                                     --seed $SEED
+#card
+if [[ "$WORKLOAD_TEST" == "job" || "$WORKLOAD_TEST" == "syn" || "$WORKLOAD_TEST" == "stats" ]]; then
+    echo "${algo} card"
+    python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
+                                        --output_dir_qerror results/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}.csv \
+                                        --output_dir_abs results/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}_abs.txt \
+                                        --log_file logs/logs_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}.log \
+                                        --db postgres \
+                                        --workloads_train "${TRAIN_WLS[@]}" \
+                                        --workload_test ${WORKLOAD_TEST} \
+                                        --algo ${algo} \
+                                        --learning_rate $lr \
+                                        --batch_size $batch_size \
+                                        --train_ratio $train_ratio \
+                                        --card \
+                                        --seed $SEED
+fi

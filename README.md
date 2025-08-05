@@ -62,6 +62,8 @@ setx HF_TOKEN "hf_xxx"      # persist for new sessions
 | **A. Docker (automated)**    | You have Docker + NVIDIA GPU support                                             |
 | **B. Manual (shell script)** | You prefer a local/conda virtual environment or need to tweak CUDA, Python, etc. |
 
+> **Note**: "NVIDIA GPU support" means you have Docker with NVIDIA Container Toolkit installed. This allows Docker containers to access your NVIDIA GPU. If you don't have this set up, see [NVIDIA Container Toolkit installation guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html).
+
 ### A. Reproduce with Docker (automated setup)
 
 ```bash
@@ -77,8 +79,6 @@ bash run_experiments.sh
 ```
 
 The Dockerfile (see `Dockerfile`) is based on **`nvidia/cuda:12.1.1‑devel‑ubuntu22.04`** and installs:
-
-> **Note**: "NVIDIA GPU support" means you have Docker with NVIDIA Container Toolkit installed. This allows Docker containers to access your NVIDIA GPU. If you don't have this set up, see [NVIDIA Container Toolkit installation guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html).
 
 * Python 3.11 (isolated in `/venv`)
 * CUDA 12.x toolkit & driver headers
@@ -119,7 +119,7 @@ export HF_TOKEN="your_hf_token_here"
 # 4. (Docker) Build & run OR (Manual) create your venv and install packages
 
 # 5. Run experiments
-bash run_experiments.sh
+bash experiments/run_experiments.sh
 ```
 
 ### Output Files

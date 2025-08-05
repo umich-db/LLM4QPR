@@ -105,12 +105,12 @@ from trainer import *
 if argsP.algo == "bao":
   results = train_and_test_bao(train_roots, train_costs, test_roots, test_costs, argsP, device)
   save_error_cdf(results['qerr_dist'], argsP.output_dir_qerror, error_type="Qerror")
-  save_error_cdf(results['abserr_dist'], argsP.output_dir_abs,   error_type="abs_error")
+  # save_error_cdf(results['abserr_dist'], argsP.output_dir_abs,   error_type="abs_error")
   sys.exit(0)
 elif argsP.algo == "postgres":
   results = train_and_test_postgres(train_roots, train_costs, test_roots, test_costs, argsP)
   save_error_cdf(results['qerr_dist'], argsP.output_dir_qerror, error_type="Qerror")
-  save_error_cdf(results['abserr_dist'], argsP.output_dir_abs,   error_type="abs_error")
+  # save_error_cdf(results['abserr_dist'], argsP.output_dir_abs,   error_type="abs_error")
   sys.exit(0)
 
 
@@ -184,7 +184,7 @@ else:
   argsP.main_logger.info(f"[Test] Testing took {test_time*1000:.2f} ms")
 
   save_error_cdf(q_errors_dist, argsP.output_dir_qerror, error_type="Qerror")
-  save_error_cdf(abs_errors_dist, argsP.output_dir_abs, error_type="abs_error")
+  # save_error_cdf(abs_errors_dist, argsP.output_dir_abs, error_type="abs_error")
 
   if argsP.algo == "llm":
     output_dir_lvq = argsP.output_dir_qerror.replace("cdf", "length_vs_qerror")
@@ -196,5 +196,5 @@ else:
 
   print("\nTest Results:")
   print("Q Errors:", q_errors)
-  print("Absolute Errors:", abs_errors)
+  # print("Absolute Errors:", abs_errors)
 

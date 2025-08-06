@@ -172,13 +172,13 @@ def load_data(argsP, dat_path, dat_paths_train_list, dat_path_test, dat_dict, pr
         elif argsP.workload_test == "tpcds":
             max_node = 120
         ds = QueryFormerDataset(hist_file = hist_file, table_sample = table_sample, \
-                                nodes=train_roots, encoding=encoding, labels=train_costs, ds_info=ds_info, max_node=max_node, argsP=argsP)
+                                nodes=train_roots, encoding=encoding, labels=train_costs, ds_info=ds_info, max_node=max_node, args=argsP)
 
         val_ds = QueryFormerDataset(hist_file = hist_file, table_sample = table_sample, \
-                                    nodes=val_roots, encoding=encoding, labels=val_costs, ds_info=ds_info, max_node=max_node, argsP=argsP)
+                                    nodes=val_roots, encoding=encoding, labels=val_costs, ds_info=ds_info, max_node=max_node, args=argsP)
         
         test_ds = QueryFormerDataset(hist_file = hist_file, table_sample = table_sample, \
-                                    nodes=test_roots, encoding=encoding, labels=test_costs, ds_info=ds_info, max_node=max_node, argsP=argsP)
+                                    nodes=test_roots, encoding=encoding, labels=test_costs, ds_info=ds_info, max_node=max_node, args=argsP)
 
         train_loader = DataLoader(dataset=ds,
                                 batch_size = argsP.batch_size,

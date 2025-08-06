@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 
 JOIN_TYPES = ['Hash Join', 'Nested Loop', 'Merge Join', 'Other Join']
 SCAN_TYPES = ["Seq Scan", "Index Scan", "Index Only Scan", "Bitmap Index Scan", 

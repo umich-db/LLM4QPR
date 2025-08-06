@@ -44,16 +44,8 @@ class BaoData:
         return (self.__data[idx]["tree"],
                 self.__data[idx]["target"])
 
-def collate(x):
-    trees = []
-    targets = []
-
-    for tree, target in x:
-        trees.append(tree)
-        targets.append(target)
-
-    targets = torch.tensor(targets)
-    return trees, targets
+# Import the proper collate function from featurize.py
+from .featurize import collate
 
 class BaoRegression:
     def __init__(self, verbose=False, have_cache_data=False):

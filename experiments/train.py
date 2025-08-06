@@ -22,9 +22,11 @@ os.makedirs(log_dir, exist_ok=True)
 # Only create inference logger for LLM algorithms
 if "llm" in argsP.algo:
     main_logger, inference_logger = utilsTrain.setup_loggers(argsP.log_file, argsP.log_file.replace(".log", "_inference.log"))
+    argsP.main_logger = main_logger
     argsP.inference_logger = inference_logger
 else:
     main_logger, inference_logger = utilsTrain.setup_loggers(argsP.log_file)
+    argsP.main_logger = main_logger
     argsP.inference_logger = None
 
 # Get Hugging Face token from environment variable

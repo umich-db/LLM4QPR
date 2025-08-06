@@ -81,7 +81,7 @@ docker run --gpus all -it \
 # 3. To stop the container
 docker stop my-container
 
-# 4. To restart the container later
+# 4. To restart the container
 docker start -ai my-container
 
 # 5. To remove the container

@@ -10,15 +10,18 @@ All results in the paper were produced on Ubuntu 22.04 with CUDA‑enabled NVIDI
 The experiments use query plans from four datasets: **TPC-H**, **TPC-DS**, **IMDB**, and **STATS**.
 
 ### Required Data Files
-- **`queryPlans/`** (1.42 GB) - Pre-generated query plans for all datasets
+- **`queryPlans/`** (~1.42 GB) - Pre-generated query plans for all datasets
+- **`deepdb_augmented/`** (~1.3 GB) - Query plans for cross-workload experiments
 
-**Download**: See [queryPlans/README.md](queryPlans/README.md) for download instructions.
+**Download**: 
+- `queryPlans/`: See [queryPlans/README.md](queryPlans/README.md) for download instructions.
+- `deepdb_augmented/`: See [deepdb_augmented/README.md](deepdb_augmented/README.md) for download instructions.
 
 ---
 
 ## 🔄 Reproducing Query Plans
 
-If you want to reproduce the query plans from scratch, you'll need the following additional data:
+If you want to reproduce the query plans in `queryPlans/` from scratch, you'll need the following additional data:
 
 ### Required for Reproduction
 - **`queries/`** - SQL queries used to generate the query plans
@@ -211,6 +214,25 @@ If you use the IMDB or STATS datasets, please cite the original papers:
   year         = {2021},
   url          = {https://www.vldb.org/pvldb/vol15/p752-zhu.pdf},
   doi          = {10.14778/3503585.3503586}
+}
+```
+
+**DeepDB Augmented Dataset:**
+```
+@article{DBLP:journals/pvldb/HilprechtB22,
+  author       = {Benjamin Hilprecht and
+                  Carsten Binnig},
+  title        = {Zero-Shot Cost Models for Out-of-the-box Learned Cost Prediction},
+  journal      = {Proc. {VLDB} Endow.},
+  volume       = {15},
+  number       = {11},
+  pages        = {2361--2374},
+  year         = {2022},
+  url          = {https://www.vldb.org/pvldb/vol15/p2361-hilprecht.pdf},
+  doi          = {10.14778/3551793.3551799},
+  timestamp    = {Sun, 04 Aug 2024 19:47:54 +0200},
+  biburl       = {https://dblp.org/rec/journals/pvldb/HilprechtB22.bib},
+  bibsource    = {dblp computer science bibliography, https://dblp.org}
 }
 ```
 

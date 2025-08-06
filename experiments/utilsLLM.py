@@ -139,8 +139,6 @@ class QueryPlanPredictor(nn.Module):
         elif mode == "lora":
             # QLoRA default: base in 4-bit is frozen, adapters are trainable
             # (no extra action needed)
-            for name, p in self.model.named_parameters():
-                print(name, name.split(".")[3], p.requires_grad)
             pass
 
         elif mode == "last":
@@ -157,7 +155,6 @@ class QueryPlanPredictor(nn.Module):
                 else:
                     # All bitsandbytes-quantized (int/4-bit) tensors or buffers get frozen
                     p.requires_grad = False
-                print(name, name.split(".")[3], p.requires_grad)
 
         else:
             raise ValueError(f"Unknown mode {mode!r}")

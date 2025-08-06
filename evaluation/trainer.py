@@ -287,30 +287,6 @@ def evaluate(model, args, loader, norm, device, prints=True, data_sec="unknown",
     preds_true = norm.unnormalize_labels(predss)
     labels_true = norm.unnormalize_labels(labelss)
 
-    # Store embeddings, estimated labels, true labels, and templates for TPC-H and TPC-DS
-    if save_embeddings and workload_test in ["tpch", "tpcds"] and test_templates is not None:
-        # Get embeddings
-        if test_embeddings is not None:
-            # Use provided embeddings (for llm algorithm)
-            embeddings = test_embeddings
-        else:
-            # Concatenate collected embeddings
-            embeddings = np.concatenate(embeddings_list, axis=0)
-        
-        # Create DataFrame with all data
-        df_data = pd.DataFrame(embeddings)
-        df_data['estimated_label'] = preds_true
-        df_data['true_label'] = labels_true
-        df_data['template'] = test_templates
-        
-        # Sort by template
-        df_data = df_data.sort_values('template')
-        
-        # Save to CSV
-        output_dir_emb = output_dir_qerror.replace("cdf", "embedding_and_label")
-        df_data.to_csv(output_dir_emb, index=False)
-        print(f"Saved embeddings and labels to {output_dir_emb}")
-
     # Compute metrics
     q_errors      = print_qerror(preds_true, labels_true, prints, data_sec=data_sec)
     abs_errors    = get_abs_errors(preds_true, labels_true)

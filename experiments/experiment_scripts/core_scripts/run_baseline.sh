@@ -62,7 +62,7 @@ fi
 
 
 algo=bao
-hid_units=9999
+hid_units=256
 lr=0.001
 batch_size=16
 #time

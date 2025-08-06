@@ -74,8 +74,6 @@ docker build -t llm4qpr .
 docker run --gpus all -it \
   -v $(pwd):/workspace \
   llm4qpr /bin/bash
-# Inside the container you are ready to run:
-bash run_experiments.sh
 ```
 
 The Dockerfile (see `Dockerfile`) is based on **`nvidia/cuda:12.1.1‑devel‑ubuntu22.04`** and installs:

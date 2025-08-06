@@ -119,7 +119,8 @@ export HF_TOKEN="your_hf_token_here"
 # 4. (Docker) Build & run OR (Manual) create your venv and install packages
 
 # 5. Run experiments
-bash experiments/run_experiments.sh
+cd experiments
+bash run_experiments.sh
 ```
 
 ### Output Files

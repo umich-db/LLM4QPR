@@ -10,9 +10,9 @@ model_name1="${model_name//\//-}"
 for SEED in 42 43 44; do
   for WORKLOAD in "tpch" "tpcds" "job" "syn" "stats"; do
       for train_ratio in 0.2 0.4 0.6 0.8 1.0; do
-          bash core_scripts/run_llm_time.sh $WORKLOAD $WORKLOAD $train_ratio False $model_name $model_name1 $SEED
+          bash experiment_scripts/core_scripts/run_llm_time.sh $WORKLOAD $WORKLOAD $train_ratio False $model_name $model_name1 $SEED
           if [[ $WORKLOAD == "job" || $WORKLOAD == "syn" || $WORKLOAD == "stats" ]]; then
-              bash core_scripts/run_llm_card.sh $WORKLOAD $WORKLOAD $train_ratio False $model_name $model_name1 $SEED
+              bash experiment_scripts/core_scripts/run_llm_card.sh $WORKLOAD $WORKLOAD $train_ratio False $model_name $model_name1 $SEED
           fi
       done
   done

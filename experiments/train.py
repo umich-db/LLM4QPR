@@ -129,12 +129,10 @@ elif argsP.algo == "qf":
   MLP = Prediction(input_dim, argsP.hid_units)
   model_comb = nn.Sequential(model, MLP)
 elif argsP.algo == "llm":
-  print(f"embedding size: {argsP.embed_size}")
   input_dim = argsP.embed_size
   MLP = Prediction(input_dim, argsP.hid_units)
   model_comb = MLP
 elif argsP.algo == "llm_finetune":
-  print(f"embedding size: {argsP.embed_size}")
   input_dim = argsP.embed_size
   MLP = Prediction(input_dim, argsP.hid_units)
   model_comb = nn.Sequential(LLM, MLP)

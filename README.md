@@ -78,11 +78,11 @@ docker run --gpus all -it \
   llm4qpr \
   bash
 
-# 3. To restart the container later
-docker start -ai my-container
-
-# 4. To stop the container
+# 3. To stop the container
 docker stop my-container
+
+# 4. To restart the container later
+docker start -ai my-container
 
 # 5. To remove the container
 docker rm my-container

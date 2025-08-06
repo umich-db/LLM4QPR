@@ -70,6 +70,7 @@ if "llm" in argsP.algo:
 
 # Set up device and seed
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
+argsP.device = device
 torch.manual_seed(argsP.seed)
 torch.cuda.manual_seed_all(argsP.seed)
 torch.backends.cudnn.deterministic = True 

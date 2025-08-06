@@ -275,7 +275,7 @@ def freq2bin(freqs, target_number):
 class QueryFormerDataset(Dataset):
     #max_filters=3,10,or 23
     def __init__(self, nodes, labels, encoding, ds_info, additional_feature = None, max_filters=23, \
-            max_node=26, rel_pos_max=10, hist_file=None, table_sample=None, query_ids=None, argsP=None):
+            max_node=26, rel_pos_max=10, hist_file=None, table_sample=None, query_ids=None, args=None):
 
         self.encoding = encoding
         self.hist_file = hist_file
@@ -283,7 +283,7 @@ class QueryFormerDataset(Dataset):
         self.max_filters = max_filters
         self.max_node = max_node 
         self.rel_pos_max = rel_pos_max
-        self.argsP = argsP
+        self.args = args
         self.length = len(nodes)
         self.additional_feature = additional_feature  # For top model
 
@@ -300,7 +300,7 @@ class QueryFormerDataset(Dataset):
         # print(f"self.nodes = {self.nodes[:1]}")
         self.ds_info = ds_info
         self.costs = labels
-        if not self.argsP.card:
+        if not self.args.card:
             self.cost_labels = torch.FloatTensor(np.array(ds_info.cost_norm.normalize_labels(labels))).reshape(-1,1)
         else:
             self.cost_labels = torch.FloatTensor(np.array(ds_info.card_norm.normalize_labels(labels))).reshape(-1,1)

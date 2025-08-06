@@ -57,14 +57,14 @@ def get_aimeetsai_feature(root, ds_info, node2id, dim):
     return feature_mat.reshape(-1)
 
 
-def get_aimeetsai_ds(ds_info, roots, costs, argsP):
+def get_aimeetsai_ds(ds_info, roots, costs, args):
     node2id = dict(zip(ds_info.nodeParallels,range(len(ds_info.nodeParallels))))
     dim = len(ds_info.nodeParallels)
     features = []
     for root in roots:
         features.append(get_aimeetsai_feature(root, ds_info, node2id, dim))
     features = torch.FloatTensor(features)
-    if not argsP.card:
+    if not args.card:
         costs = torch.FloatTensor(ds_info.cost_norm.normalize_labels(costs)).view(-1,1)
     else:
         costs = torch.FloatTensor(ds_info.card_norm.normalize_labels(costs)).view(-1,1)

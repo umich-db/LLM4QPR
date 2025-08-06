@@ -126,7 +126,7 @@ class BaoRegression:
 
         pairs = list(zip(X, y))
         dataset = DataLoader(pairs,
-                             batch_size=args.bs,
+                             batch_size=args.batch_size,
                             #  batch_size=16,
                              shuffle=True,
                              collate_fn=collate)
@@ -153,12 +153,12 @@ class BaoRegression:
         if CUDA:
             self.__net = self.__net.cuda()
 
-        optimizer = torch.optim.Adam(self.__net.parameters(), lr=args.lr)
+        optimizer = torch.optim.Adam(self.__net.parameters(), lr=args.learning_rate)
         loss_fn = torch.nn.MSELoss()
         
         losses = []
         # for epoch in range(100):
-        for epoch in range(args.epochs):
+        for epoch in range(args.num_epoch):
             loss_accum = 0
             for x, y in dataset:
                 if CUDA:

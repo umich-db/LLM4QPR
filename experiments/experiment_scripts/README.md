@@ -4,7 +4,7 @@
 
 ### 1. `run_baseline_comparison.sh`
 **Purpose**: Compares LLM performance against prior state-of-the-art methods  
-**Model**: Llama-3.1-8B, QueryFormer, Bao, AiMeetsAi  
+**Model**: Llama-3.1-8B, PostgreSQL, QueryFormer, Bao, AiMeetsAi  
 **Workloads**: TPC-H, TPC-DS, JOB, SYN, STATS  
 **Experiments**: 
 - Cost estimation: All workloads (TPC-H, TPC-DS, JOB, SYN, STATS)
@@ -78,16 +78,16 @@ experiments/
 ├── run_experiments.sh                    # Main interactive runner
 ├── experiment_scripts/                   # Experiment configurations
 │   ├── core_scripts/                     # Core execution scripts
-│   │   ├── run_baseline.sh              # Baseline algorithm runner
-│   │   ├── run_llm_card.sh              # LLM cardinality estimation
-│   │   └── run_llm_time.sh              # LLM cost estimation
-│   ├── run_baseline_comparison.sh       # Baseline comparison
-│   ├── run_model_size_comparison.sh     # Model size experiments
-│   ├── run_training_ratio_analysis.sh   # Training ratio experiments
-│   ├── run_finetuning_experiments.sh    # Finetuning experiments
+│   │   ├── run_baseline.sh               # Baseline algorithm runner
+│   │   ├── run_llm_card.sh               # LLM cardinality estimation
+│   │   └── run_llm_time.sh               # LLM cost estimation
+│   ├── run_baseline_comparison.sh        # Baseline comparison
+│   ├── run_model_size_comparison.sh      # Model size experiments
+│   ├── run_training_ratio_analysis.sh    # Training ratio experiments
+│   ├── run_finetuning_experiments.sh     # Finetuning experiments
 │   └── run_cross_workload_experiments.sh # Cross-workload tests
-├── train.py                             # Main training script
-└── utils*.py                            # Utility modules
+├── train.py                              # Main training script
+└── utils*.py                             # Utility modules
 ```
 
 ## Requirements

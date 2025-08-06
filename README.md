@@ -72,8 +72,20 @@ docker build -t llm4qpr .
 
 # 2. Run with GPU passthrough and mount your workspace
 docker run --gpus all -it \
+  --shm-size 16g \
   -v $(pwd):/workspace \
-  llm4qpr /bin/bash
+  --name my-container \
+  llm4qpr \
+  bash
+
+# 3. To restart the container later
+docker start -ai my-container
+
+# 4. To stop the container
+docker stop my-container
+
+# 5. To remove the container
+docker rm my-container
 ```
 
 The Dockerfile (see `Dockerfile`) is based on **`nvidia/cuda:12.1.1‑devel‑ubuntu22.04`** and installs:

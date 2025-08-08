@@ -7,15 +7,18 @@ All results in the paper were produced on Ubuntu 22.04 with CUDA‑enabled NVIDI
 
 ## 📊 Dataset Structure
 
-The experiments use query plans from four datasets: **TPC-H**, **TPC-DS**, **IMDB**, and **STATS**.
+The repository contains query plans from two different sets of datasets:
+
+- **Standard experiments** (baseline comparison, model size comparison, training ratio analysis, finetuning) use four datasets: **TPC-H**, **TPC-DS**, **IMDB**, and **STATS**.
+- **Cross-workload experiments** use a different set of 20 datasets to evaluate model generalization across diverse workloads.
 
 ### Required Data Files
-- **`queryPlans/`** (~1.42 GB) - Pre-generated query plans for all datasets
+- **`queryPlans/`** (~1.42 GB) - Query plans of TPC-H, TPC-DS, IMDB, and STATS
 - **`deepdb_augmented/`** (~1.3 GB) - Query plans for cross-workload experiments
 
 **Download**: 
-- `queryPlans/`: See [queryPlans/README.md](queryPlans/README.md) for download instructions.
-- `deepdb_augmented/`: See [deepdb_augmented/README.md](deepdb_augmented/README.md) for download instructions.
+- **`queryPlans/`**: See [queryPlans/README.md](queryPlans/README.md) for download instructions.
+- **`deepdb_augmented/`**: See [deepdb_augmented/README.md](deepdb_augmented/README.md) for download instructions.
 
 ---
 

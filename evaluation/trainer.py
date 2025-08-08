@@ -537,7 +537,7 @@ def train_and_test_bao(train_roots, train_costs, test_roots, test_costs, args, d
     training_start = time.time()
     bao.fit(train_roots, train_costs, args)
     training_time = time.time() - training_start
-    args.main_logger.info(f"[Final] Training total — {training_time*1000:.2f} ms")
+    args.main_logger.info(f"[Train] Training took {training_time*1000:.2f} ms")
 
     # Testing
     test_start = time.time()

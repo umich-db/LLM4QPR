@@ -145,7 +145,7 @@ crit = nn.MSELoss()
 training_start = timer()
 trained_model = train(model_comb, train_loader, val_loader, ds_info, argsP, crit=crit)
 training_time = timer() - training_start
-argsP.main_logger.info(f"[Train] Training total — {training_time*1000:.2f} ms")
+argsP.main_logger.info(f"[Train] Training took {training_time*1000:.2f} ms")
 
 if argsP.algo == "llm_finetune":
     # Create save directory

@@ -24,7 +24,7 @@ The repository contains query plans from two different sets of datasets:
 
 ## 🔄 Reproducing Query Plans
 
-If you want to reproduce the query plans in `queryPlans/` from scratch, you'll need the following additional data:
+If you want to reproduce the query plans in **`queryPlans/`** from scratch, you'll need the following additional data:
 
 ### Required for Reproduction
 - **`queries/`** - SQL queries used to generate the query plans

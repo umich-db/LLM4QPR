@@ -127,7 +127,7 @@ git clone https://github.com/umich-db/LLM4QPR.git
 cd LLM4QPR
 
 # 2. Download and extract query plans
-# See queryPlans/README.md for download instructions
+# See queryPlans/README.md and deepdb_augmented/README.md for download instructions
 
 # 3. Set up Hugging Face token
 export HF_TOKEN="your_hf_token_here"

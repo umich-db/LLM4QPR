@@ -164,7 +164,7 @@ if [ "$finetune" == "True" ]; then
                                       --hid_units $hid_units \
                                       --model_name $model_name \
                                       --embed_size $embed_size \
-                                      --train_ratio $train_ratio \
+                                      --train_ratio 1.0 \
                                       --llm_mode inference \
                                       --num_epoch 200 \
                                       --llm_pretrained $llm_pretrained \

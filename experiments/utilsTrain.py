@@ -11,9 +11,6 @@ import logging
 sys.path.append('../evaluation/')
 from feature_extractor import DatasetInfo
 from dataset_utils import *
-from algorithms.queryformer import *
-from algorithms.queryformer.dataset_utils import *
-from algorithms.queryformer.model import *
 from algorithms.aimeetsai import *
 
 def parse_args():
@@ -49,14 +46,34 @@ def parse_args():
                         help="If set, override test dat_path (otherwise use --dat_path)")
     parser.add_argument("--train_ratio", type=float, default=-1)
     parser.add_argument("--llm_mode", type=str, default="inference")
-    parser.add_argument("--workloads_train", nargs="+", default=["tpcds", "tpch", "syn", "job", "stats"], help="one or more workloads to train on")
+    parser.add_argument("--workloads_train", nargs="+", default=["tpcds", "tpch", "syn", "job", "job_full", "stats"], help="one or more workloads to train on")
     parser.add_argument("--dat_paths_train", nargs="+", default=["../data/imdb/postgres/"], help="one or more data paths to train on")
 
     # added bucketize_input flag
-    parser.add_argument("--bucketize_input", action="store_true", default=False,
-                        help="If set, bucketize the input data.")
+    parser.add_argument("--bucketize_input", type=str, choices=['separate', 'unified'], default=None,
+                        help="Bucketize strategy: separate (bucketize_plans), unified (bucketize_plans_unified), None (no bucketizing)")
     parser.add_argument("--embeddings_exist", action="store_true", default=False)
     parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')
+    
+    # sliding window arguments
+    parser.add_argument("--use_sliding_window", action="store_true", default=False,
+                        help="Enable sliding window for long texts")
+    parser.add_argument("--window_stride_ratio", type=float, default=0.8,
+                        help="Sliding window stride ratio (default 0.8)")
+    
+    # verbose output arguments
+    parser.add_argument("--verbose_info", action="store_true", default=False,
+                        help="Enable verbose output with query plans, embeddings, labels, and KNN information")
+    parser.add_argument("--knn_k", type=int, default=5,
+                        help="Number of nearest neighbors to find for verbose output (default 5)")
+    
+    # quantization arguments
+    parser.add_argument("--quantification", type=str, choices=['4-bit', '8-bit', 'None'], default='None',
+                        help="Quantization type: 4-bit (default), 8-bit, or None (no quantization)")
+    # aimeetsai feature mask (5 dims): 1 to enable, 0 to disable; order: [cost, card, wei_rows, byte, wei_costs]
+    parser.add_argument("--aime_features", type=str, default="11111",
+                        help="Binary mask of length 5 to enable/disable aimeetsai features")
+    
     return parser.parse_args()
 
 
@@ -94,7 +111,7 @@ def prepare_paths(argsP):
     dat_paths_train_list = []
     for wl_train, dp_train in zip(wl_train_list, dp_train_list):
         is_json = False
-        if wl_train == "syn" or wl_train == "job":
+        if wl_train == "syn" or wl_train == "job" or wl_train == "job_full":
             dat_path_train = f"{dp_train}long_raw_{argsP.db}_imdb.csv"
         elif wl_train == "stats":
             dat_path_train = f"{dp_train}long_raw_{argsP.db}_{wl_train}.csv"
@@ -117,7 +134,7 @@ def prepare_paths(argsP):
 
     # skipped below
     if not argsP.card:
-        if wl_test == "syn" or wl_test == "job":
+        if wl_test == "syn" or wl_test == "job" or wl_test == "job_full":
             dat_path_test = f"{dp_test}long_raw_{argsP.db}_imdb_{wl_test}.csv"
         elif wl_test == "stats":
             dat_path_test = f"{dp_test}long_raw_{argsP.db}_{wl_test}_statsCEB.csv"
@@ -133,6 +150,8 @@ def prepare_paths(argsP):
     else:
         if wl_test == "syn" or wl_test == "job":
             dat_path_test = f"{dp_test}long_raw_{argsP.db}_imdb_{wl_test}_sub.csv"
+        elif wl_test == "job_full":
+            dat_path_test = f"{dp_test}long_raw_{argsP.db}_imdb_{wl_test}_sub_selected.csv"
         elif wl_test == "stats":
             dat_path_test = f"{dp_test}long_raw_{argsP.db}_{wl_test}_statsCEB_sub.csv"
         else:
@@ -153,32 +172,63 @@ def load_data(argsP, dat_path, dat_paths_train_list, dat_path_test, dat_dict, pr
     train_js_nodes = dat_dict['train_js_nodes']
     train_roots = dat_dict['train_roots']
     train_costs = dat_dict['train_costs']
+    train_query_ids = dat_dict.get('train_query_ids', None)
 
     val_js_nodes = dat_dict['val_js_nodes']
     val_roots = dat_dict['val_roots']
     val_costs = dat_dict['val_costs']
+    val_query_ids = dat_dict.get('val_query_ids', None)
 
     test_js_nodes = dat_dict['test_js_nodes']
     test_roots = dat_dict['test_roots']
     test_costs = dat_dict['test_costs']
+    test_query_ids = dat_dict.get('test_query_ids', None)
 
     if argsP.algo == "qf":
+        from algorithms.queryformer.dataset_utils import Encoding, get_hist_file, get_job_table_sample, QueryFormerDataset, collator
         encoding = Encoding(ds_info)
         hist_file = get_hist_file(dat_path + 'histogram_string.csv')
         table_sample = get_job_table_sample(dat_path + 'long_df')
         
-        if argsP.workload_test == "syn" or argsP.workload_test == "job" or argsP.workload_test == "tpch" or argsP.workload_test == "stats":
+        if argsP.workload_test == "syn" or argsP.workload_test == "job" or argsP.workload_test == "job_full" or argsP.workload_test == "tpch" or argsP.workload_test == "stats":
             max_node = 35
         elif argsP.workload_test == "tpcds":
             max_node = 120
         ds = QueryFormerDataset(hist_file = hist_file, table_sample = table_sample, \
-                                nodes=train_roots, encoding=encoding, labels=train_costs, ds_info=ds_info, max_node=max_node, args=argsP)
+                                nodes=train_roots, encoding=encoding, labels=train_costs, ds_info=ds_info, max_node=max_node, query_ids=train_query_ids, args=argsP)
 
         val_ds = QueryFormerDataset(hist_file = hist_file, table_sample = table_sample, \
-                                    nodes=val_roots, encoding=encoding, labels=val_costs, ds_info=ds_info, max_node=max_node, args=argsP)
+                                    nodes=val_roots, encoding=encoding, labels=val_costs, ds_info=ds_info, max_node=max_node, query_ids=val_query_ids, args=argsP)
         
         test_ds = QueryFormerDataset(hist_file = hist_file, table_sample = table_sample, \
-                                    nodes=test_roots, encoding=encoding, labels=test_costs, ds_info=ds_info, max_node=max_node, args=argsP)
+                                    nodes=test_roots, encoding=encoding, labels=test_costs, ds_info=ds_info, max_node=max_node, query_ids=test_query_ids, args=argsP)
+
+        train_loader = DataLoader(dataset=ds,
+                                batch_size = argsP.batch_size,
+                                collate_fn=collator,
+                                shuffle=True,
+                                generator=torch.Generator().manual_seed(argsP.seed if hasattr(argsP, 'seed') else 42))
+        val_loader = DataLoader(dataset=val_ds,
+                                batch_size = argsP.batch_size,
+                                collate_fn=collator,
+                                shuffle=False)
+        test_loader = DataLoader(dataset=test_ds,
+                                batch_size = 1,
+                                # batch_size = argsP.batch_size,
+                                collate_fn=collator,
+                                shuffle=False)
+    elif argsP.algo == "e2e_cost":
+        from algorithms.e2e_cost.e2e_dataset import collator, Constants, E2E_Dataset, Encoding
+        encoding = Encoding(ds_info)
+        ds_info.constants = Constants(ds_info)
+        if argsP.workload_test == "syn" or argsP.workload_test == "job" or argsP.workload_test == "job_full" or argsP.workload_test == "tpch" or argsP.workload_test == "stats":
+            max_node = 35
+        elif argsP.workload_test == "tpcds":
+            max_node = 120
+
+        ds = E2E_Dataset(nodes=train_roots, labels=train_costs, encoding=encoding, max_node=max_node, ds_info=ds_info)
+        val_ds = E2E_Dataset(nodes=val_roots, labels=val_costs, encoding=encoding, max_node=max_node, ds_info=ds_info)
+        test_ds = E2E_Dataset(nodes=test_roots, labels=test_costs, encoding=encoding, max_node=max_node, ds_info=ds_info)
 
         train_loader = DataLoader(dataset=ds,
                                 batch_size = argsP.batch_size,
@@ -250,4 +300,5 @@ def load_data(argsP, dat_path, dat_paths_train_list, dat_path_test, dat_dict, pr
            ds,  val_ds,  test_ds,  \
            train_loader,  val_loader,  test_loader,  \
            (test_lengths if "llm" in argsP.algo else None), \
-           (test_templates if "llm" in argsP.algo else None)
+           (test_templates if "llm" in argsP.algo else None), \
+           None  # test_texts no longer collected since we don't save test_texts when getting verbose information

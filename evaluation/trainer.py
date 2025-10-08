@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from scipy.stats import pearsonr
+from sklearn.neighbors import NearestNeighbors
 import time
 import os
 import csv
@@ -85,22 +86,36 @@ def print_qerror(ps, ls, prints=True,data_sec = "unknown"):
     # compute your stats
     e50   = np.median(q)
     e90   = np.percentile(q, 90)
-    e99   = np.percentile(q, 99)
+    e95   = np.percentile(q, 95)
     emax  = np.max(q)
     emean = np.mean(q)
 
     if prints:
+        # stdout
         print(f"Data section:       {data_sec}")
         print(f"Median:             {e50}")
         print(f"90th percentile:    {e90}")
-        print(f"99th percentile:    {e99}")
+        print(f"95th percentile:    {e95}")
         print(f"Max:                {emax}")
         print(f"Mean:               {emean}")
+
+        # log to main logger if available
+        try:
+            main_logger = logging.getLogger("main_logger")
+            if main_logger and main_logger.handlers:
+                main_logger.info(f"[QError] Data section: {data_sec}")
+                main_logger.info(f"[QError] Median: {e50}")
+                main_logger.info(f"[QError] 90th percentile: {e90}")
+                main_logger.info(f"[QError] 95th percentile: {e95}")
+                main_logger.info(f"[QError] Max: {emax}")
+                main_logger.info(f"[QError] Mean: {emean}")
+        except Exception:
+            pass
 
     return {
         'q_median': e50,
         'q_90':     e90,
-        'q_99':     e99,
+        'q_95':     e95,
         'q_max':    emax,
         'q_mean':   emean,
     }
@@ -220,7 +235,8 @@ def get_abs_error_distribution(ps, ls, save_path=None, drop_nonfinite=False):
 
 def evaluate(model, args, loader, norm, device, prints=True, data_sec="unknown", 
             save_embeddings=False, test_embeddings=None, test_templates=None, 
-            output_dir_qerror=None, workload_test=None):  
+            output_dir_qerror=None, workload_test=None, verbose_info=False,
+            train_embeddings=None, test_texts=None):  
     """
     Run inference on `loader` and compute Q-error and absolute-error metrics.
 
@@ -246,12 +262,12 @@ def evaluate(model, args, loader, norm, device, prints=True, data_sec="unknown",
     embeddings_list = []
 
     with torch.no_grad():
-        for x, y in loader:
+        for batch_idx, (x, y) in enumerate(loader):
             # Move inputs to device if not LLM finetuning
             if args.algo != "llm_finetune":
                 x = x.to(device)
             
-            # Store embeddings if requested
+            # Store embeddings if requested (and not already provided)
             if save_embeddings and test_embeddings is None:
                 embeddings_list.append(x.cpu().numpy())
             
@@ -292,6 +308,47 @@ def evaluate(model, args, loader, norm, device, prints=True, data_sec="unknown",
     abs_errors    = get_abs_errors(preds_true, labels_true)
     q_errors_dist = get_qerror_distribution(preds_true, labels_true)
     abs_errors_dist = get_abs_error_distribution(preds_true, labels_true)
+
+    # Handle verbose output if requested (only for LLM algorithm)
+    if verbose_info and args.algo == "llm" and output_dir_qerror and train_embeddings is not None:
+        print("Generating verbose output...")
+        
+        # Use provided test embeddings
+        test_embeddings_verbose = test_embeddings
+        
+        # Get test texts
+        test_texts_list = test_texts
+        
+        if test_embeddings_verbose is not None:
+            # Find KNN distances
+            k = getattr(args, 'knn_k', 5)
+            knn_distances, knn_indices = find_knn_distances(test_embeddings_verbose, train_embeddings, k)
+            
+            # Generate verbose output path
+            verbose_output_path = get_verbose_output_path(output_dir_qerror)
+            
+            # Determine plan/embedding file paths and indices mapping
+            plan_file_path = getattr(args, 'test_plan_file_path', None)
+            embedding_file_path = getattr(args, 'test_embedding_cache_path', None)
+            index_map = getattr(args, 'test_original_indices', None)
+            
+            # Save verbose output
+            save_verbose_output(
+                verbose_output_path, 
+                test_texts_list, 
+                test_embeddings_verbose, 
+                labels_true, 
+                preds_true, 
+                q_errors_dist,
+                knn_distances, 
+                knn_indices, 
+                is_card=getattr(args, 'card', False),
+                plan_file_path=plan_file_path,
+                embedding_file_path=embedding_file_path,
+                index_map=index_map if index_map is not None else None
+            )
+        else:
+            print("Warning: Missing data for verbose output generation")
 
     print("evaluated")
     return q_errors, abs_errors, q_errors_dist, abs_errors_dist
@@ -409,7 +466,11 @@ def train(model, train_loader, val_loader, \
         labels = np.empty(0)
 
         print(">", end="", flush=True)
+        # measure data loading time: time from end of last iteration to when batch is available
+        data_fetch_start = timer()
         for batch_idx, (x, y) in enumerate(train_loader, start=1):
+            data_load_time = timer() - data_fetch_start
+            args.main_logger.info(f"[Train] Epoch {epoch} Batch {batch_idx} DataLoad — {data_load_time*1000:.2f} ms")
             print(".", end="", flush=True)
             batch_start = timer()
             if args.algo=='llm_finetune':
@@ -437,6 +498,8 @@ def train(model, train_loader, val_loader, \
                 torch.cuda.synchronize()
             batch_time = timer() - batch_start
             args.main_logger.info(f"[Train] Epoch {epoch} Batch {batch_idx} — {batch_time*1000:.2f} ms")
+            # mark start of next data fetch timing
+            data_fetch_start = timer()
         epoch_time = timer() - epoch_start
         args.main_logger.info(f"[Train] Epoch {epoch} total — {epoch_time*1000:.2f} ms")
         print("")
@@ -597,3 +660,116 @@ def train_and_test_postgres(train_roots, train_costs, test_roots, test_costs, ar
         'abserr_dist': abserr_dist,
         'preds': preds,
     }
+
+
+def find_knn_distances(test_embeddings, train_embeddings, k=5):
+    """
+    Find K nearest neighbors in training set for each test embedding.
+    
+    Args:
+        test_embeddings: numpy array of test embeddings [N_test, D]
+        train_embeddings: numpy array of training embeddings [N_train, D]
+        k: number of nearest neighbors to find
+        
+    Returns:
+        distances: numpy array of distances to k nearest neighbors [N_test, k]
+        indices: numpy array of indices of k nearest neighbors [N_test, k]
+    """
+    # Use sklearn's NearestNeighbors for efficient computation
+    nn = NearestNeighbors(n_neighbors=k, metric='euclidean')
+    nn.fit(train_embeddings)
+    
+    distances, indices = nn.kneighbors(test_embeddings)
+    return distances, indices
+
+
+def save_verbose_output(output_path, test_texts, test_embeddings, true_labels, pred_labels, 
+                       q_errors, knn_distances, knn_indices, is_card=False, plan_file_path=None, embedding_file_path=None, index_map=None):
+    """
+    Save verbose output to file with lightweight references for test set.
+    
+    Args:
+        output_path: path to save the verbose output file
+        test_texts: list of test query plan texts (not saved; used for length)
+        test_embeddings: numpy array of test embeddings (not saved; used for KNN)
+        true_labels: numpy array of true labels (cost or cardinality)
+        pred_labels: numpy array of predicted labels
+        q_errors: numpy array of Q-errors
+        knn_distances: numpy array of distances to k nearest neighbors
+        knn_indices: numpy array of indices of k nearest neighbors
+        is_card: whether this is cardinality estimation (True) or cost estimation (False)
+        plan_file_path: optional path to the source data file containing plans
+        embedding_file_path: optional path to the embedding cache file
+        index_map: optional list/array mapping test row -> original plan/embedding index
+    """
+    # Create output directory
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    
+    # Prepare data for saving
+    k = knn_distances.shape[1]
+    
+    with open(output_path, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        
+        # Write data header with single idx and file references as columns
+        header = ['idx', 'true_label', 'est_label', 'q_error', 'avg_knn_distance',
+                  'plan_file', 'embedding_file']
+        writer.writerow(header)
+        
+        # Write data rows
+        for i in range(len(true_labels)):
+            # Calculate average KNN distance
+            avg_knn_distance = np.mean(knn_distances[i, :])
+            
+            # Map to original index if provided
+            orig_idx = int(index_map[i]) if index_map is not None else i
+            
+            # Only store file paths once (first row); leave empty afterwards
+            plan_path_col = plan_file_path if i == 0 else ''
+            embed_path_col = embedding_file_path if i == 0 else ''
+            
+            row = [
+                orig_idx,  # single idx referencing both plan and embedding
+                true_labels[i],  # true label
+                pred_labels[i],  # estimated label
+                q_errors[i],  # q_error
+                avg_knn_distance,  # average KNN distance
+                plan_path_col,
+                embed_path_col,
+            ]
+            
+            writer.writerow(row)
+    
+    print(f"Verbose output saved to: {output_path}")
+
+
+def get_verbose_output_path(output_dir_qerror):
+    """
+    Transform output_dir_qerror path to verbose output path.
+    
+    Args:
+        output_dir_qerror: original output path (e.g., "results/results_Train_tpcds_Test_tpcds_ours/qerror_cdf.csv")
+        
+    Returns:
+        verbose_output_path: transformed path (e.g., "verbose/results_Train_tpcds_Test_tpcds_ours/qerror_verbose.csv")
+    """
+    # Replace "results" with "verbose" and remove "cdf"
+    verbose_path = output_dir_qerror.replace("results", "verbose").replace("_cdf", "")
+    
+    # If no "results" found, try to construct from the directory structure
+    if verbose_path == output_dir_qerror:
+        dir_path = os.path.dirname(output_dir_qerror)
+        filename = os.path.basename(output_dir_qerror)
+        
+        # Replace the directory name if it contains "results"
+        if "results" in dir_path:
+            verbose_dir = dir_path.replace("results", "verbose")
+        else:
+            # Create verbose directory at the same level
+            verbose_dir = os.path.join(os.path.dirname(dir_path), "verbose", os.path.basename(dir_path))
+        
+        # Transform filename
+        verbose_filename = filename.replace("_cdf", "")
+        verbose_path = os.path.join(verbose_dir, verbose_filename)
+    
+    return verbose_path

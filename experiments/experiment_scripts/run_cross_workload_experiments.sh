@@ -7,9 +7,10 @@ echo "Running Cross-Workload Experiments..."
 model_name=meta-llama/Llama-3.1-8B
 model_name1="${model_name//\//-}"
 ALL_WORKLOADS="genome financial movielens geneea seznam tpc_h walmart airline carcinogenesis baseball imdb accidents ssb basketball employee fhnk consumer tournament credit hepatitis"
-WORKLOAD_TEST_OPTIONS="tpc_h synthetic job-light"
+WORKLOAD_TEST_OPTIONS="tpc_h"
+# WORKLOAD_TEST_OPTIONS="tpc_h synthetic job-light"
 
-for SEED in 42 43 44; do
+for SEED in 42; do
   for WORKLOAD_TEST in $WORKLOAD_TEST_OPTIONS; do
     # build a string of "the WORKLOADS_TRAIN"
     WORKLOADS_TRAIN=""

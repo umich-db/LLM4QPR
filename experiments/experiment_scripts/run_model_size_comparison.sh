@@ -6,8 +6,10 @@ echo "Running Model Size Comparison Experiments..."
 
 for SEED in 42 43 44; do
   for WORKLOAD in "tpch" "tpcds" "stats"; do
-      for model_name in "meta-llama/Llama-3.2-1B" "meta-llama/Llama-3.2-3B" "meta-llama/Llama-3.1-8B" "meta-llama/Llama-3.1-70B"; do
+      for model_name in "meta-llama/Llama-3.2-1B" "meta-llama/Llama-3.2-3B"; do
+      # for model_name in "meta-llama/Llama-3.2-1B" "meta-llama/Llama-3.2-3B" "meta-llama/Llama-3.1-70B"; do
           model_name1="${model_name//\//-}"
+          export BUCKETIZE_INPUT="separate"
           if [[ $WORKLOAD == "stats" ]]; then
             bash experiment_scripts/core_scripts/run_llm_card.sh $WORKLOAD $WORKLOAD 1.0 False $model_name $model_name1 $SEED
           fi

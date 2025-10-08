@@ -11,7 +11,7 @@ SEED=$7
 # 2) build the parallel array of dat_paths:
 DAT_PATHS=()
 for wl in "${TRAIN_WLS[@]}"; do
-  if [[ "$wl" == "syn" || "$wl" == "job" ]]; then
+  if [[ "$wl" == "syn" || "$wl" == "job" || "$wl" == "job_full" ]]; then
     DAT_PATHS+=( "../queryPlans/imdb/postgres/" )
   elif [[ "$wl" == "genome" || "$wl" == "financial" || "$wl" == "movielens" || \
           "$wl" == "geneea" || "$wl" == "seznam" || "$wl" == "tpc_h" || \
@@ -27,7 +27,7 @@ for wl in "${TRAIN_WLS[@]}"; do
 done
 
 # one test path
-if [[ "$WORKLOAD_TEST" == "syn" || "$WORKLOAD_TEST" == "job" ]]; then
+if [[ "$WORKLOAD_TEST" == "syn" || "$WORKLOAD_TEST" == "job" || "$WORKLOAD_TEST" == "job_full" ]]; then
   DAT_PATH_TEST="../queryPlans/imdb/postgres/"
 elif [[ "$WORKLOAD_TEST" == "synthetic" || "$WORKLOAD_TEST" == "job-light" ]]; then
   DAT_PATH_TEST="../deepdb_augmented/imdb/"
@@ -59,10 +59,40 @@ if [ "$finetune" == "False" ]; then
   batch_size=64     
 
   echo "inference: no pre-train"
+  
+  # Get bucketize setting from environment variable
+  BUCKETIZE_ARG=""
+  BUCKETIZE_SUFFIX=""
+  if [[ "$BUCKETIZE_INPUT" != "None" && "$BUCKETIZE_INPUT" != "" ]]; then
+    BUCKETIZE_ARG="--bucketize_input $BUCKETIZE_INPUT"
+    BUCKETIZE_SUFFIX="_bucketize-${BUCKETIZE_INPUT}"
+  fi
+  
+  # Get quantification setting from environment variable
+  QUANTIFICATION_ARG=""
+  QUANTIFICATION_SUFFIX=""
+  if [[ "$QUANTIFICATION" != "None" && "$QUANTIFICATION" != "" ]]; then
+    QUANTIFICATION_ARG="--quantification $QUANTIFICATION"
+    QUANTIFICATION_SUFFIX="_quant-${QUANTIFICATION}"
+  fi
+  
+  # Get embeddings_exist setting from environment variable
+  EMBEDDINGS_ARG=""
+  if [[ "$EMBEDDINGS_EXIST" == "True" || "$EMBEDDINGS_EXIST" == "true" ]]; then
+    EMBEDDINGS_ARG="--embeddings_exist"
+  fi
+  
+  # Get verbose_info setting from environment variable
+  VERBOSE_ARG=""
+  if [[ "$VERBOSE_INFO" == "true" || "$VERBOSE_INFO" == "True" ]]; then
+    VERBOSE_ARG="--verbose_info"
+  fi
+  
+  
   python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                      --output_dir_qerror results/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_pretrained-None_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}_seed${SEED}.csv \
-                                      --output_dir_abs results/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_pretrained-None_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}_seed${SEED}_abs.txt \
-                                      --log_file logs/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_pretrained-None_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}_seed${SEED}.log \
+                                      --output_dir_qerror results/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_pretrained-None_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}_seed${SEED}.csv \
+                                      --output_dir_abs results/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_pretrained-None_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}_seed${SEED}_abs.txt \
+                                      --log_file logs/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_pretrained-None_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}_seed${SEED}.log \
                                       --db postgres \
                                       --workloads_train "${TRAIN_WLS[@]}" \
                                       --workload_test ${WORKLOAD_TEST} \
@@ -77,7 +107,10 @@ if [ "$finetune" == "False" ]; then
                                       --num_epoch 200 \
                                       --card \
                                       --seed $SEED \
-                                      # --embeddings_exist
+                                      $BUCKETIZE_ARG \
+                                      $QUANTIFICATION_ARG \
+                                      $EMBEDDINGS_ARG \
+                                      $VERBOSE_ARG
 fi
 
 if [ "$finetune" == "True" ]; then
@@ -87,41 +120,61 @@ if [ "$finetune" == "True" ]; then
   lr=0.0001
   batch_size=1     
 
-  llm_mode=last
-  echo "finetune: last"
-  python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                      --log_file logs/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_last_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}.log \
-                                      --db postgres \
-                                      --workloads_train "${TRAIN_WLS[@]}" \
-                                      --workload_test ${WORKLOAD_TEST} \
-                                      --algo ${algo} \
-                                      --learning_rate $lr \
-                                      --batch_size $batch_size \
-                                      --hid_units $hid_units \
-                                      --model_name $model_name \
-                                      --train_ratio $train_ratio \
-                                      --llm_mode $llm_mode \
-                                      --num_epoch 1 \
-                                      --card \
-                                      --seed $SEED
+  # llm_mode=last
+  # echo "finetune: last"
+  
+  # # Get bucketize setting from environment variable for finetune
+  # BUCKETIZE_ARG=""
+  # BUCKETIZE_SUFFIX=""
+  # if [[ "$BUCKETIZE_INPUT" != "None" && "$BUCKETIZE_INPUT" != "" ]]; then
+  #   BUCKETIZE_ARG="--bucketize_input $BUCKETIZE_INPUT"
+  #   BUCKETIZE_SUFFIX="_bucketize-${BUCKETIZE_INPUT}"
+  # fi
+  
+  # python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
+  #                                     --log_file logs/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_last_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}.log \
+  #                                     --db postgres \
+  #                                     --workloads_train "${TRAIN_WLS[@]}" \
+  #                                     --workload_test ${WORKLOAD_TEST} \
+  #                                     --algo ${algo} \
+  #                                     --learning_rate $lr \
+  #                                     --batch_size $batch_size \
+  #                                     --hid_units $hid_units \
+  #                                     --model_name $model_name \
+  #                                     --train_ratio $train_ratio \
+  #                                     --llm_mode $llm_mode \
+  #                                     --num_epoch 1 \
+  #                                     --card \
+  #                                     --seed $SEED \
+  #                                     $BUCKETIZE_ARG
 
-  llm_mode=lora
-  echo "finetune: lora"
-  python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                      --log_file logs/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_lora_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}.log \
-                                      --db postgres \
-                                      --workloads_train "${TRAIN_WLS[@]}" \
-                                      --workload_test ${WORKLOAD_TEST} \
-                                      --algo ${algo} \
-                                      --learning_rate $lr \
-                                      --batch_size $batch_size \
-                                      --hid_units $hid_units \
-                                      --model_name $model_name \
-                                      --train_ratio $train_ratio \
-                                      --llm_mode $llm_mode \
-                                      --num_epoch 1 \
-                                      --card \
-                                      --seed $SEED
+  # llm_mode=lora
+  # echo "finetune: lora"
+  
+  # # Get bucketize setting from environment variable for finetune
+  # BUCKETIZE_ARG=""
+  # BUCKETIZE_SUFFIX=""
+  # if [[ "$BUCKETIZE_INPUT" != "None" && "$BUCKETIZE_INPUT" != "" ]]; then
+  #   BUCKETIZE_ARG="--bucketize_input $BUCKETIZE_INPUT"
+  #   BUCKETIZE_SUFFIX="_bucketize-${BUCKETIZE_INPUT}"
+  # fi
+  
+  # python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
+  #                                     --log_file logs/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_lora_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}.log \
+  #                                     --db postgres \
+  #                                     --workloads_train "${TRAIN_WLS[@]}" \
+  #                                     --workload_test ${WORKLOAD_TEST} \
+  #                                     --algo ${algo} \
+  #                                     --learning_rate $lr \
+  #                                     --batch_size $batch_size \
+  #                                     --hid_units $hid_units \
+  #                                     --model_name $model_name \
+  #                                     --train_ratio $train_ratio \
+  #                                     --llm_mode $llm_mode \
+  #                                     --num_epoch 1 \
+  #                                     --card \
+  #                                     --seed $SEED \
+  #                                     $BUCKETIZE_ARG
 
   #########################inference: pre-trained#########################
   algo=llm
@@ -132,10 +185,40 @@ if [ "$finetune" == "True" ]; then
 
   llm_pretrained=last
   echo "inference: pre-trained last"
+  
+  # Get bucketize setting from environment variable for pre-trained inference
+  BUCKETIZE_ARG=""
+  BUCKETIZE_SUFFIX=""
+  if [[ "$BUCKETIZE_INPUT" != "None" && "$BUCKETIZE_INPUT" != "" ]]; then
+    BUCKETIZE_ARG="--bucketize_input $BUCKETIZE_INPUT"
+    BUCKETIZE_SUFFIX="_bucketize-${BUCKETIZE_INPUT}"
+  fi
+  
+  # Get quantification setting from environment variable for pre-trained inference
+  QUANTIFICATION_ARG=""
+  QUANTIFICATION_SUFFIX=""
+  if [[ "$QUANTIFICATION" != "None" && "$QUANTIFICATION" != "" ]]; then
+    QUANTIFICATION_ARG="--quantification $QUANTIFICATION"
+    QUANTIFICATION_SUFFIX="_quant-${QUANTIFICATION}"
+  fi
+  
+  # Get embeddings_exist setting from environment variable
+  EMBEDDINGS_ARG=""
+  if [[ "$EMBEDDINGS_EXIST" == "True" || "$EMBEDDINGS_EXIST" == "true" ]]; then
+    EMBEDDINGS_ARG="--embeddings_exist"
+  fi
+  
+  # Get verbose_info setting from environment variable
+  VERBOSE_ARG=""
+  if [[ "$VERBOSE_INFO" == "true" || "$VERBOSE_INFO" == "True" ]]; then
+    VERBOSE_ARG="--verbose_info"
+  fi
+  
+  
   python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                      --output_dir_qerror results/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}_seed${SEED}.csv \
-                                      --output_dir_abs results/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}_seed${SEED}_abs.txt \
-                                      --log_file logs/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}_seed${SEED}.log \
+                                      --output_dir_qerror results/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}_seed${SEED}.csv \
+                                      --output_dir_abs results/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}_seed${SEED}_abs.txt \
+                                      --log_file logs/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}_seed${SEED}.log \
                                       --db postgres \
                                       --workloads_train "${TRAIN_WLS[@]}" \
                                       --workload_test ${WORKLOAD_TEST} \
@@ -151,14 +234,48 @@ if [ "$finetune" == "True" ]; then
                                       --llm_pretrained $llm_pretrained \
                                       --llm_pretrained_task $llm_pretrained_task \
                                       --card \
-                                      --seed $SEED
+                                      --seed $SEED \
+                                      $BUCKETIZE_ARG \
+                                      $QUANTIFICATION_ARG \
+                                      $EMBEDDINGS_ARG \
+                                      $VERBOSE_ARG
 
   llm_pretrained=lora                              
   echo "inference: pre-trained lora"
+  
+  # Get bucketize setting from environment variable for pre-trained inference
+  BUCKETIZE_ARG=""
+  BUCKETIZE_SUFFIX=""
+  if [[ "$BUCKETIZE_INPUT" != "None" && "$BUCKETIZE_INPUT" != "" ]]; then
+    BUCKETIZE_ARG="--bucketize_input $BUCKETIZE_INPUT"
+    BUCKETIZE_SUFFIX="_bucketize-${BUCKETIZE_INPUT}"
+  fi
+  
+  # Get quantification setting from environment variable for pre-trained inference
+  QUANTIFICATION_ARG=""
+  QUANTIFICATION_SUFFIX=""
+  if [[ "$QUANTIFICATION" != "None" && "$QUANTIFICATION" != "" ]]; then
+    QUANTIFICATION_ARG="--quantification $QUANTIFICATION"
+    QUANTIFICATION_SUFFIX="_quant-${QUANTIFICATION}"
+  fi
+  
+  # Get embeddings_exist setting from environment variable
+  EMBEDDINGS_ARG=""
+  if [[ "$EMBEDDINGS_EXIST" == "True" || "$EMBEDDINGS_EXIST" == "true" ]]; then
+    EMBEDDINGS_ARG="--embeddings_exist"
+  fi
+  
+  # Get verbose_info setting from environment variable
+  VERBOSE_ARG=""
+  if [[ "$VERBOSE_INFO" == "true" || "$VERBOSE_INFO" == "True" ]]; then
+    VERBOSE_ARG="--verbose_info"
+  fi
+  
+  
   python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                      --output_dir_qerror results/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}_seed${SEED}.csv \
-                                      --output_dir_abs results/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}_seed${SEED}_abs.txt \
-                                      --log_file logs/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}_seed${SEED}.log \
+                                      --output_dir_qerror results/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}_seed${SEED}.csv \
+                                      --output_dir_abs results/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}_seed${SEED}_abs.txt \
+                                      --log_file logs/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/card_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}_seed${SEED}.log \
                                       --db postgres \
                                       --workloads_train "${TRAIN_WLS[@]}" \
                                       --workload_test ${WORKLOAD_TEST} \
@@ -174,5 +291,9 @@ if [ "$finetune" == "True" ]; then
                                       --llm_pretrained $llm_pretrained \
                                       --llm_pretrained_task $llm_pretrained_task \
                                       --card \
-                                      --seed $SEED
+                                      --seed $SEED \
+                                      $BUCKETIZE_ARG \
+                                      $QUANTIFICATION_ARG \
+                                      $EMBEDDINGS_ARG \
+                                      $VERBOSE_ARG
 fi

@@ -36,12 +36,13 @@ try:
     # Works if HF_TOKEN is set or you've previously run `hf auth login`
     HfApi().whoami()
 except Exception:
-    if token:
-        login(token=token)  # will also cache it locally
-    else:
-        raise RuntimeError(
-            "No Hugging Face token found. Set HF_TOKEN environment variable or run `hf auth login`."
-        )
+    if not argsP.embeddings_exist:
+      if token:
+          login(token=token)  # will also cache it locally
+      else:
+          raise RuntimeError(
+              "No Hugging Face token found. Set HF_TOKEN environment variable or run `hf auth login`."
+          )
 
 
 db = argsP.db
@@ -58,7 +59,13 @@ if "llm" in argsP.algo:
   if not argsP.embeddings_exist:
     from utilsLLM import QueryPlanDataset, QueryPlanPredictor, get_llm_ds_from_csv
     
-    LLM = QueryPlanPredictor(argsP.model_name,argsP.llm_mode)
+    LLM = QueryPlanPredictor(
+        argsP.model_name,
+        argsP.llm_mode,
+        use_sliding_window=True,
+        window_stride_ratio=0.8,
+        quantification=argsP.quantification
+    )
     device = LLM.model.device if hasattr(LLM.model, 'device') else torch.device("cuda" if torch.cuda.is_available() else "cpu")
     LLM.to(device)
     if argsP.algo == "llm" and argsP.llm_pretrained:
@@ -94,14 +101,14 @@ if "llm" in argsP.algo:
             test_roots,  test_js_nodes,  test_costs,  \
             ds,  val_ds,  test_ds,  \
             train_loader,  val_loader,  test_loader,  \
-            test_lengths, test_templates = utilsTrain.load_data(argsP, dat_path, dat_paths_train_list, dat_path_test, dat_dict, LLM, llm_collate)
+            test_lengths, test_templates, _ = utilsTrain.load_data(argsP, dat_path, dat_paths_train_list, dat_path_test, dat_dict, LLM, llm_collate)
 else:
   ds_info, train_roots, train_js_nodes, train_costs, \
             val_roots,   val_js_nodes,   val_costs,   \
             test_roots,  test_js_nodes,  test_costs,  \
             ds,  val_ds,  test_ds,  \
             train_loader,  val_loader,  test_loader,  \
-            test_lengths, test_templates = utilsTrain.load_data(argsP, dat_path, dat_paths_train_list, dat_path_test, dat_dict)
+            test_lengths, test_templates, _ = utilsTrain.load_data(argsP, dat_path, dat_paths_train_list, dat_path_test, dat_dict)
 
 from trainer import *
 
@@ -128,6 +135,12 @@ elif argsP.algo == "qf":
   input_dim = 393
   MLP = Prediction(input_dim, argsP.hid_units)
   model_comb = nn.Sequential(model, MLP)
+elif argsP.algo == "e2e_cost":
+    from algorithms.e2e_cost.e2e_model import *
+    input_dim = 32
+    model = E2E_model(input_dim, 64, 64, ds_info)
+    MLP = Prediction(input_dim, argsP.hid_units)
+    model_comb = nn.Sequential(model, MLP)
 elif argsP.algo == "llm":
   input_dim = argsP.embed_size
   MLP = Prediction(input_dim, argsP.hid_units)
@@ -167,20 +180,36 @@ if argsP.algo == "llm_finetune":
 else:
   # Log testing time for all other algorithms
   test_start = timer()
+  
+  # Prepare training embeddings for verbose output (only for LLM algorithm)
+  train_embeddings_verbose = None
+  
+  if argsP.verbose_info and argsP.algo == "llm":
+    print("Preparing data for verbose output...")
+    # For LLM algorithm, get training embeddings for KNN calculation
+    train_embeddings_verbose = ds.tensors[0].cpu().numpy()
+  
   if not argsP.card:
     q_errors, abs_errors, q_errors_dist, abs_errors_dist = evaluate(trained_model, argsP, test_loader, ds_info.cost_norm, device, data_sec="test",
-                                                                    save_embeddings=(argsP.workload_test in ["tpch", "tpcds"] and test_templates is not None),
+                                                                    save_embeddings=False,
+                                                                    # save_embeddings=(argsP.workload_test in ["tpch", "tpcds"] and test_templates is not None),
                                                                     test_embeddings=(test_ds.tensors[0].cpu().numpy() if argsP.algo == "llm" and hasattr(test_ds, 'tensors') else None),
                                                                     test_templates=test_templates,
                                                                     output_dir_qerror=argsP.output_dir_qerror,
-                                                                    workload_test=argsP.workload_test)
+                                                                    workload_test=argsP.workload_test,
+                                                                    verbose_info=argsP.verbose_info,
+                                                                    train_embeddings=train_embeddings_verbose,
+                                                                    test_texts=None)
   else:
     q_errors, abs_errors, q_errors_dist, abs_errors_dist = evaluate(trained_model, argsP, test_loader, ds_info.card_norm, device, data_sec="test",
-                                                                    save_embeddings=(argsP.workload_test in ["tpch", "tpcds"] and test_templates is not None),
+                                                                    save_embeddings=False,
                                                                     test_embeddings=(test_ds.tensors[0].cpu().numpy() if argsP.algo == "llm" and hasattr(test_ds, 'tensors') else None),
                                                                     test_templates=test_templates,
                                                                     output_dir_qerror=argsP.output_dir_qerror,
-                                                                    workload_test=argsP.workload_test)
+                                                                    workload_test=argsP.workload_test,
+                                                                    verbose_info=argsP.verbose_info,
+                                                                    train_embeddings=train_embeddings_verbose,
+                                                                    test_texts=None)
   test_time = timer() - test_start
   argsP.main_logger.info(f"[Test] Testing took {test_time*1000:.2f} ms")
 

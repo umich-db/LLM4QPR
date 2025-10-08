@@ -5,11 +5,20 @@ from torch.utils.data import TensorDataset
 
 
 
-def get_aimeetsai_feature(root, ds_info, node2id, dim):
+def get_aimeetsai_feature(root, ds_info, node2id, dim, feature_mask=None):
 #     final_feature = {}
 #     dim = len(ds_info.nodeParallels)
     feature_mat = np.zeros((dim,5))
     
+    # Prepare mask
+    if feature_mask is None:
+        mask_vec = np.ones(5)
+    else:
+        # Ensure mask is length 5 of 0/1 floats
+        mask_vec = np.array(feature_mask, dtype=float)
+        if mask_vec.shape[0] != 5:
+            mask_vec = np.ones(5)
+
     def dfs(node):
         node_type = node.nodeParallel
         node_feat = np.zeros(5) ## numpy array so that can do +=
@@ -44,7 +53,8 @@ def get_aimeetsai_feature(root, ds_info, node2id, dim):
         wei_costs += height * cost
         node_feat[4] = wei_costs
         
-        feature_mat[node2id[node_type]] += node_feat
+        # apply mask before aggregating
+        feature_mat[node2id[node_type]] += (node_feat * mask_vec)
 #         if node_type not in final_feature:
 #             final_feature[node_type] = node_feat
 #         else:
@@ -61,8 +71,14 @@ def get_aimeetsai_ds(ds_info, roots, costs, args):
     node2id = dict(zip(ds_info.nodeParallels,range(len(ds_info.nodeParallels))))
     dim = len(ds_info.nodeParallels)
     features = []
+    # parse mask from args.aime_features (string like "10110")
+    mask = None
+    if hasattr(args, 'aime_features') and isinstance(args.aime_features, str):
+        s = args.aime_features.strip()
+        if len(s) == 5 and set(s).issubset({'0', '1'}):
+            mask = [int(ch) for ch in s]
     for root in roots:
-        features.append(get_aimeetsai_feature(root, ds_info, node2id, dim))
+        features.append(get_aimeetsai_feature(root, ds_info, node2id, dim, feature_mask=mask))
     features = torch.FloatTensor(features)
     if not args.card:
         costs = torch.FloatTensor(ds_info.cost_norm.normalize_labels(costs)).view(-1,1)

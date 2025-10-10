@@ -226,7 +226,7 @@ def encode_plan(plan, ds_info, encoding):
 
 
 class E2E_Dataset(Dataset):
-    def __init__(self, nodes, labels, encoding, ds_info, max_filters=10, max_node=20, rel_pos_max=10):
+    def __init__(self, nodes, labels, encoding, ds_info, args=None, max_filters=10, max_node=20, rel_pos_max=10):
 
         self.encoding = encoding
 
@@ -239,7 +239,11 @@ class E2E_Dataset(Dataset):
         self.ds_info = ds_info
         
         self.costs = labels
-        self.cost_labels = ds_info.cost_norm.normalize_labels(labels)
+        # Support both cardinality and cost estimation
+        if args is not None and hasattr(args, 'card') and args.card:
+            self.cost_labels = ds_info.card_norm.normalize_labels(labels)
+        else:
+            self.cost_labels = ds_info.cost_norm.normalize_labels(labels)
 
         ## operators, extra_infos, conditions, condition_masks, mapping
         self.features = [encode_plan(node, ds_info, encoding) for node in nodes]

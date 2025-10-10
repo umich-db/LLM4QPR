@@ -226,9 +226,9 @@ def load_data(argsP, dat_path, dat_paths_train_list, dat_path_test, dat_dict, pr
         elif argsP.workload_test == "tpcds":
             max_node = 120
 
-        ds = E2E_Dataset(nodes=train_roots, labels=train_costs, encoding=encoding, max_node=max_node, ds_info=ds_info)
-        val_ds = E2E_Dataset(nodes=val_roots, labels=val_costs, encoding=encoding, max_node=max_node, ds_info=ds_info)
-        test_ds = E2E_Dataset(nodes=test_roots, labels=test_costs, encoding=encoding, max_node=max_node, ds_info=ds_info)
+        ds = E2E_Dataset(nodes=train_roots, labels=train_costs, encoding=encoding, max_node=max_node, ds_info=ds_info, args=argsP)
+        val_ds = E2E_Dataset(nodes=val_roots, labels=val_costs, encoding=encoding, max_node=max_node, ds_info=ds_info, args=argsP)
+        test_ds = E2E_Dataset(nodes=test_roots, labels=test_costs, encoding=encoding, max_node=max_node, ds_info=ds_info, args=argsP)
 
         train_loader = DataLoader(dataset=ds,
                                 batch_size = argsP.batch_size,
@@ -291,7 +291,8 @@ def load_data(argsP, dat_path, dat_paths_train_list, dat_path_test, dat_dict, pr
            None,  None,  None,  \
            None,  None,  None,  \
            (test_lengths if "llm" in argsP.algo else None), \
-           (test_templates if "llm" in argsP.algo else None)    
+           (test_templates if "llm" in argsP.algo else None), \
+           None  # test_texts (matching the main return statement)    
     
 
     return ds_info, train_roots, train_js_nodes, train_costs, \

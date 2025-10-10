@@ -53,7 +53,8 @@ llm_pretrained_task=card
 if [ "$finetune" == "False" ]; then
   #########################inference: no pre-train#########################
   algo=llm
-  embed_size=1000
+  # Get embed_size from environment variable or use default
+  embed_size=${EMBED_SIZE:-1000}
   hid_units=2048
   lr=0.0001
   batch_size=64     
@@ -178,7 +179,8 @@ if [ "$finetune" == "True" ]; then
 
   #########################inference: pre-trained#########################
   algo=llm
-  embed_size=1000
+  # Get embed_size from environment variable or use default
+  embed_size=${EMBED_SIZE:-1000}
   hid_units=2048
   lr=0.0001
   batch_size=64     

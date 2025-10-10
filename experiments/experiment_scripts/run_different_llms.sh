@@ -147,6 +147,19 @@ else
     seeds=($seeds_input)
 fi
 
+# Get embed_size
+echo ""
+echo "=== Embedding Size ==="
+echo "Enter embedding size (default: 1000, or 9999999 for full):"
+read -r embed_size_input
+
+if [[ -z "$embed_size_input" ]]; then
+    echo "No embed_size provided, using default: 1000"
+    EMBED_SIZE=1000
+else
+    EMBED_SIZE=$embed_size_input
+fi
+
 echo ""
 echo "=== Configuration Summary ==="
 echo "Models: ${selected_models[*]}"
@@ -154,29 +167,29 @@ echo "Workloads: ${selected_workloads[*]}"
 echo "Bucketize: $BUCKETIZE"
 echo "Quantification: $QUANTIFICATION"
 echo "Seeds: ${seeds[*]}"
+echo "Embed Size: $EMBED_SIZE"
 echo ""
 echo "Starting experiments..."
 
-# Run experiments for each selected model
-for model_name in "${selected_models[@]}"; do
-    echo ""
-    echo "=== Running experiments for model: $model_name ==="
-    
-    # Create model name for file naming (replace / with -)
-    model_name1="${model_name//\//-}"
-    
-    for SEED in "${seeds[@]}"; do
-        for WORKLOAD in "${selected_workloads[@]}"; do
+# Run experiments with SEED and WORKLOAD as outer loops, model_name as inner loop
+for SEED in "${seeds[@]}"; do
+    for WORKLOAD in "${selected_workloads[@]}"; do
+        echo ""
+        echo "=== Running experiments for Workload: $WORKLOAD, Seed: $SEED ==="
+        
+        for model_name in "${selected_models[@]}"; do
             echo "Running: Model=$model_name, Workload=$WORKLOAD, Seed=$SEED"
             
-            # Set bucketize environment variable
+            # Create model name for file naming (replace / with -)
+            model_name1="${model_name//\//-}"
+            
+            # Set environment variables
             export BUCKETIZE_INPUT="$BUCKETIZE"
-            
-            # Set quantification environment variable
             export QUANTIFICATION="$QUANTIFICATION"
+            export EMBED_SIZE="$EMBED_SIZE"
             
-            # Run time prediction experiment
-            bash experiment_scripts/core_scripts/run_llm_time.sh $WORKLOAD $WORKLOAD 1.0 False $model_name $model_name1 $SEED
+            # # Run time prediction experiment
+            # bash experiment_scripts/core_scripts/run_llm_time.sh $WORKLOAD $WORKLOAD 1.0 False $model_name $model_name1 $SEED
             
             # Run cardinality prediction experiment for specific workloads
             if [[ "$WORKLOAD" == "job" || "$WORKLOAD" == "job_full" || "$WORKLOAD" == "syn" || "$WORKLOAD" == "stats" ]]; then

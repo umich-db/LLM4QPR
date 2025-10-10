@@ -74,7 +74,7 @@ echo "Selected algorithms: ${selected_algorithms[*]}"
 echo ""
 echo "=== Task Selection ==="
 echo "1. card"
-echo "2. cost"
+echo "2. time"
 echo "Enter choice (1 or 2):"
 read -r task_choice
 

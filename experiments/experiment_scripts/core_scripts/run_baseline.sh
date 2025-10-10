@@ -65,8 +65,8 @@ esac
 echo "${ALGO} ${TASK}"
 
 # Check workload constraints for card task
-if [[ "$TASK" == "card" ]] && [[ "$WORKLOAD_TEST" != "job" && "$WORKLOAD_TEST" != "syn" && "$WORKLOAD_TEST" != "stats" ]]; then
-    echo "Cardinality prediction only supported for job, syn, stats workloads"
+if [[ "$TASK" == "card" ]] && [[ "$WORKLOAD_TEST" != "job" && "$WORKLOAD_TEST" != "job_full" && "$WORKLOAD_TEST" != "syn" && "$WORKLOAD_TEST" != "stats" ]]; then
+    echo "Cardinality prediction only supported for job, job_full, syn, stats workloads"
     exit 1
 fi
 

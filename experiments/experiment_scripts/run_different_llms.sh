@@ -160,6 +160,31 @@ else
     EMBED_SIZE=$embed_size_input
 fi
 
+# Get task selection (time/card)
+echo ""
+echo "=== Task Selection ==="
+echo "1. time (cost estimation)"
+echo "2. card (cardinality estimation)"
+echo "3. both"
+echo "Enter choice (1, 2, or 3):"
+read -r task_choice
+
+RUN_TIME=false
+RUN_CARD=false
+
+if [[ "$task_choice" == "1" ]]; then
+    RUN_TIME=true
+elif [[ "$task_choice" == "2" ]]; then
+    RUN_CARD=true
+elif [[ "$task_choice" == "3" ]]; then
+    RUN_TIME=true
+    RUN_CARD=true
+else
+    echo "Invalid choice, defaulting to both"
+    RUN_TIME=true
+    RUN_CARD=true
+fi
+
 echo ""
 echo "=== Configuration Summary ==="
 echo "Models: ${selected_models[*]}"
@@ -168,6 +193,7 @@ echo "Bucketize: $BUCKETIZE"
 echo "Quantification: $QUANTIFICATION"
 echo "Seeds: ${seeds[*]}"
 echo "Embed Size: $EMBED_SIZE"
+echo "Tasks: $(if [ "$RUN_TIME" = true ]; then echo -n "time "; fi)$(if [ "$RUN_CARD" = true ]; then echo -n "card"; fi)"
 echo ""
 echo "Starting experiments..."
 
@@ -188,12 +214,16 @@ for SEED in "${seeds[@]}"; do
             export QUANTIFICATION="$QUANTIFICATION"
             export EMBED_SIZE="$EMBED_SIZE"
             
-            # # Run time prediction experiment
-            # bash experiment_scripts/core_scripts/run_llm_time.sh $WORKLOAD $WORKLOAD 1.0 False $model_name $model_name1 $SEED
+            # Run time prediction experiment if selected
+            if [ "$RUN_TIME" = true ]; then
+                bash experiment_scripts/core_scripts/run_llm_time.sh $WORKLOAD $WORKLOAD 1.0 False $model_name $model_name1 $SEED
+            fi
             
-            # Run cardinality prediction experiment for specific workloads
-            if [[ "$WORKLOAD" == "job" || "$WORKLOAD" == "job_full" || "$WORKLOAD" == "syn" || "$WORKLOAD" == "stats" ]]; then
-                bash experiment_scripts/core_scripts/run_llm_card.sh $WORKLOAD $WORKLOAD 1.0 False $model_name $model_name1 $SEED
+            # Run cardinality prediction experiment if selected and workload supports it
+            if [ "$RUN_CARD" = true ]; then
+                if [[ "$WORKLOAD" == "job" || "$WORKLOAD" == "job_full" || "$WORKLOAD" == "syn" || "$WORKLOAD" == "stats" ]]; then
+                    bash experiment_scripts/core_scripts/run_llm_card.sh $WORKLOAD $WORKLOAD 1.0 False $model_name $model_name1 $SEED
+                fi
             fi
         done
     done

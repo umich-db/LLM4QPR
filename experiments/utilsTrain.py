@@ -34,6 +34,7 @@ def parse_args():
     parser.add_argument("--learning_rate", type=float, default=1e-4)
     parser.add_argument("--batch_size", type=int, default=102)
     parser.add_argument("--hid_units", type=int, default=256)
+    # parser.add_argument("--num_epoch", type=int, default=2)
     parser.add_argument("--num_epoch", type=int, default=200)
     parser.add_argument("--embed_size", type=int, default=999999999)
     parser.add_argument("--card", action="store_true", default=False)
@@ -73,6 +74,13 @@ def parse_args():
     # aimeetsai feature mask (5 dims): 1 to enable, 0 to disable; order: [cost, card, wei_rows, byte, wei_costs]
     parser.add_argument("--aime_features", type=str, default="11111",
                         help="Binary mask of length 5 to enable/disable aimeetsai features")
+    
+    # Field removal arguments for query plan ablation studies
+    parser.add_argument("--removed_fields", type=str, default=None,
+                        help="Comma-separated list of field categories to remove from query plans. "
+                             "Valid options: operator_structure_and_config, cost, cardinality, "
+                             "conditions_and_filters, metadata_and_config. "
+                             "Note: 'runtime' fields are ALWAYS removed automatically.")
     
     return parser.parse_args()
 
@@ -166,6 +174,77 @@ def prepare_paths(argsP):
         print("done running get_new")
     return dat_paths_train_list, dat_path_test, dat_dict
 
+def create_dataset_for_algo(algo, ds_info, roots, costs, argsP, dat_path, query_ids=None):
+    """
+    Helper function to create a dataset for a specific algorithm and set of roots/costs.
+    This avoids code duplication when creating datasets for different splits or full data.
+    
+    Args:
+        algo: Algorithm name ('aimai', 'qf', 'e2e_cost')
+        ds_info: Dataset info object
+        roots: List of tree roots
+        costs: List of costs/cardinalities
+        argsP: Arguments object
+        dat_path: Data path (for qf histogram and table sample)
+        query_ids: Optional query IDs
+    
+    Returns:
+        PyTorch Dataset
+    """
+    if algo == "aimai":
+        return get_aimeetsai_ds(ds_info, roots, costs, argsP)
+    
+    elif algo == "qf":
+        from algorithms.queryformer.dataset_utils import Encoding, get_hist_file, get_job_table_sample, QueryFormerDataset
+        encoding = Encoding(ds_info)
+        hist_file = get_hist_file(dat_path + 'histogram_string.csv')
+        table_sample = get_job_table_sample(dat_path + 'long_df')
+        
+        if argsP.workload_test in ["syn", "job", "job_full", "tpch", "stats"]:
+            max_node = 35
+        elif argsP.workload_test == "tpcds":
+            max_node = 120
+        else:
+            max_node = 35
+        
+        return QueryFormerDataset(
+            hist_file=hist_file,
+            table_sample=table_sample,
+            nodes=roots,
+            encoding=encoding,
+            labels=costs,
+            ds_info=ds_info,
+            max_node=max_node,
+            query_ids=query_ids,
+            args=argsP
+        )
+    
+    elif algo == "e2e_cost":
+        from algorithms.e2e_cost.e2e_dataset import E2E_Dataset, Encoding, Constants
+        encoding = Encoding(ds_info)
+        if not hasattr(ds_info, 'constants'):
+            ds_info.constants = Constants(ds_info)
+        
+        if argsP.workload_test in ["syn", "job", "job_full", "tpch", "stats"]:
+            max_node = 35
+        elif argsP.workload_test == "tpcds":
+            max_node = 120
+        else:
+            max_node = 35
+        
+        return E2E_Dataset(
+            nodes=roots,
+            labels=costs,
+            encoding=encoding,
+            max_node=max_node,
+            ds_info=ds_info,
+            args=argsP
+        )
+    
+    else:
+        raise ValueError(f"create_dataset_for_algo not implemented for algo: {algo}")
+
+
 def load_data(argsP, dat_path, dat_paths_train_list, dat_path_test, dat_dict, predictor=None, llm_collate=None):
     ds_info = dat_dict['ds_info']
 
@@ -185,23 +264,11 @@ def load_data(argsP, dat_path, dat_paths_train_list, dat_path_test, dat_dict, pr
     test_query_ids = dat_dict.get('test_query_ids', None)
 
     if argsP.algo == "qf":
-        from algorithms.queryformer.dataset_utils import Encoding, get_hist_file, get_job_table_sample, QueryFormerDataset, collator
-        encoding = Encoding(ds_info)
-        hist_file = get_hist_file(dat_path + 'histogram_string.csv')
-        table_sample = get_job_table_sample(dat_path + 'long_df')
-        
-        if argsP.workload_test == "syn" or argsP.workload_test == "job" or argsP.workload_test == "job_full" or argsP.workload_test == "tpch" or argsP.workload_test == "stats":
-            max_node = 35
-        elif argsP.workload_test == "tpcds":
-            max_node = 120
-        ds = QueryFormerDataset(hist_file = hist_file, table_sample = table_sample, \
-                                nodes=train_roots, encoding=encoding, labels=train_costs, ds_info=ds_info, max_node=max_node, query_ids=train_query_ids, args=argsP)
-
-        val_ds = QueryFormerDataset(hist_file = hist_file, table_sample = table_sample, \
-                                    nodes=val_roots, encoding=encoding, labels=val_costs, ds_info=ds_info, max_node=max_node, query_ids=val_query_ids, args=argsP)
-        
-        test_ds = QueryFormerDataset(hist_file = hist_file, table_sample = table_sample, \
-                                    nodes=test_roots, encoding=encoding, labels=test_costs, ds_info=ds_info, max_node=max_node, query_ids=test_query_ids, args=argsP)
+        from algorithms.queryformer.dataset_utils import collator
+        # Use helper function to create datasets
+        ds = create_dataset_for_algo('qf', ds_info, train_roots, train_costs, argsP, dat_path, train_query_ids)
+        val_ds = create_dataset_for_algo('qf', ds_info, val_roots, val_costs, argsP, dat_path, val_query_ids)
+        test_ds = create_dataset_for_algo('qf', ds_info, test_roots, test_costs, argsP, dat_path, test_query_ids)
 
         train_loader = DataLoader(dataset=ds,
                                 batch_size = argsP.batch_size,
@@ -218,17 +285,15 @@ def load_data(argsP, dat_path, dat_paths_train_list, dat_path_test, dat_dict, pr
                                 collate_fn=collator,
                                 shuffle=False)
     elif argsP.algo == "e2e_cost":
-        from algorithms.e2e_cost.e2e_dataset import collator, Constants, E2E_Dataset, Encoding
-        encoding = Encoding(ds_info)
-        ds_info.constants = Constants(ds_info)
-        if argsP.workload_test == "syn" or argsP.workload_test == "job" or argsP.workload_test == "job_full" or argsP.workload_test == "tpch" or argsP.workload_test == "stats":
-            max_node = 35
-        elif argsP.workload_test == "tpcds":
-            max_node = 120
-
-        ds = E2E_Dataset(nodes=train_roots, labels=train_costs, encoding=encoding, max_node=max_node, ds_info=ds_info, args=argsP)
-        val_ds = E2E_Dataset(nodes=val_roots, labels=val_costs, encoding=encoding, max_node=max_node, ds_info=ds_info, args=argsP)
-        test_ds = E2E_Dataset(nodes=test_roots, labels=test_costs, encoding=encoding, max_node=max_node, ds_info=ds_info, args=argsP)
+        from algorithms.e2e_cost.e2e_dataset import collator, Constants
+        # Ensure constants are set
+        if not hasattr(ds_info, 'constants'):
+            ds_info.constants = Constants(ds_info)
+        
+        # Use helper function to create datasets
+        ds = create_dataset_for_algo('e2e_cost', ds_info, train_roots, train_costs, argsP, dat_path)
+        val_ds = create_dataset_for_algo('e2e_cost', ds_info, val_roots, val_costs, argsP, dat_path)
+        test_ds = create_dataset_for_algo('e2e_cost', ds_info, test_roots, test_costs, argsP, dat_path)
 
         train_loader = DataLoader(dataset=ds,
                                 batch_size = argsP.batch_size,
@@ -246,11 +311,10 @@ def load_data(argsP, dat_path, dat_paths_train_list, dat_path_test, dat_dict, pr
                                 shuffle=False)
     elif argsP.algo == "aimai" or argsP.algo == "llm":
         if argsP.algo == "aimai":
-            ds = get_aimeetsai_ds(ds_info, train_roots, train_costs, argsP)
-            
-            val_ds = get_aimeetsai_ds(ds_info, val_roots, val_costs, argsP)
-            
-            test_ds = get_aimeetsai_ds(ds_info, test_roots, test_costs, argsP)
+            # Use helper function to create datasets
+            ds = create_dataset_for_algo('aimai', ds_info, train_roots, train_costs, argsP, dat_path)
+            val_ds = create_dataset_for_algo('aimai', ds_info, val_roots, val_costs, argsP, dat_path)
+            test_ds = create_dataset_for_algo('aimai', ds_info, test_roots, test_costs, argsP, dat_path)
         elif argsP.algo == "llm":
             from utilsLLM import QueryPlanDataset, QueryPlanPredictor, get_llm_ds_from_csv
             ds, val_ds, test_ds, val_costs, test_costs, test_lengths, test_templates = get_llm_ds_from_csv(predictor, dat_paths_train_list, dat_path_test, ds_info, argsP)

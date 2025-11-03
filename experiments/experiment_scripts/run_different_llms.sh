@@ -185,6 +185,52 @@ else
     RUN_CARD=true
 fi
 
+# Get removed fields option
+echo ""
+echo "=== Removed Fields ==="
+echo "Enter comma-separated numbers for field categories to remove (or press Enter for none):"
+echo "Valid options:"
+echo "  1. operator_structure_and_config - Node types, scan configs, join types, sort/hash configs"
+echo "  2. cost - Startup Cost, Total Cost, Plan Width"
+echo "  3. cardinality - Plan Rows"
+echo "  4. conditions_and_filters - Filter, Join conditions (affects cardinality)"
+echo "  5. metadata_and_config - Command, Triggers, Planning Time, Parallelism config"
+echo ""
+echo "Note: Runtime statistics (Actual*, I/O, memory, cache, workers, etc.) are ALWAYS removed"
+echo ""
+echo "Example: 2,3 (removes cost and cardinality)"
+echo "Example: 1,2,5 (removes operator_structure_and_config, cost, and metadata_and_config)"
+read -r removed_fields_input
+
+REMOVED_FIELDS=""
+if [[ -n "$removed_fields_input" ]]; then
+    # Convert numbers to category names
+    categories=()
+    IFS=',' read -ra NUMBERS <<< "$removed_fields_input"
+    for num in "${NUMBERS[@]}"; do
+        num=$(echo "$num" | tr -d ' ')  # Trim whitespace
+        case "$num" in
+            1) categories+=("operator_structure_and_config") ;;
+            2) categories+=("cost") ;;
+            3) categories+=("cardinality") ;;
+            4) categories+=("conditions_and_filters") ;;
+            5) categories+=("metadata_and_config") ;;
+            *) echo "Warning: Invalid number '$num' - skipping" ;;
+        esac
+    done
+    
+    # Join categories with commas
+    REMOVED_FIELDS=$(IFS=,; echo "${categories[*]}")
+    
+    if [[ -n "$REMOVED_FIELDS" ]]; then
+        echo "Will remove fields: $REMOVED_FIELDS (+ runtime fields which are always removed)"
+    else
+        echo "No valid categories specified. Will only remove runtime fields (default behavior)"
+    fi
+else
+    echo "Will only remove runtime fields (default behavior)"
+fi
+
 echo ""
 echo "=== Configuration Summary ==="
 echo "Models: ${selected_models[*]}"
@@ -194,6 +240,7 @@ echo "Quantification: $QUANTIFICATION"
 echo "Seeds: ${seeds[*]}"
 echo "Embed Size: $EMBED_SIZE"
 echo "Tasks: $(if [ "$RUN_TIME" = true ]; then echo -n "time "; fi)$(if [ "$RUN_CARD" = true ]; then echo -n "card"; fi)"
+echo "Removed Fields: ${REMOVED_FIELDS:-none}"
 echo ""
 echo "Starting experiments..."
 
@@ -213,6 +260,7 @@ for SEED in "${seeds[@]}"; do
             export BUCKETIZE_INPUT="$BUCKETIZE"
             export QUANTIFICATION="$QUANTIFICATION"
             export EMBED_SIZE="$EMBED_SIZE"
+            export REMOVED_FIELDS="$REMOVED_FIELDS"
             
             # Run time prediction experiment if selected
             if [ "$RUN_TIME" = true ]; then

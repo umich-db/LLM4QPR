@@ -4,6 +4,26 @@
 
 echo "Running Baseline Comparison Experiments..."
 
+# Get verbose output option
+echo ""
+echo "=== Verbose Output Option ==="
+echo "Enable verbose output with embeddings and KNN information?"
+echo "1. Yes (enable verbose output)"
+echo "2. No (disable verbose output)"
+echo "Enter choice (1 or 2):"
+read -r verbose_choice
+
+if [[ "$verbose_choice" == "1" ]]; then
+    export VERBOSE_INFO="true"
+    echo "Verbose output enabled"
+elif [[ "$verbose_choice" == "2" ]]; then
+    export VERBOSE_INFO="false"
+    echo "Verbose output disabled"
+else
+    echo "Invalid choice, defaulting to disabled"
+    export VERBOSE_INFO="false"
+fi
+
 model_name=meta-llama/Llama-3.1-8B
 model_name1="${model_name//\//-}"
 
@@ -70,24 +90,32 @@ fi
 
 echo "Selected algorithms: ${selected_algorithms[*]}"
 
-# Task selection (card or cost)
+# Task selection (card or time)
 echo ""
 echo "=== Task Selection ==="
-echo "1. card"
-echo "2. time"
-echo "Enter choice (1 or 2):"
+echo "1. card (cardinality estimation)"
+echo "2. time (cost estimation)"
+echo "3. both"
+echo "Enter choice (1, 2, or 3):"
 read -r task_choice
 
+RUN_CARD=false
+RUN_TIME=false
+
 if [[ "$task_choice" == "1" ]]; then
-    TASK="card"
+    RUN_CARD=true
 elif [[ "$task_choice" == "2" ]]; then
-    TASK="cost"
+    RUN_TIME=true
+elif [[ "$task_choice" == "3" ]]; then
+    RUN_CARD=true
+    RUN_TIME=true
 else
-    echo "Invalid choice, defaulting to card"
-    TASK="card"
+    echo "Invalid choice, defaulting to both"
+    RUN_CARD=true
+    RUN_TIME=true
 fi
 
-echo "Selected task: $TASK"
+echo "Selected tasks: $(if [ "$RUN_CARD" = true ]; then echo -n "card "; fi)$(if [ "$RUN_TIME" = true ]; then echo -n "time"; fi)"
 
 # Workload selection
 workloads=(
@@ -139,17 +167,44 @@ fi
 
 echo "Selected seeds: ${seeds[*]}"
 
+echo ""
+echo "=== Configuration Summary ==="
+echo "Algorithms: ${selected_algorithms[*]}"
+echo "Workloads: ${selected_workloads[*]}"
+echo "AIME Feature Masks: ${selected_masks[*]}"
+echo "Seeds: ${seeds[*]}"
+echo "Tasks: $(if [ "$RUN_CARD" = true ]; then echo -n "card "; fi)$(if [ "$RUN_TIME" = true ]; then echo -n "time"; fi)"
+echo "Verbose Output: $VERBOSE_INFO"
+echo ""
+echo "Starting experiments..."
+
 for SEED in "${seeds[@]}"; do
   for WORKLOAD in "${selected_workloads[@]}"; do
     for ALGO in "${selected_algorithms[@]}"; do
-      if [[ "$ALGO" == "aimai" ]]; then
-        # For aimai, iterate through feature masks
-        for AIME_FEATURES in "${selected_masks[@]}"; do
-          bash experiment_scripts/core_scripts/run_baseline.sh $WORKLOAD $WORKLOAD 1.0 $SEED $AIME_FEATURES $ALGO $TASK
-        done
-      else
-        # For other algorithms, use default feature mask (ignored)
-        bash experiment_scripts/core_scripts/run_baseline.sh $WORKLOAD $WORKLOAD 1.0 $SEED 11111 $ALGO $TASK
+      # Run card task if selected
+      if [ "$RUN_CARD" = true ]; then
+        if [[ "$ALGO" == "aimai" ]]; then
+          # For aimai, iterate through feature masks
+          for AIME_FEATURES in "${selected_masks[@]}"; do
+            bash experiment_scripts/core_scripts/run_baseline.sh $WORKLOAD $WORKLOAD 1.0 $SEED $AIME_FEATURES $ALGO "card"
+          done
+        else
+          # For other algorithms, use default feature mask (ignored)
+          bash experiment_scripts/core_scripts/run_baseline.sh $WORKLOAD $WORKLOAD 1.0 $SEED 11111 $ALGO "card"
+        fi
+      fi
+      
+      # Run time task if selected
+      if [ "$RUN_TIME" = true ]; then
+        if [[ "$ALGO" == "aimai" ]]; then
+          # For aimai, iterate through feature masks
+          for AIME_FEATURES in "${selected_masks[@]}"; do
+            bash experiment_scripts/core_scripts/run_baseline.sh $WORKLOAD $WORKLOAD 1.0 $SEED $AIME_FEATURES $ALGO "time"
+          done
+        else
+          # For other algorithms, use default feature mask (ignored)
+          bash experiment_scripts/core_scripts/run_baseline.sh $WORKLOAD $WORKLOAD 1.0 $SEED 11111 $ALGO "time"
+        fi
       fi
     done
   done

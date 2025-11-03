@@ -1,0 +1,504 @@
+HYPERPARAMETER COMPARISON RESULTS - TOP 3 PER DATASET+MODEL+TASK
+======================================================================
+
+DATASET: tpcds_tpcds
+==================================================
+
+TIME TASK:
+------------------------------
+
+--- Llama-3.1-70B ---
+Top 3 settings:
+  Rank 1: 714 wins
+    Embed Size: 2100, Batch Size: 64, Hidden Units: 1024
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b64_h1024_meta-llama-Llama-3.1-70B_emb2100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.066908
+      0.9: 1.197465
+      0.95: 1.367391
+      1.0: 14.755157
+
+  Rank 2: 703 wins
+    Embed Size: 1000, Batch Size: 32, Hidden Units: 512
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b32_h512_meta-llama-Llama-3.1-70B_emb1000_bucketize-separate
+    Quantile Errors:
+      0.5: 1.076779
+      0.9: 1.223662
+      0.95: 1.425369
+      1.0: 18.872490
+
+  Rank 3: 696 wins
+    Embed Size: 3100, Batch Size: 128, Hidden Units: 2048
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b128_h2048_meta-llama-Llama-3.1-70B_emb3100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.081422
+      0.9: 1.236687
+      0.95: 1.425187
+      1.0: 21.839101
+
+
+--- Llama-3.1-8B ---
+Top 3 settings:
+  Rank 1: 704 wins
+    Embed Size: 2100, Batch Size: 64, Hidden Units: 1024
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b64_h1024_meta-llama-Llama-3.1-8B_emb2100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.062696
+      0.9: 1.232288
+      0.95: 1.430550
+      1.0: 21.082119
+
+  Rank 2: 693 wins
+    Embed Size: 1000, Batch Size: 32, Hidden Units: 512
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b32_h512_meta-llama-Llama-3.1-8B_emb1000_bucketize-separate
+    Quantile Errors:
+      0.5: 1.062733
+      0.9: 1.240201
+      0.95: 1.457214
+      1.0: 23.787235
+
+  Rank 3: 666 wins
+    Embed Size: 3100, Batch Size: 128, Hidden Units: 2048
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b128_h2048_meta-llama-Llama-3.1-8B_emb3100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.094203
+      0.9: 1.278691
+      0.95: 1.412785
+      1.0: 35.684787
+
+
+--- Llama-3.2-1B ---
+Top 3 settings:
+  Rank 1: 681 wins
+    Embed Size: 1000, Batch Size: 32, Hidden Units: 512
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b32_h512_meta-llama-Llama-3.2-1B_emb1000_bucketize-separate
+    Quantile Errors:
+      0.5: 1.070422
+      0.9: 1.244306
+      0.95: 1.493327
+      1.0: 19.071469
+
+  Rank 2: 666 wins
+    Embed Size: 2100, Batch Size: 64, Hidden Units: 1024
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b64_h1024_meta-llama-Llama-3.2-1B_emb2100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.083604
+      0.9: 1.252031
+      0.95: 1.497434
+      1.0: 23.282883
+
+  Rank 3: 637 wins
+    Embed Size: 3100, Batch Size: 128, Hidden Units: 2048
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b128_h2048_meta-llama-Llama-3.2-1B_emb3100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.099777
+      0.9: 1.281992
+      0.95: 1.458699
+      1.0: 45.390944
+
+
+--- Llama-3.2-3B ---
+Top 3 settings:
+  Rank 1: 692 wins
+    Embed Size: 1000, Batch Size: 32, Hidden Units: 512
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b32_h512_meta-llama-Llama-3.2-3B_emb1000_bucketize-separate
+    Quantile Errors:
+      0.5: 1.070875
+      0.9: 1.236138
+      0.95: 1.442994
+      1.0: 27.166185
+
+  Rank 2: 668 wins
+    Embed Size: 2100, Batch Size: 64, Hidden Units: 1024
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b64_h1024_meta-llama-Llama-3.2-3B_emb2100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.075803
+      0.9: 1.264364
+      0.95: 1.485552
+      1.0: 29.566133
+
+  Rank 3: 607 wins
+    Embed Size: 1000, Batch Size: 64, Hidden Units: 512
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b64_h512_meta-llama-Llama-3.2-3B_emb1000_bucketize-separate
+    Quantile Errors:
+      0.5: 1.097760
+      0.9: 1.307561
+      0.95: 1.515236
+      1.0: 62.437339
+
+
+DATASET: stats_stats
+==================================================
+
+CARD TASK:
+------------------------------
+
+--- Llama-3.1-70B ---
+Top 3 settings:
+  Rank 1: 528 wins
+    Embed Size: 8200, Batch Size: 1024, Hidden Units: 1024
+    Filename: card_llm_pretrained-None_1.0_cdf_postgres_0.0001_b1024_h1024_meta-llama-Llama-3.1-70B_emb8200_bucketize-separate
+    Quantile Errors:
+      0.5: 1.097197
+      0.9: 1.485147
+      0.95: 2.082371
+      1.0: 515476.078170
+
+  Rank 2: 509 wins
+    Embed Size: 4100, Batch Size: 512, Hidden Units: 1024
+    Filename: card_llm_pretrained-None_1.0_cdf_postgres_0.0001_b512_h1024_meta-llama-Llama-3.1-70B_emb4100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.099599
+      0.9: 1.529936
+      0.95: 2.187045
+      1.0: 622827.189182
+
+  Rank 3: 508 wins
+    Embed Size: 4100, Batch Size: 128, Hidden Units: 1024
+    Filename: card_llm_pretrained-None_1.0_cdf_postgres_0.0001_b128_h1024_meta-llama-Llama-3.1-70B_emb4100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.113358
+      0.9: 1.392229
+      0.95: 1.753897
+      1.0: 36552254.182577
+
+
+--- Llama-3.1-8B ---
+Top 3 settings:
+  Rank 1: 671 wins
+    Embed Size: 4100, Batch Size: 512, Hidden Units: 512
+    Filename: card_llm_pretrained-None_1.0_cdf_postgres_0.0001_b512_h512_meta-llama-Llama-3.1-8B_emb4100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.100438
+      0.9: 1.390281
+      0.95: 1.792450
+      1.0: 10581.623558
+
+  Rank 2: 661 wins
+    Embed Size: 8200, Batch Size: 512, Hidden Units: 1024
+    Filename: card_llm_pretrained-None_1.0_cdf_postgres_0.0001_b512_h1024_meta-llama-Llama-3.1-8B_emb8200_bucketize-separate
+    Quantile Errors:
+      0.5: 1.091019
+      0.9: 1.369844
+      0.95: 1.803156
+      1.0: 22930.555889
+
+  Rank 3: 661 wins
+    Embed Size: 4100, Batch Size: 512, Hidden Units: 1024
+    Filename: card_llm_pretrained-None_1.0_cdf_postgres_0.0001_b512_h1024_meta-llama-Llama-3.1-8B_emb4100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.091019
+      0.9: 1.369844
+      0.95: 1.803156
+      1.0: 22930.555889
+
+
+--- Llama-3.2-1B ---
+Top 3 settings:
+  Rank 1: 432 wins
+    Embed Size: 8200, Batch Size: 1024, Hidden Units: 4096
+    Filename: card_llm_pretrained-None_1.0_cdf_postgres_0.0001_b1024_h4096_meta-llama-Llama-3.2-1B_emb8200_bucketize-separate
+    Quantile Errors:
+      0.5: 1.137159
+      0.9: 1.568432
+      0.95: 2.274999
+      1.0: 93211.383384
+
+  Rank 2: 397 wins
+    Embed Size: 8200, Batch Size: 512, Hidden Units: 1024
+    Filename: card_llm_pretrained-None_1.0_cdf_postgres_0.0001_b512_h1024_meta-llama-Llama-3.2-1B_emb8200_bucketize-separate
+    Quantile Errors:
+      0.5: 1.147039
+      0.9: 1.696603
+      0.95: 2.418926
+      1.0: 34101.886644
+
+  Rank 3: 397 wins
+    Embed Size: 4100, Batch Size: 512, Hidden Units: 1024
+    Filename: card_llm_pretrained-None_1.0_cdf_postgres_0.0001_b512_h1024_meta-llama-Llama-3.2-1B_emb4100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.147039
+      0.9: 1.696603
+      0.95: 2.418926
+      1.0: 34101.886644
+
+
+--- Llama-3.2-3B ---
+Top 3 settings:
+  Rank 1: 531 wins
+    Embed Size: 3100, Batch Size: 256, Hidden Units: 512
+    Filename: card_llm_pretrained-None_1.0_cdf_postgres_0.0001_b256_h512_meta-llama-Llama-3.2-3B_emb3100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.115809
+      0.9: 1.607096
+      0.95: 2.602827
+      1.0: 7892.783648
+
+  Rank 2: 531 wins
+    Embed Size: 4100, Batch Size: 256, Hidden Units: 512
+    Filename: card_llm_pretrained-None_1.0_cdf_postgres_0.0001_b256_h512_meta-llama-Llama-3.2-3B_emb4100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.115809
+      0.9: 1.607096
+      0.95: 2.602827
+      1.0: 7892.783648
+
+  Rank 3: 477 wins
+    Embed Size: 1000, Batch Size: 128, Hidden Units: 256
+    Filename: card_llm_pretrained-None_1.0_cdf_postgres_0.0001_b128_h256_meta-llama-Llama-3.2-3B_emb1000_bucketize-separate
+    Quantile Errors:
+      0.5: 1.145703
+      0.9: 1.613001
+      0.95: 2.286668
+      1.0: 3772.142071
+
+
+TIME TASK:
+------------------------------
+
+--- Llama-3.1-70B ---
+Top 3 settings:
+  Rank 1: 542 wins
+    Embed Size: 4100, Batch Size: 512, Hidden Units: 1024
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b512_h1024_meta-llama-Llama-3.1-70B_emb4100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.282291
+      0.9: 2.709573
+      0.95: 3.631505
+      1.0: 97.218571
+
+  Rank 2: 534 wins
+    Embed Size: 4100, Batch Size: 512, Hidden Units: 2048
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b512_h2048_meta-llama-Llama-3.1-70B_emb4100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.286763
+      0.9: 2.671258
+      0.95: 3.500548
+      1.0: 173.183117
+
+  Rank 3: 499 wins
+    Embed Size: 4100, Batch Size: 512, Hidden Units: 512
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b512_h512_meta-llama-Llama-3.1-70B_emb4100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.306722
+      0.9: 2.720111
+      0.95: 3.590617
+      1.0: 106.377375
+
+
+--- Llama-3.1-8B ---
+Top 3 settings:
+  Rank 1: 668 wins
+    Embed Size: 3100, Batch Size: 512, Hidden Units: 2048
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b512_h2048_meta-llama-Llama-3.1-8B_emb3100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.211608
+      0.9: 2.664492
+      0.95: 3.313157
+      1.0: 94.801123
+
+  Rank 2: 650 wins
+    Embed Size: 4100, Batch Size: 128, Hidden Units: 1024
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b128_h1024_meta-llama-Llama-3.1-8B_emb4100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.181266
+      0.9: 2.578464
+      0.95: 3.452492
+      1.0: 199.319371
+
+  Rank 3: 639 wins
+    Embed Size: 4100, Batch Size: 512, Hidden Units: 1024
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b512_h1024_meta-llama-Llama-3.1-8B_emb4100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.253309
+      0.9: 2.576153
+      0.95: 3.323471
+      1.0: 181.153512
+
+
+--- Llama-3.2-1B ---
+Top 3 settings:
+  Rank 1: 564 wins
+    Embed Size: 4100, Batch Size: 512, Hidden Units: 1024
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b512_h1024_meta-llama-Llama-3.2-1B_emb4100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.261687
+      0.9: 2.563730
+      0.95: 3.865111
+      1.0: 168.088878
+
+  Rank 2: 564 wins
+    Embed Size: 3100, Batch Size: 512, Hidden Units: 1024
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b512_h1024_meta-llama-Llama-3.2-1B_emb3100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.261687
+      0.9: 2.563730
+      0.95: 3.865111
+      1.0: 168.088878
+
+  Rank 3: 564 wins
+    Embed Size: 8200, Batch Size: 512, Hidden Units: 1024
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b512_h1024_meta-llama-Llama-3.2-1B_emb8200_bucketize-separate
+    Quantile Errors:
+      0.5: 1.261687
+      0.9: 2.563730
+      0.95: 3.865111
+      1.0: 168.088878
+
+
+--- Llama-3.2-3B ---
+Top 3 settings:
+  Rank 1: 460 wins
+    Embed Size: 4100, Batch Size: 128, Hidden Units: 2048
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b128_h2048_meta-llama-Llama-3.2-3B_emb4100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.253494
+      0.9: 2.561731
+      0.95: 3.797279
+      1.0: 828.717730
+
+  Rank 2: 460 wins
+    Embed Size: 3100, Batch Size: 128, Hidden Units: 2048
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b128_h2048_meta-llama-Llama-3.2-3B_emb3100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.253494
+      0.9: 2.561731
+      0.95: 3.797279
+      1.0: 828.717730
+
+  Rank 3: 442 wins
+    Embed Size: 3100, Batch Size: 128, Hidden Units: 1024
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b128_h1024_meta-llama-Llama-3.2-3B_emb3100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.267253
+      0.9: 2.615936
+      0.95: 4.203586
+      1.0: 219.436006
+
+
+DATASET: tpch_tpch
+==================================================
+
+TIME TASK:
+------------------------------
+
+--- Llama-3.1-70B ---
+Top 3 settings:
+  Rank 1: 592 wins
+    Embed Size: 2100, Batch Size: 64, Hidden Units: 512
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b64_h512_meta-llama-Llama-3.1-70B_emb2100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.004087
+      0.9: 1.011101
+      0.95: 1.014583
+      1.0: 1.035056
+
+  Rank 2: 580 wins
+    Embed Size: 2100, Batch Size: 64, Hidden Units: 1024
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b64_h1024_meta-llama-Llama-3.1-70B_emb2100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.004373
+      0.9: 1.010967
+      0.95: 1.014504
+      1.0: 1.035342
+
+  Rank 3: 563 wins
+    Embed Size: 1000, Batch Size: 32, Hidden Units: 512
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b32_h512_meta-llama-Llama-3.1-70B_emb1000_bucketize-separate
+    Quantile Errors:
+      0.5: 1.004492
+      0.9: 1.011800
+      0.95: 1.014545
+      1.0: 1.034305
+
+
+--- Llama-3.1-8B ---
+Top 3 settings:
+  Rank 1: 636 wins
+    Embed Size: 2100, Batch Size: 64, Hidden Units: 512
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b64_h512_meta-llama-Llama-3.1-8B_emb2100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.002666
+      0.9: 1.011676
+      0.95: 1.013760
+      1.0: 1.036110
+
+  Rank 2: 625 wins
+    Embed Size: 2100, Batch Size: 64, Hidden Units: 256
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b64_h256_meta-llama-Llama-3.1-8B_emb2100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.003209
+      0.9: 1.011283
+      0.95: 1.013967
+      1.0: 1.036077
+
+  Rank 3: 619 wins
+    Embed Size: 2100, Batch Size: 64, Hidden Units: 1024
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b64_h1024_meta-llama-Llama-3.1-8B_emb2100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.002445
+      0.9: 1.011557
+      0.95: 1.013857
+      1.0: 1.036259
+
+
+--- Llama-3.2-1B ---
+Top 3 settings:
+  Rank 1: 586 wins
+    Embed Size: 1000, Batch Size: 64, Hidden Units: 512
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b64_h512_meta-llama-Llama-3.2-1B_emb1000_bucketize-separate
+    Quantile Errors:
+      0.5: 1.003357
+      0.9: 1.011715
+      0.95: 1.014169
+      1.0: 1.036115
+
+  Rank 2: 428 wins
+    Embed Size: 1000, Batch Size: 32, Hidden Units: 512
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b32_h512_meta-llama-Llama-3.2-1B_emb1000_bucketize-separate
+    Quantile Errors:
+      0.5: 1.004797
+      0.9: 1.012373
+      0.95: 1.015354
+      1.0: 1.036130
+
+  Rank 3: 427 wins
+    Embed Size: 8200, Batch Size: 256, Hidden Units: 1024
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b256_h1024_meta-llama-Llama-3.2-1B_emb8200_bucketize-separate
+    Quantile Errors:
+      0.5: 1.003280
+      0.9: 1.013682
+      0.95: 1.015212
+      1.0: 1.036568
+
+
+--- Llama-3.2-3B ---
+Top 3 settings:
+  Rank 1: 674 wins
+    Embed Size: 2100, Batch Size: 64, Hidden Units: 512
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b64_h512_meta-llama-Llama-3.2-3B_emb2100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.002993
+      0.9: 1.011678
+      0.95: 1.013746
+      1.0: 1.035345
+
+  Rank 2: 651 wins
+    Embed Size: 2100, Batch Size: 64, Hidden Units: 1024
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b64_h1024_meta-llama-Llama-3.2-3B_emb2100_bucketize-separate
+    Quantile Errors:
+      0.5: 1.002575
+      0.9: 1.011861
+      0.95: 1.014078
+      1.0: 1.035584
+
+  Rank 3: 629 wins
+    Embed Size: 1000, Batch Size: 64, Hidden Units: 512
+    Filename: time_llm_pretrained-None_1.0_cdf_postgres_0.0001_b64_h512_meta-llama-Llama-3.2-3B_emb1000_bucketize-separate
+    Quantile Errors:
+      0.5: 1.003459
+      0.9: 1.011228
+      0.95: 1.013881
+      1.0: 1.035645
+
+

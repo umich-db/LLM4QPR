@@ -24,6 +24,7 @@ import logging
 sys.path.append('../evaluation/')
 from dataset_utils import *
 from utils import Normalizer
+from field_categories import FIELD_CATEGORIES, get_fields_to_remove
 #########################################
 #       Custom Dataset Class
 #########################################
@@ -1528,16 +1529,42 @@ def _find_actual_rows(root_node):
     return float(root_node["Actual Rows"])
 
 
-def _clean_node(obj):
+def _clean_node(obj, fields_to_remove=None):
+    """
+    Recursively clean a query plan node by removing runtime fields and optionally
+    removing fields from specified categories.
+    
+    Note: We extract "Actual Total Time" and "Actual Rows" BEFORE calling this function
+    for use as training labels. Runtime fields (from the 'runtime' category) are ALWAYS
+    removed automatically. The fields_to_remove parameter controls removal of the other
+    5 categories for ablation studies.
+    
+    Args:
+        obj: The object to clean (dict, list, or primitive)
+        fields_to_remove: Optional set of field names to remove (for ablation studies)
+                         Should only contain fields from non-runtime categories
+    
+    Returns:
+        Cleaned object
+    """
+    if fields_to_remove is None:
+        fields_to_remove = set()
+    
+    # Always remove runtime category fields
+    runtime_fields = FIELD_CATEGORIES['runtime']
+    all_fields_to_remove = fields_to_remove | runtime_fields
+    
     if isinstance(obj, dict):
         cleaned = {}
         for k, v in obj.items():
-            if isinstance(k, str) and k.startswith("Actual"):
+            # Remove fields based on category selection (including runtime)
+            if k in all_fields_to_remove:
                 continue
-            cleaned[k] = _clean_node(v)
+            # Recursively clean the value
+            cleaned[k] = _clean_node(v, fields_to_remove)
         return cleaned
     elif isinstance(obj, list):
-        return [_clean_node(item) for item in obj]
+        return [_clean_node(item, fields_to_remove) for item in obj]
     else:
         return obj
 
@@ -1777,15 +1804,37 @@ def bucketize_plans(jsons, initial_range=500, num_linear_buckets=50, num_log_buc
         return results[0]
     return results
 
-def _remove_act_fields(obj):
+def _remove_act_fields(obj, fields_to_remove=None):
+    """
+    Recursively remove 'act_' prefixed fields, plan_runtime, and runtime category fields
+    from query plans, and optionally remove fields from specified categories.
+    
+    Note: Runtime fields are ALWAYS removed automatically. The fields_to_remove parameter
+    controls removal of the other 5 categories for ablation studies.
+    
+    Args:
+        obj: The object to clean (dict, list, or primitive)
+        fields_to_remove: Optional set of field names to remove (for ablation studies)
+                         Should only contain fields from non-runtime categories
+    
+    Returns:
+        Cleaned object
+    """
+    if fields_to_remove is None:
+        fields_to_remove = set()
+    
+    # Always remove runtime category fields
+    runtime_fields = FIELD_CATEGORIES['runtime']
+    all_fields_to_remove = fields_to_remove | runtime_fields
+    
     if isinstance(obj, dict):
         return {
-            k: _remove_act_fields(v)
+            k: _remove_act_fields(v, fields_to_remove)
             for k, v in obj.items()
-            if not k.startswith("act_") and k != "plan_runtime"
+            if not k.startswith("act_") and k != "plan_runtime" and k not in all_fields_to_remove
         }
     elif isinstance(obj, list):
-        return [_remove_act_fields(item) for item in obj]
+        return [_remove_act_fields(item, fields_to_remove) for item in obj]
     else:
         return obj
     
@@ -1914,6 +1963,14 @@ def read_json_and_clean(predictor, ds_info, dat_path, argsP, all=False):
     lengths = []
     templates = []
     
+    # Parse removed_fields for ablation studies
+    fields_to_remove = set()
+    if hasattr(argsP, 'removed_fields') and argsP.removed_fields:
+        removed_categories = [cat.strip() for cat in argsP.removed_fields.split(',')]
+        fields_to_remove = get_fields_to_remove(removed_categories)
+        if fields_to_remove:
+            print(f"  Removing {len(fields_to_remove)} fields from categories: {removed_categories}")
+    
     # Check if template column exists (only for tpch and tpcds)
     has_template = 'template' in df.columns
 
@@ -1941,7 +1998,7 @@ def read_json_and_clean(predictor, ds_info, dat_path, argsP, all=False):
         orig_root = original_roots[idx]
         costs.append(_find_actual_total_time(orig_root))
         cards.append(_find_actual_rows(orig_root))
-        cleaned_root = _clean_node(root)
+        cleaned_root = _clean_node(root, fields_to_remove)
         txt = json.dumps(cleaned_root)
         cleaned_texts.append(txt)
         tok = predictor.tokenizer(txt, add_special_tokens=False)
@@ -1982,6 +2039,14 @@ def read_json_and_clean_v2(predictor, ds_info, dat_path, argsP, all=False):
     costs = []
     cards = []
     templates = []
+    
+    # Parse removed_fields for ablation studies
+    fields_to_remove = set()
+    if hasattr(argsP, 'removed_fields') and argsP.removed_fields:
+        removed_categories = [cat.strip() for cat in argsP.removed_fields.split(',')]
+        fields_to_remove = get_fields_to_remove(removed_categories)
+        if fields_to_remove:
+            print(f"  Removing {len(fields_to_remove)} fields from categories: {removed_categories}")
 
     # Cache original plans for costs/cards before any bucketization
     original_plans = original_data["parsed_plans"].copy()
@@ -1993,7 +2058,7 @@ def read_json_and_clean_v2(predictor, ds_info, dat_path, argsP, all=False):
         original_data["parsed_plans"] = bucketize_plans_unified(original_data["parsed_plans"])
     # If bucketize_input is None, no bucketizing is applied
 
-    cleaned = _remove_act_fields(original_data)
+    cleaned = _remove_act_fields(original_data, fields_to_remove)
 
     for idx, (raw, cleaned_plan) in enumerate(zip(original_data["parsed_plans"], cleaned["parsed_plans"])):
         print("*", end='', flush=True)
@@ -2045,7 +2110,23 @@ def get_embeddings(predictor, ds_info, dat_path, argsP, batch_size=1, normalize_
     if hasattr(argsP, 'seed') and isinstance(getattr(argsP, 'seed'), (int, float)) and argsP.seed > 44:
         seed_suffix = f"_seed{int(argsP.seed)}"
     
-    cache_file = f"embeddings_{argsP.model_name}_bucketize-{argsP.bucketize_input}_quant-{argsP.quantification}_pretrained-{argsP.llm_pretrained}_pretrainedTask-{argsP.llm_pretrained_task}{target_suffix}{seed_suffix}_{dat_path}".replace("json", "csv") 
+    # Append removed fields suffix when field categories are removed
+    removed_fields_suffix = ""
+    if hasattr(argsP, 'removed_fields') and argsP.removed_fields:
+        # Convert category names to abbreviations (matching shell script logic)
+        category_abbrev = {
+            'operator_structure_and_config': 'ops',
+            'cost': 'cost',
+            'cardinality': 'card',
+            'conditions_and_filters': 'cond',
+            'metadata_and_config': 'meta'
+        }
+        categories = [cat.strip() for cat in argsP.removed_fields.split(',')]
+        abbrevs = [category_abbrev.get(cat, cat) for cat in categories if cat in category_abbrev]
+        if abbrevs:
+            removed_fields_suffix = f"_rm-{'-'.join(abbrevs)}"
+    
+    cache_file = f"embeddings_{argsP.model_name}_bucketize-{argsP.bucketize_input}_quant-{argsP.quantification}_pretrained-{argsP.llm_pretrained}_pretrainedTask-{argsP.llm_pretrained_task}{target_suffix}{seed_suffix}{removed_fields_suffix}_{dat_path}".replace("json", "csv") 
     cache_file = cache_file.replace("/","-")
     cache_path = os.path.join(cache_dir, cache_file)
     

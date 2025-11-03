@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+from torch.utils.data import DataLoader
 from scipy.stats import pearsonr
 from sklearn.neighbors import NearestNeighbors
 import time
@@ -254,15 +255,51 @@ def evaluate(model, args, loader, norm, device, prints=True, data_sec="unknown",
     - `workload_test`: test workload name
     """
     print("evaluating")
+    if data_sec == "test":
+        eval_start = timer()
     model.to(device)
     model.eval()
 
     preds_list = []
     labels_list = []
     embeddings_list = []
+    
+    # Check if model is Sequential for non-LLM embedding extraction
+    is_sequential = isinstance(model, nn.Sequential)
+    
+    # Determine if we need to extract embeddings for non-LLM verbose output
+    # Note: For aimai, the input features ARE the embeddings (not Sequential)
+    # For qf/e2e_cost, embeddings come from model[0] (Sequential)
+    extract_non_llm_embeddings = (
+        verbose_info and 
+        args.algo in ['aimai', 'qf', 'e2e_cost'] and 
+        data_sec == "test" and
+        output_dir_qerror is not None and
+        train_embeddings is not None
+    )
+    
+    # Debug output for non-LLM verbose
+    if verbose_info and args.algo in ['aimai', 'qf', 'e2e_cost'] and data_sec == "test":
+        print(f"[Verbose Debug] Algorithm: {args.algo}")
+        print(f"[Verbose Debug] is_sequential: {is_sequential}")
+        print(f"[Verbose Debug] output_dir_qerror: {output_dir_qerror}")
+        print(f"[Verbose Debug] train_embeddings provided: {train_embeddings is not None}")
+        if train_embeddings is not None:
+            print(f"[Verbose Debug] train_embeddings shape: {train_embeddings.shape}")
+        print(f"[Verbose Debug] extract_non_llm_embeddings: {extract_non_llm_embeddings}")
 
     with torch.no_grad():
-        for batch_idx, (x, y) in enumerate(loader):
+        if data_sec == "test":
+            data_fetch_start = timer()
+        
+        for batch_idx, (x, y) in enumerate(loader, start=1):
+            if data_sec == "test":
+                data_load_time = timer() - data_fetch_start
+                args.main_logger.info(f"[Test] Batch {batch_idx} DataLoad — {data_load_time*1000:.2f} ms")
+            
+            if data_sec == "test":
+                batch_start = timer()
+            
             # Move inputs to device if not LLM finetuning
             if args.algo != "llm_finetune":
                 x = x.to(device)
@@ -271,8 +308,21 @@ def evaluate(model, args, loader, norm, device, prints=True, data_sec="unknown",
             if save_embeddings and test_embeddings is None:
                 embeddings_list.append(x.cpu().numpy())
             
-            # Forward pass
-            preds = model(x).squeeze()
+            # Forward pass (handle Sequential models and extract embeddings for non-LLM)
+            if is_sequential:
+                # For qf/e2e_cost: Extract embedding from first module
+                embedding = model[0](x)
+                # Store embedding for verbose output
+                if extract_non_llm_embeddings:
+                    embeddings_list.append(embedding.cpu().numpy())
+                # Get prediction from second module
+                preds = model[1](embedding).squeeze()
+            else:
+                # For aimai: Input features ARE the embeddings
+                if extract_non_llm_embeddings and args.algo == 'aimai':
+                    embeddings_list.append(x.cpu().numpy())
+                preds = model(x).squeeze()
+            
             # Collect predictions
             if isinstance(preds, torch.Tensor):
                 preds_np = preds.cpu().numpy()
@@ -294,6 +344,15 @@ def evaluate(model, args, loader, norm, device, prints=True, data_sec="unknown",
                     labels_list.extend(y_list_value)
             else:
                 labels_list.append(float(y_squeezed))
+            
+            # Log batch processing time (only for test)
+            if data_sec == "test":
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize()
+                batch_time = timer() - batch_start
+                args.main_logger.info(f"[Test] Batch {batch_idx} — {batch_time*1000:.2f} ms")
+                # Mark start of next data fetch timing
+                data_fetch_start = timer()
 
     # Convert to numpy arrays
     predss = np.array(preds_list, dtype=float).flatten()
@@ -349,7 +408,69 @@ def evaluate(model, args, loader, norm, device, prints=True, data_sec="unknown",
             )
         else:
             print("Warning: Missing data for verbose output generation")
+    
+    # Handle verbose output for non-LLM algorithms (aimai, qf, e2e_cost)
+    elif verbose_info and args.algo in ['aimai', 'qf', 'e2e_cost'] and output_dir_qerror and data_sec == "test":
+        if extract_non_llm_embeddings and len(embeddings_list) > 0:
+            print(f"Generating verbose output for {args.algo}...")
+            
+            # Convert test embeddings to numpy array
+            test_embeddings_np = np.concatenate(embeddings_list, axis=0)
+            print(f"  Test embeddings shape: {test_embeddings_np.shape}")
+            
+            # Get training embeddings - need to pass through the entire training set
+            # This requires access to the train_loader and train dataset
+            # For now, I'll mark this as needing to be passed from train.py
+            if train_embeddings is not None:
+                print(f"  Train embeddings shape: {train_embeddings.shape}")
+                
+                # Find KNN distances
+                k = getattr(args, 'knn_k', 5)
+                knn_distances, knn_indices = find_knn_distances(test_embeddings_np, train_embeddings, k)
+                
+                # Generate verbose output path
+                verbose_output_path = get_verbose_output_path(output_dir_qerror)
+                
+                # Get plan file path and test indices
+                plan_file_path = getattr(args, 'test_plan_file_path', None)
+                test_ids = getattr(args, 'test_ids', None)
+                
+                # Generate embedding file path
+                if plan_file_path:
+                    embedding_file_path = get_embedding_file_path(
+                        args.algo,
+                        plan_file_path,
+                        getattr(args, 'workloads_train', []),
+                        getattr(args, 'workload_test', None),
+                        getattr(args, 'seed', 42)
+                    )
+                    
+                    # Save verbose output
+                    save_verbose_output(
+                        verbose_output_path,
+                        None,  # No test texts for non-LLM
+                        test_embeddings_np,
+                        labels_true,
+                        preds_true,
+                        q_errors_dist,
+                        knn_distances,
+                        knn_indices,
+                        is_card=getattr(args, 'card', False),
+                        plan_file_path=plan_file_path,
+                        embedding_file_path=embedding_file_path,
+                        index_map=test_ids
+                    )
+                else:
+                    print("  Warning: Plan file path not available for verbose output")
+            else:
+                print("  Warning: Training embeddings not provided - skipping verbose output")
+                print("  (You need to generate and pass training embeddings for KNN calculation)")
+        else:
+            print(f"Warning: Cannot generate verbose output for {args.algo} - embeddings not extracted")
 
+    if data_sec == "test":
+        eval_time = timer() - eval_start
+        args.main_logger.info(f"[Test] Total evaluation time — {eval_time*1000:.2f} ms")
     print("evaluated")
     return q_errors, abs_errors, q_errors_dist, abs_errors_dist
 
@@ -458,6 +579,9 @@ def train(model, train_loader, val_loader, \
 
     model.to(device)
     
+    # Check if model is Sequential for embedding extraction
+    is_sequential = isinstance(model, nn.Sequential)
+    
     for epoch in range(epochs):
         epoch_start = timer()
         model.train()
@@ -480,7 +604,14 @@ def train(model, train_loader, val_loader, \
                 x, y = x.to(device), y.to(device)
             optimizer.zero_grad()
 
-            preds = model(x)
+            # Forward pass (handle Sequential models)
+            if is_sequential:
+                # For Sequential: extract embedding from first module, then pass to second
+                embedding = model[0](x)
+                preds = model[1](embedding)
+            else:
+                preds = model(x)
+            
             loss = crit(preds, y)
 
             loss.backward()
@@ -587,9 +718,12 @@ def check_batch_for_nans(batch):
                 has_nan = True
     return has_nan
 
-def train_and_test_bao(train_roots, train_costs, test_roots, test_costs, args, device):
+def train_and_test_bao(train_roots, train_costs, test_roots, test_costs, args, device,
+                       total_roots=None, total_costs=None, train_ids=None, test_ids=None,
+                       plan_file_path=None, output_dir_qerror=None):
     """
     Train and test the BaoRegression model. Returns metrics and predictions.
+    Optionally generates embeddings and verbose output if verbose_info is enabled.
     """
     from algorithms.bao.model import BaoRegression
     from algorithms.bao.featurize import collate as bao_collate
@@ -602,14 +736,110 @@ def train_and_test_bao(train_roots, train_costs, test_roots, test_costs, args, d
     training_time = time.time() - training_start
     args.main_logger.info(f"[Train] Training took {training_time*1000:.2f} ms")
 
+    # Generate embeddings for verbose output if requested
+    train_embeddings_for_knn = None
+    test_embeddings = None
+    embedding_file_path = None
+    
+    if getattr(args, 'verbose_info', False) and total_roots is not None and plan_file_path:
+        print("Generating embeddings for BAO verbose output...")
+        
+        # Generate embedding file path
+        embedding_file_path = get_embedding_file_path(
+            'bao',
+            plan_file_path,
+            getattr(args, 'workloads_train', []),
+            getattr(args, 'workload_test', None),
+            getattr(args, 'seed', 42)
+        )
+        
+        # Check if embeddings already exist
+        if os.path.exists(embedding_file_path):
+            print(f"  Loading existing BAO embeddings from: {embedding_file_path}")
+            all_embeddings = load_non_llm_embeddings(embedding_file_path)
+        else:
+            print(f"  Generating embeddings for {len(total_roots)} samples...")
+            all_embeddings_list = []
+            max_embedding_len = 500  # Fixed size for variable-length embeddings
+            
+            for idx, root in enumerate(total_roots):
+                if idx % 100 == 0:
+                    print(f"    Progress: {idx}/{len(total_roots)}", end='\r')
+                
+                # Featurize
+                featurized = bao._BaoRegression__tree_transform.transform([root])
+                batch, _ = bao_collate(list(zip(featurized, [0.0])))
+                batch = batch.to(device)
+                
+                # Extract embedding BEFORE DynamicPooling (variable-length tree structure)
+                with torch.no_grad():
+                    # Get tree embedding before pooling: [batch, channels, nodes]
+                    # tree_conv includes DynamicPooling at the end, so use tree_conv[:-1]
+                    tree_conv_without_pooling = bao._BaoRegression__net.tree_conv[:-1]
+                    tree_embedding = tree_conv_without_pooling((batch.trees, batch.idxes))
+                    
+                    # Extract features from tree structure
+                    if isinstance(tree_embedding, tuple):
+                        tree_feats = tree_embedding[0]  # [batch, channels, nodes]
+                    else:
+                        tree_feats = tree_embedding
+                    
+                    # Flatten to 1D: [batch * channels * nodes]
+                    flat_embedding = tree_feats.cpu().numpy().flatten()
+                    
+                    # Pad or truncate to fixed size
+                    if len(flat_embedding) >= max_embedding_len:
+                        embedding_vector = flat_embedding[:max_embedding_len]
+                    else:
+                        # Pad with zeros
+                        embedding_vector = np.zeros(max_embedding_len)
+                        embedding_vector[:len(flat_embedding)] = flat_embedding
+                    
+                    all_embeddings_list.append(embedding_vector)
+            
+            print(f"\n    Generated embeddings for all {len(total_roots)} samples")
+            all_embeddings = np.array(all_embeddings_list)
+            save_non_llm_embeddings(all_embeddings, embedding_file_path)
+        
+        # Extract training embeddings for KNN
+        if train_ids is not None:
+            train_embeddings_for_knn = all_embeddings[train_ids]
+            print(f"  Training embeddings for KNN shape: {train_embeddings_for_knn.shape}")
+
     # Testing
     test_start = time.time()
     preds_test = []
+    test_embeddings_list = []
+    max_embedding_len = 500  # Must match training embedding size
+    
     for root in test_roots:
         featurized = bao._BaoRegression__tree_transform.transform([root])
         batch, _ = bao_collate(list(zip(featurized, [0.0])))
         batch = batch.to(device)
         with torch.no_grad():
+            # Store embedding BEFORE pooling for verbose output if needed
+            if getattr(args, 'verbose_info', False) and train_embeddings_for_knn is not None:
+                # Get tree embedding before pooling
+                # tree_conv includes DynamicPooling at the end, so use tree_conv[:-1]
+                tree_conv_without_pooling = bao._BaoRegression__net.tree_conv[:-1]
+                tree_embedding = tree_conv_without_pooling((batch.trees, batch.idxes))
+                
+                if isinstance(tree_embedding, tuple):
+                    tree_feats = tree_embedding[0]
+                else:
+                    tree_feats = tree_embedding
+                
+                # Flatten and pad/truncate to fixed size
+                flat_embedding = tree_feats.cpu().numpy().flatten()
+                if len(flat_embedding) >= max_embedding_len:
+                    embedding_vector = flat_embedding[:max_embedding_len]
+                else:
+                    embedding_vector = np.zeros(max_embedding_len)
+                    embedding_vector[:len(flat_embedding)] = flat_embedding
+                
+                test_embeddings_list.append(embedding_vector)
+            
+            # Get prediction
             raw_pred = bao._BaoRegression__net(batch)
             raw_np   = raw_pred.cpu().numpy()
         final_pred = bao._BaoRegression__pipeline.inverse_transform(raw_np)
@@ -621,6 +851,35 @@ def train_and_test_bao(train_roots, train_costs, test_roots, test_costs, args, d
     abserr = get_abs_errors(preds_test, test_costs)
     qerr_dist = get_qerror_distribution(preds_test, test_costs)
     abserr_dist = get_abs_error_distribution(preds_test, test_costs)
+    
+    # Generate verbose output if requested
+    if getattr(args, 'verbose_info', False) and train_embeddings_for_knn is not None and len(test_embeddings_list) > 0:
+        print("Generating verbose output for BAO...")
+        test_embeddings = np.array(test_embeddings_list)
+        
+        # Find KNN
+        k = getattr(args, 'knn_k', 5)
+        knn_distances, knn_indices = find_knn_distances(test_embeddings, train_embeddings_for_knn, k)
+        
+        # Generate verbose output path
+        verbose_output_path = get_verbose_output_path(output_dir_qerror if output_dir_qerror else args.output_dir_qerror)
+        
+        # Save verbose output
+        save_verbose_output(
+            verbose_output_path,
+            None,  # No test texts for BAO
+            test_embeddings,
+            test_costs,
+            preds_test,
+            qerr_dist,
+            knn_distances,
+            knn_indices,
+            is_card=getattr(args, 'card', False),
+            plan_file_path=plan_file_path,
+            embedding_file_path=embedding_file_path,
+            index_map=test_ids
+        )
+    
     return {
         'qerr': qerr,
         'abserr': abserr,
@@ -630,6 +889,7 @@ def train_and_test_bao(train_roots, train_costs, test_roots, test_costs, args, d
         'training_time': training_time,
         'test_time': test_time,
     }
+
 
 def train_and_test_postgres(train_roots, train_costs, test_roots, test_costs, args):
     """
@@ -773,3 +1033,133 @@ def get_verbose_output_path(output_dir_qerror):
         verbose_path = os.path.join(verbose_dir, verbose_filename)
     
     return verbose_path
+
+
+def get_embedding_file_path(algo, plan_file_path, workloads_train, workload_test, seed):
+    """
+    Generate embedding file path for non-LLM algorithms.
+    
+    Args:
+        algo: Algorithm name (aimai, qf, e2e_cost, bao)
+        plan_file_path: Path to the plan file (e.g., "../queryPlans/tpch/postgres/long_raw_postgres_tpch.csv")
+        workloads_train: List of training workloads
+        workload_test: Test workload name
+        seed: Random seed
+    
+    Returns:
+        Embedding file path (e.g., "embeddings/non-llm/aimai_Train_tpch_Test_tpch_seed42_tpch.csv")
+    """
+    # Extract the dataset name from plan file path
+    plan_basename = os.path.basename(plan_file_path)
+    # Extract dataset identifier (e.g., "tpch", "imdb_job", etc.)
+    dataset_id = plan_basename.replace("long_raw_postgres_", "").replace(".csv", "")
+    
+    # Build embedding file path
+    train_str = '-'.join(workloads_train) if workloads_train else 'unknown'
+    test_str = workload_test if workload_test else 'unknown'
+    
+    embedding_filename = f"{algo}_Train_{train_str}_Test_{test_str}_seed{seed}_{dataset_id}.csv"
+    embedding_path = os.path.join("embeddings", "non-llm", embedding_filename)
+    
+    return embedding_path
+
+
+def save_non_llm_embeddings(embeddings, embedding_file_path):
+    """
+    Save non-LLM embeddings to CSV file.
+    
+    Args:
+        embeddings: numpy array of embeddings [N, D]
+        embedding_file_path: path to save embeddings
+    """
+    os.makedirs(os.path.dirname(embedding_file_path), exist_ok=True)
+    df = pd.DataFrame(embeddings)
+    df.to_csv(embedding_file_path, index=False)
+    print(f"Saved {len(embeddings)} embeddings to: {embedding_file_path}")
+
+
+def load_non_llm_embeddings(embedding_file_path):
+    """
+    Load non-LLM embeddings from CSV file.
+    
+    Args:
+        embedding_file_path: path to load embeddings from
+    
+    Returns:
+        numpy array of embeddings [N, D]
+    """
+    if os.path.exists(embedding_file_path):
+        df = pd.read_csv(embedding_file_path)
+        return df.values
+    return None
+
+
+def generate_and_save_embeddings_for_dataset(model, dataset, embedding_file_path, device, algo):
+    """
+    Generate embeddings for an entire dataset and save to file.
+    For non-LLM algorithms with Sequential models, this extracts embeddings from model[0].
+    
+    Args:
+        model: The trained model (Sequential for aimai/qf/e2e_cost)
+        dataset: PyTorch Dataset containing all data
+        embedding_file_path: Path to save embeddings
+        device: torch device
+        algo: Algorithm name
+    
+    Returns:
+        numpy array of embeddings [N, D]
+    """
+    # Check if embedding file already exists
+    if os.path.exists(embedding_file_path):
+        print(f"  Loading existing embeddings from: {embedding_file_path}")
+        return load_non_llm_embeddings(embedding_file_path)
+    
+    print(f"  Generating embeddings for {len(dataset)} samples...")
+    
+    # Create a DataLoader with appropriate collate function
+    if algo == 'e2e_cost':
+        from algorithms.e2e_cost.e2e_dataset import collator as e2e_collator
+        full_loader = DataLoader(dataset, batch_size=1, shuffle=False, collate_fn=e2e_collator)
+    elif algo == 'qf':
+        from algorithms.queryformer.dataset_utils import collator as qf_collator
+        full_loader = DataLoader(dataset, batch_size=1, shuffle=False, collate_fn=qf_collator)
+    else:
+        full_loader = DataLoader(dataset, batch_size=1, shuffle=False)
+    
+    model.to(device)
+    model.eval()
+    
+    embeddings_list = []
+    
+    # Check if model is Sequential
+    is_sequential = isinstance(model, nn.Sequential)
+    
+    with torch.no_grad():
+        for x, y in full_loader:
+            # Handle different input types based on algorithm
+            if algo in ['e2e_cost', 'qf']:
+                # For e2e_cost and qf: x is a Batch object with .to() method
+                x = x.to(device)
+            elif isinstance(x, torch.Tensor):
+                x = x.to(device)
+            else:
+                # Fallback: try to convert to tensor
+                x = x.to(device) if hasattr(x, 'to') else torch.tensor(x, device=device)
+            
+            # Extract embedding
+            if is_sequential:
+                # For Sequential models: get output from first module (before MLP)
+                embedding = model[0](x)
+            else:
+                # For non-Sequential models: use the input as embedding
+                embedding = x
+            
+            embeddings_list.append(embedding.cpu().numpy())
+    
+    # Concatenate all embeddings
+    embeddings = np.concatenate(embeddings_list, axis=0)
+    
+    # Save to file
+    save_non_llm_embeddings(embeddings, embedding_file_path)
+    
+    return embeddings

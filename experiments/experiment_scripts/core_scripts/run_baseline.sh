@@ -70,6 +70,12 @@ if [[ "$TASK" == "card" ]] && [[ "$WORKLOAD_TEST" != "job" && "$WORKLOAD_TEST" !
     exit 1
 fi
 
+# Get verbose_info setting from environment variable
+VERBOSE_ARG=""
+if [[ "$VERBOSE_INFO" == "true" || "$VERBOSE_INFO" == "True" ]]; then
+  VERBOSE_ARG="--verbose_info"
+fi
+
 # Set up file names
 base_name="${TASK}_${ALGO}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}"
 if [[ "$ALGO" == "aimai" ]]; then
@@ -91,7 +97,8 @@ if [[ "$TASK" == "card" ]]; then
                                     --train_ratio $train_ratio \
                                     --card \
                                     --seed $SEED \
-                                    --aime_features ${AIME_FEATURES}
+                                    --aime_features ${AIME_FEATURES} \
+                                    $VERBOSE_ARG
 else
     python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
                                     --output_dir_qerror results/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/${base_name}.csv \
@@ -105,5 +112,6 @@ else
                                     --batch_size $batch_size \
                                     --train_ratio $train_ratio \
                                     --seed $SEED \
-                                    --aime_features ${AIME_FEATURES}
+                                    --aime_features ${AIME_FEATURES} \
+                                    $VERBOSE_ARG
 fi

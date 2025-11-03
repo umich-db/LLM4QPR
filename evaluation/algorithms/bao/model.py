@@ -191,4 +191,3 @@ class BaoRegression:
         self.__net.eval()
         pred = self.__net(X).cpu().detach().numpy()
         return self.__pipeline.inverse_transform(pred)
-

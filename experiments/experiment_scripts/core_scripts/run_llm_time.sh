@@ -89,11 +89,36 @@ if [ "$finetune" == "False" ]; then
     VERBOSE_ARG="--verbose_info"
   fi
   
+  # Get removed_fields setting from environment variable
+  REMOVED_FIELDS_ARG=""
+  REMOVED_FIELDS_SUFFIX=""
+  if [[ -n "$REMOVED_FIELDS" && "$REMOVED_FIELDS" != "" ]]; then
+    REMOVED_FIELDS_ARG="--removed_fields $REMOVED_FIELDS"
+    # Convert comma-separated categories to abbreviated suffix
+    # This will be handled in Python, but we still need suffix for filename
+    IFS=',' read -ra FIELD_CATS <<< "$REMOVED_FIELDS"
+    SUFFIX_PARTS=()
+    for cat in "${FIELD_CATS[@]}"; do
+      cat_trimmed=$(echo "$cat" | tr -d ' ')
+      case "$cat_trimmed" in
+        operator_structure_and_config) SUFFIX_PARTS+=("ops") ;;
+        cost) SUFFIX_PARTS+=("cost") ;;
+        cardinality) SUFFIX_PARTS+=("card") ;;
+        conditions_and_filters) SUFFIX_PARTS+=("cond") ;;
+        metadata_and_config) SUFFIX_PARTS+=("meta") ;;
+        *) echo "Warning: Unknown category '$cat_trimmed' ignored" ;;
+      esac
+    done
+    if [ ${#SUFFIX_PARTS[@]} -gt 0 ]; then
+      REMOVED_FIELDS_SUFFIX="_rm-$(IFS=-; echo "${SUFFIX_PARTS[*]}")"
+    fi
+  fi
+  
   
   python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                      --output_dir_qerror results/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-None_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}_seed${SEED}.csv \
-                                      --output_dir_abs results/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-None_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}_seed${SEED}_abs.txt \
-                                      --log_file logs/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-None_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}_seed${SEED}.log \
+                                      --output_dir_qerror results/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-None_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}_seed${SEED}.csv \
+                                      --output_dir_abs results/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-None_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}_seed${SEED}_abs.txt \
+                                      --log_file logs/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-None_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}_seed${SEED}.log \
                                       --db postgres \
                                       --workloads_train "${TRAIN_WLS[@]}" \
                                       --workload_test ${WORKLOAD_TEST} \
@@ -105,12 +130,12 @@ if [ "$finetune" == "False" ]; then
                                       --embed_size $embed_size \
                                       --train_ratio $train_ratio \
                                       --llm_mode inference \
-                                      --num_epoch 200 \
                                       --seed $SEED \
                                       $BUCKETIZE_ARG \
                                       $QUANTIFICATION_ARG \
                                       $EMBEDDINGS_ARG \
-                                      $VERBOSE_ARG
+                                      $VERBOSE_ARG \
+                                      $REMOVED_FIELDS_ARG
 fi
 
 if [ "$finetune" == "True" ]; then
@@ -246,11 +271,35 @@ if [ "$finetune" == "True" ]; then
     EMBEDDINGS_ARG="--embeddings_exist"
   fi
   
+  # Get removed_fields setting from environment variable
+  REMOVED_FIELDS_ARG=""
+  REMOVED_FIELDS_SUFFIX=""
+  if [[ -n "$REMOVED_FIELDS" && "$REMOVED_FIELDS" != "" ]]; then
+    REMOVED_FIELDS_ARG="--removed_fields $REMOVED_FIELDS"
+    # Convert comma-separated categories to abbreviated suffix
+    IFS=',' read -ra FIELD_CATS <<< "$REMOVED_FIELDS"
+    SUFFIX_PARTS=()
+    for cat in "${FIELD_CATS[@]}"; do
+      cat_trimmed=$(echo "$cat" | tr -d ' ')
+      case "$cat_trimmed" in
+        operator_structure_and_config) SUFFIX_PARTS+=("ops") ;;
+        cost) SUFFIX_PARTS+=("cost") ;;
+        cardinality) SUFFIX_PARTS+=("card") ;;
+        conditions_and_filters) SUFFIX_PARTS+=("cond") ;;
+        metadata_and_config) SUFFIX_PARTS+=("meta") ;;
+        *) echo "Warning: Unknown category '$cat_trimmed' ignored" ;;
+      esac
+    done
+    if [ ${#SUFFIX_PARTS[@]} -gt 0 ]; then
+      REMOVED_FIELDS_SUFFIX="_rm-$(IFS=-; echo "${SUFFIX_PARTS[*]}")"
+    fi
+  fi
+  
   
   python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                      --output_dir_qerror results/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}_seed${SEED}.csv \
-                                      --output_dir_abs results/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}_seed${SEED}_abs.txt \
-                                      --log_file logs/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}_seed${SEED}.log \
+                                      --output_dir_qerror results/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}_seed${SEED}.csv \
+                                      --output_dir_abs results/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}_seed${SEED}_abs.txt \
+                                      --log_file logs/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}_seed${SEED}.log \
                                       --db postgres \
                                       --workloads_train "${TRAIN_WLS[@]}" \
                                       --workload_test ${WORKLOAD_TEST} \
@@ -268,5 +317,6 @@ if [ "$finetune" == "True" ]; then
                                       --seed $SEED \
                                       $BUCKETIZE_ARG \
                                       $QUANTIFICATION_ARG \
-                                      $EMBEDDINGS_ARG
+                                      $EMBEDDINGS_ARG \
+                                      $REMOVED_FIELDS_ARG
 fi

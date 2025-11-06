@@ -154,8 +154,8 @@ def main():
                         help='Base directory path (default: current directory)')
     parser.add_argument('--threshold', type=int, default=4,
                         help='Number of evaluation points (out of 4: q50, q90, q95, qmax) where LLM must beat non-LLM (default: 4)')
-    parser.add_argument('--relative', action='store_true',
-                        help='Evaluate relative error (reads files with "relative" in the name)')
+    parser.add_argument('--relative', type=str, choices=['pg', 'min'], default=None,
+                        help='Evaluate relative error. Use "pg" for postgres baseline or "min" for minimum baseline.')
     args = parser.parse_args()
     
     # Validate threshold
@@ -168,12 +168,22 @@ def main():
     base_path = Path(args.dir) / 'graphs/averaged_by_task'
     
     # Determine file pattern based on relative flag
-    file_suffix = '_relative' if args.relative else ''
-    error_type = 'relative error' if args.relative else 'absolute error'
+    if args.relative:
+        file_suffix = f'_relative-{args.relative}'
+        error_type = f'relative error ({args.relative})'
+    else:
+        file_suffix = ''
+        error_type = 'absolute error'
+
+    log_lines = []
+
+    def log(message=""):
+        print(message)
+        log_lines.append(message)
     
-    print(f"Analyzing data from: {base_path.absolute()}")
-    print(f"Evaluating {error_type}")
-    print(f"Threshold: LLM must beat non-LLM in at least {threshold} out of 4 evaluation points (q50, q90, q95, qmax)\n")
+    log(f"Analyzing data from: {base_path.absolute()}")
+    log(f"Evaluating {error_type}")
+    log(f"Threshold: LLM must beat non-LLM in at least {threshold} out of 4 evaluation points (q50, q90, q95, qmax)\n")
     
     # Analyze card_averaged
     card_path = base_path / 'card_averaged'
@@ -181,20 +191,26 @@ def main():
     card_non_llm_errors = {}
     card_llm_errors = {}
     
-    print("="*80)
-    print("CARD TASK ANALYSIS")
-    print("="*80)
+    log("="*80)
+    log("CARD TASK ANALYSIS")
+    log("="*80)
     
     # Only analyze test evaluation points (q50, q90, q95, qmax)
     # Get all matching files and filter based on suffix to avoid double-counting
     all_csv_files = sorted(card_path.glob('test_*_data.csv'))
     
     if file_suffix:
-        # In relative mode, only keep files with the suffix
-        csv_files = [f for f in all_csv_files if file_suffix in f.stem]
+        csv_files = []
+        for f in all_csv_files:
+            base_name = f.stem.replace('_data', '')
+            if base_name.endswith(file_suffix):
+                csv_files.append(f)
     else:
-        # In non-relative mode, exclude files with "_relative" to avoid double-counting
-        csv_files = [f for f in all_csv_files if '_relative' not in f.stem]
+        csv_files = []
+        for f in all_csv_files:
+            base_name = f.stem.replace('_data', '')
+            if '_relative-' not in base_name:
+                csv_files.append(f)
     
     for csv_file in csv_files:
         filename = csv_file.stem.replace('_data', '')
@@ -203,26 +219,26 @@ def main():
         card_non_llm_errors[filename] = non_llm_errors
         card_llm_errors[filename] = llm_errors
         
-        print(f"\n{filename}:")
-        print(f"  Best non-LLM error: {best_non_llm:.2f}")
+        log(f"\n{filename}:")
+        log(f"  Best non-LLM error: {best_non_llm:.2f}")
         if better_models:
-            print(f"  LLM models beating non-LLM: {len(better_models)}")
+            log(f"  LLM models beating non-LLM: {len(better_models)}")
             for model in sorted(better_models):
-                print(f"    - {model}")
+                log(f"    - {model}")
         else:
-            print(f"  No LLM models beat non-LLM")
+            log(f"  No LLM models beat non-LLM")
     
     # Find models that meet the threshold across card files
     if card_results:
         winning_card = filter_models_by_threshold(card_results, threshold)
-        print(f"\n{'='*80}")
-        print(f"LLM models that beat non-LLM in at least {threshold} card evaluation points:")
-        print(f"{'='*80}")
+        log(f"\n{'='*80}")
+        log(f"LLM models that beat non-LLM in at least {threshold} card evaluation points:")
+        log(f"{'='*80}")
         if winning_card:
             for model in sorted(winning_card.keys()):
-                print(f"  ✓ {model} ({winning_card[model]}/4 points)")
+                log(f"  ✓ {model} ({winning_card[model]}/4 points)")
         else:
-            print(f"  None - no LLM model beats non-LLM in at least {threshold} card evaluation points")
+            log(f"  None - no LLM model beats non-LLM in at least {threshold} card evaluation points")
         common_card = winning_card
     else:
         common_card = {}
@@ -230,69 +246,69 @@ def main():
     # Rank non-LLM algorithms for card task
     if card_non_llm_errors:
         card_ranks_by_metric, card_rankings = rank_non_llm_algorithms(card_non_llm_errors)
-        print(f"\n{'='*80}")
-        print(f"Non-LLM Algorithm Rankings (Card Task):")
-        print(f"{'='*80}")
+        log(f"\n{'='*80}")
+        log(f"Non-LLM Algorithm Rankings (Card Task):")
+        log(f"{'='*80}")
         
         # Display ranks for each evaluation point
-        print("\nRanks by evaluation point:")
+        log("\nRanks by evaluation point:")
         # Sort metrics to ensure consistent order (q50, q90, q95, qmax)
         metric_order = {'q50': 0, 'q90': 1, 'q95': 2, 'qmax': 3}
         sorted_metrics = sorted(card_ranks_by_metric.keys(), 
                                key=lambda x: metric_order.get(x.split('_')[1], 999))
         for metric in sorted_metrics:
-            print(f"\n  {metric}:")
+            log(f"\n  {metric}:")
             sorted_metric = sorted(card_ranks_by_metric[metric].items(), key=lambda x: x[1])
             for algo, rank in sorted_metric:
-                print(f"    {rank}. {algo}")
+                log(f"    {rank}. {algo}")
         
-        print("\n" + "-"*80)
-        print("Average rank across all evaluation points (q50, q90, q95, qmax)")
-        print("(Lower average rank is better)\n")
+        log("\n" + "-"*80)
+        log("Average rank across all evaluation points (q50, q90, q95, qmax)")
+        log("(Lower average rank is better)\n")
         
         # Sort by average rank
         sorted_rankings = sorted(card_rankings.items(), key=lambda x: x[1])
         for rank, (algo, avg_rank) in enumerate(sorted_rankings, start=1):
-            print(f"  {rank}. {algo}: avg rank = {avg_rank:.2f}")
+            log(f"  {rank}. {algo}: avg rank = {avg_rank:.2f}")
     else:
-        print(f"\n{'='*80}")
-        print(f"Non-LLM Algorithm Rankings (Card Task): No data available")
-        print(f"{'='*80}")
+        log(f"\n{'='*80}")
+        log(f"Non-LLM Algorithm Rankings (Card Task): No data available")
+        log(f"{'='*80}")
     
     # Rank LLM models for card task
     card_llm_rankings = {}
     if card_llm_errors:
         card_llm_ranks_by_metric, card_llm_rankings = rank_algorithms(card_llm_errors)
-        print(f"\n{'='*80}")
-        print(f"LLM Model Rankings (Card Task):")
-        print(f"{'='*80}")
+        log(f"\n{'='*80}")
+        log(f"LLM Model Rankings (Card Task):")
+        log(f"{'='*80}")
         
         # Display ranks for each evaluation point
-        print("\nRanks by evaluation point:")
+        log("\nRanks by evaluation point:")
         sorted_metrics = sorted(card_llm_ranks_by_metric.keys(), 
                                key=lambda x: metric_order.get(x.split('_')[1], 999))
         for metric in sorted_metrics:
-            print(f"\n  {metric}:")
+            log(f"\n  {metric}:")
             sorted_metric = sorted(card_llm_ranks_by_metric[metric].items(), key=lambda x: x[1])
             for model, rank in sorted_metric:
-                print(f"    {rank}. {model}")
+                log(f"    {rank}. {model}")
         
-        print("\n" + "-"*80)
-        print("Average rank across all evaluation points (q50, q90, q95, qmax)")
-        print("(Lower average rank is better)\n")
+        log("\n" + "-"*80)
+        log("Average rank across all evaluation points (q50, q90, q95, qmax)")
+        log("(Lower average rank is better)\n")
         
         # Sort by average rank
         sorted_rankings = sorted(card_llm_rankings.items(), key=lambda x: x[1])
         for rank, (model, avg_rank) in enumerate(sorted_rankings, start=1):
-            print(f"  {rank}. {model}: avg rank = {avg_rank:.2f}")
+            log(f"  {rank}. {model}: avg rank = {avg_rank:.2f}")
     else:
-        print(f"\n{'='*80}")
-        print(f"LLM Model Rankings (Card Task): No data available")
-        print(f"{'='*80}")
+        log(f"\n{'='*80}")
+        log(f"LLM Model Rankings (Card Task): No data available")
+        log(f"{'='*80}")
     
-    print("\n\n" + "="*80)
-    print("TIME TASK ANALYSIS")
-    print("="*80)
+    log("\n\n" + "="*80)
+    log("TIME TASK ANALYSIS")
+    log("="*80)
     
     # Analyze time_averaged
     time_path = base_path / 'time_averaged'
@@ -305,11 +321,17 @@ def main():
     all_csv_files = sorted(time_path.glob('test_*_data.csv'))
     
     if file_suffix:
-        # In relative mode, only keep files with the suffix
-        csv_files = [f for f in all_csv_files if file_suffix in f.stem]
+        csv_files = []
+        for f in all_csv_files:
+            base_name = f.stem.replace('_data', '')
+            if base_name.endswith(file_suffix):
+                csv_files.append(f)
     else:
-        # In non-relative mode, exclude files with "_relative" to avoid double-counting
-        csv_files = [f for f in all_csv_files if '_relative' not in f.stem]
+        csv_files = []
+        for f in all_csv_files:
+            base_name = f.stem.replace('_data', '')
+            if '_relative-' not in base_name:
+                csv_files.append(f)
     
     for csv_file in csv_files:
         filename = csv_file.stem.replace('_data', '')
@@ -318,26 +340,26 @@ def main():
         time_non_llm_errors[filename] = non_llm_errors
         time_llm_errors[filename] = llm_errors
         
-        print(f"\n{filename}:")
-        print(f"  Best non-LLM error: {best_non_llm:.2f}")
+        log(f"\n{filename}:")
+        log(f"  Best non-LLM error: {best_non_llm:.2f}")
         if better_models:
-            print(f"  LLM models beating non-LLM: {len(better_models)}")
+            log(f"  LLM models beating non-LLM: {len(better_models)}")
             for model in sorted(better_models):
-                print(f"    - {model}")
+                log(f"    - {model}")
         else:
-            print(f"  No LLM models beat non-LLM")
+            log(f"  No LLM models beat non-LLM")
     
     # Find models that meet the threshold across time files
     if time_results:
         winning_time = filter_models_by_threshold(time_results, threshold)
-        print(f"\n{'='*80}")
-        print(f"LLM models that beat non-LLM in at least {threshold} time evaluation points:")
-        print(f"{'='*80}")
+        log(f"\n{'='*80}")
+        log(f"LLM models that beat non-LLM in at least {threshold} time evaluation points:")
+        log(f"{'='*80}")
         if winning_time:
             for model in sorted(winning_time.keys()):
-                print(f"  ✓ {model} ({winning_time[model]}/4 points)")
+                log(f"  ✓ {model} ({winning_time[model]}/4 points)")
         else:
-            print(f"  None - no LLM model beats non-LLM in at least {threshold} time evaluation points")
+            log(f"  None - no LLM model beats non-LLM in at least {threshold} time evaluation points")
         common_time = winning_time
     else:
         common_time = {}
@@ -345,104 +367,104 @@ def main():
     # Rank non-LLM algorithms for time task
     if time_non_llm_errors:
         time_ranks_by_metric, time_rankings = rank_non_llm_algorithms(time_non_llm_errors)
-        print(f"\n{'='*80}")
-        print(f"Non-LLM Algorithm Rankings (Time Task):")
-        print(f"{'='*80}")
+        log(f"\n{'='*80}")
+        log(f"Non-LLM Algorithm Rankings (Time Task):")
+        log(f"{'='*80}")
         
         # Display ranks for each evaluation point
-        print("\nRanks by evaluation point:")
+        log("\nRanks by evaluation point:")
         # Sort metrics to ensure consistent order (q50, q90, q95, qmax)
         metric_order = {'q50': 0, 'q90': 1, 'q95': 2, 'qmax': 3}
         sorted_metrics = sorted(time_ranks_by_metric.keys(), 
                                key=lambda x: metric_order.get(x.split('_')[1], 999))
         for metric in sorted_metrics:
-            print(f"\n  {metric}:")
+            log(f"\n  {metric}:")
             sorted_metric = sorted(time_ranks_by_metric[metric].items(), key=lambda x: x[1])
             for algo, rank in sorted_metric:
-                print(f"    {rank}. {algo}")
+                log(f"    {rank}. {algo}")
         
-        print("\n" + "-"*80)
-        print("Average rank across all evaluation points (q50, q90, q95, qmax)")
-        print("(Lower average rank is better)\n")
+        log("\n" + "-"*80)
+        log("Average rank across all evaluation points (q50, q90, q95, qmax)")
+        log("(Lower average rank is better)\n")
         
         # Sort by average rank
         sorted_rankings = sorted(time_rankings.items(), key=lambda x: x[1])
         for rank, (algo, avg_rank) in enumerate(sorted_rankings, start=1):
-            print(f"  {rank}. {algo}: avg rank = {avg_rank:.2f}")
+            log(f"  {rank}. {algo}: avg rank = {avg_rank:.2f}")
     else:
-        print(f"\n{'='*80}")
-        print(f"Non-LLM Algorithm Rankings (Time Task): No data available")
-        print(f"{'='*80}")
+        log(f"\n{'='*80}")
+        log(f"Non-LLM Algorithm Rankings (Time Task): No data available")
+        log(f"{'='*80}")
     
     # Rank LLM models for time task
     time_llm_rankings = {}
     if time_llm_errors:
         time_llm_ranks_by_metric, time_llm_rankings = rank_algorithms(time_llm_errors)
-        print(f"\n{'='*80}")
-        print(f"LLM Model Rankings (Time Task):")
-        print(f"{'='*80}")
+        log(f"\n{'='*80}")
+        log(f"LLM Model Rankings (Time Task):")
+        log(f"{'='*80}")
         
         # Display ranks for each evaluation point
-        print("\nRanks by evaluation point:")
+        log("\nRanks by evaluation point:")
         sorted_metrics = sorted(time_llm_ranks_by_metric.keys(), 
                                key=lambda x: metric_order.get(x.split('_')[1], 999))
         for metric in sorted_metrics:
-            print(f"\n  {metric}:")
+            log(f"\n  {metric}:")
             sorted_metric = sorted(time_llm_ranks_by_metric[metric].items(), key=lambda x: x[1])
             for model, rank in sorted_metric:
-                print(f"    {rank}. {model}")
+                log(f"    {rank}. {model}")
         
-        print("\n" + "-"*80)
-        print("Average rank across all evaluation points (q50, q90, q95, qmax)")
-        print("(Lower average rank is better)\n")
+        log("\n" + "-"*80)
+        log("Average rank across all evaluation points (q50, q90, q95, qmax)")
+        log("(Lower average rank is better)\n")
         
         # Sort by average rank
         sorted_rankings = sorted(time_llm_rankings.items(), key=lambda x: x[1])
         for rank, (model, avg_rank) in enumerate(sorted_rankings, start=1):
-            print(f"  {rank}. {model}: avg rank = {avg_rank:.2f}")
+            log(f"  {rank}. {model}: avg rank = {avg_rank:.2f}")
     else:
-        print(f"\n{'='*80}")
-        print(f"LLM Model Rankings (Time Task): No data available")
-        print(f"{'='*80}")
+        log(f"\n{'='*80}")
+        log(f"LLM Model Rankings (Time Task): No data available")
+        log(f"{'='*80}")
     
     # Overall summary
-    print("\n\n" + "="*80)
-    print("OVERALL SUMMARY")
-    print("="*80)
+    log("\n\n" + "="*80)
+    log("OVERALL SUMMARY")
+    log("="*80)
     
     if common_card:
-        print(f"\n✓ LLM models beating non-LLM in ≥{threshold} card evaluation points ({len(common_card)}):")
+        log(f"\n✓ LLM models beating non-LLM in ≥{threshold} card evaluation points ({len(common_card)}):")
         for model in sorted(common_card.keys()):
-            print(f"  - {model} ({common_card[model]}/4)")
+            log(f"  - {model} ({common_card[model]}/4)")
     else:
-        print(f"\n✗ No LLM model beats non-LLM in at least {threshold} card evaluation points")
+        log(f"\n✗ No LLM model beats non-LLM in at least {threshold} card evaluation points")
     
     if common_time:
-        print(f"\n✓ LLM models beating non-LLM in ≥{threshold} time evaluation points ({len(common_time)}):")
+        log(f"\n✓ LLM models beating non-LLM in ≥{threshold} time evaluation points ({len(common_time)}):")
         for model in sorted(common_time.keys()):
-            print(f"  - {model} ({common_time[model]}/4)")
+            log(f"  - {model} ({common_time[model]}/4)")
     else:
-        print(f"\n✗ No LLM model beats non-LLM in at least {threshold} time evaluation points")
+        log(f"\n✗ No LLM model beats non-LLM in at least {threshold} time evaluation points")
     
     # Find models that beat non-LLM in both card AND time (with threshold)
     if common_card and common_time:
         both_models = set(common_card.keys()).intersection(set(common_time.keys()))
-        print(f"\n{'='*80}")
-        print(f"LLM models beating non-LLM in BOTH card AND time (≥{threshold} points each):")
-        print(f"{'='*80}")
+        log(f"\n{'='*80}")
+        log(f"LLM models beating non-LLM in BOTH card AND time (≥{threshold} points each):")
+        log(f"{'='*80}")
         if both_models:
             for model in sorted(both_models):
-                print(f"  ⭐ {model} (card: {common_card[model]}/4, time: {common_time[model]}/4)")
+                log(f"  ⭐ {model} (card: {common_card[model]}/4, time: {common_time[model]}/4)")
         else:
-            print("  None")
+            log("  None")
     
     # Overall LLM model rankings (average of card and time)
     if card_llm_rankings or time_llm_rankings:
-        print(f"\n{'='*80}")
-        print(f"Overall LLM Model Rankings (Average of Card and Time Tasks):")
-        print(f"{'='*80}")
-        print("Ranked by average rank across both tasks and all evaluation points")
-        print("(Lower average rank is better)\n")
+        log(f"\n{'='*80}")
+        log(f"Overall LLM Model Rankings (Average of Card and Time Tasks):")
+        log(f"{'='*80}")
+        log("Ranked by average rank across both tasks and all evaluation points")
+        log("(Lower average rank is better)\n")
         
         # Collect all LLM models from both tasks
         all_llm_models = set(card_llm_rankings.keys()).union(set(time_llm_rankings.keys()))
@@ -465,7 +487,13 @@ def main():
             # Show individual task ranks if available
             card_rank = f"{card_llm_rankings[model]:.2f}" if model in card_llm_rankings else "N/A"
             time_rank = f"{time_llm_rankings[model]:.2f}" if model in time_llm_rankings else "N/A"
-            print(f"  {rank}. {model}: avg rank = {avg_rank:.2f} (card: {card_rank}, time: {time_rank})")
+            log(f"  {rank}. {model}: avg rank = {avg_rank:.2f} (card: {card_rank}, time: {time_rank})")
+
+    if args.relative:
+        output_text = "\n".join(log_lines) + "\n"
+        output_file = base_path / f"relative-{args.relative}.txt"
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        output_file.write_text(output_text)
 
 
 if __name__ == "__main__":

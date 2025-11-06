@@ -174,6 +174,165 @@ def prepare_paths(argsP):
         print("done running get_new")
     return dat_paths_train_list, dat_path_test, dat_dict
 
+def prepare_non_llm_verbose_embeddings(argsP, trained_model, device, ds_info, dat_dict, 
+                                        dat_paths_train_list, dat_path_test, dat_path):
+    """
+    Prepare embeddings for verbose output for non-LLM algorithms (aimai, qf, e2e_cost).
+    Handles both same-file and separate-file scenarios, matching LLM behavior.
+    
+    Args:
+        argsP: Arguments object
+        trained_model: Trained model
+        device: torch device
+        ds_info: Dataset info object
+        dat_dict: Dictionary containing roots, costs, and IDs
+        dat_paths_train_list: List of training data paths
+        dat_path_test: Test data path
+        dat_path: Base data path (for histogram/table sample)
+    
+    Returns:
+        train_embeddings_verbose: numpy array of training embeddings for KNN
+    """
+    from trainer import generate_and_save_embeddings_for_dataset, get_embedding_file_path
+    import numpy as np
+    
+    print(f"  Generating embeddings for {argsP.algo}...")
+    
+    # Check if train and test come from the same file
+    same_file = (len(dat_paths_train_list) == 1 and dat_paths_train_list[0] == dat_path_test)
+    
+    if same_file:
+        # Case 1: Train/Val/Test all from same file - cache once and split
+        print(f"  Train/Val/Test from same file: {dat_path_test}")
+        
+        total_roots = dat_dict.get('total_roots', None)
+        total_costs = dat_dict.get('total_costs', None)
+        
+        if total_roots is not None and total_costs is not None:
+            # Generate embedding file path for the single file
+            embedding_file_path = get_embedding_file_path(
+                argsP.algo, dat_path_test, argsP.workloads_train, argsP.workload_test, argsP.seed
+            )
+            
+            # Create dataset for all data
+            print(f"  Creating dataset for all {len(total_roots)} samples...")
+            full_ds = create_dataset_for_algo(
+                argsP.algo, ds_info, total_roots, total_costs, argsP, dat_path
+            )
+            
+            # Generate/load embeddings for all data
+            all_embeddings = generate_and_save_embeddings_for_dataset(
+                trained_model, full_ds, embedding_file_path, device, argsP.algo
+            )
+            
+            # Extract training embeddings for KNN
+            train_ids = dat_dict.get('train_ids', None)
+            test_ids = dat_dict.get('test_ids', None)
+            
+            if train_ids is not None:
+                train_embeddings_verbose = all_embeddings[train_ids]
+                print(f"  Training embeddings for KNN shape: {train_embeddings_verbose.shape}")
+            else:
+                print("  Warning: train_ids not found")
+                train_embeddings_verbose = None
+            
+            # Store metadata for verbose output
+            argsP.test_plan_file_path = dat_path_test
+            argsP.test_embedding_cache_path = embedding_file_path
+            
+            # Set test_original_indices for index mapping (same as LLM logic)
+            if test_ids is not None:
+                argsP.test_original_indices = test_ids
+                print(f"  Set test_original_indices for index mapping")
+            
+            return train_embeddings_verbose
+        else:
+            print("  Warning: total_roots not available - skipping embedding generation")
+            return None
+    
+    else:
+        # Case 2: Separate train and test files - cache each separately
+        print(f"  Separate train files and test file")
+        print(f"  Train files: {dat_paths_train_list}")
+        print(f"  Test file: {dat_path_test}")
+        
+        # Generate embeddings for each training file and collect train embeddings
+        train_embeddings_list = []
+        for dat_path_train in dat_paths_train_list:
+            print(f"    Processing train file: {dat_path_train}")
+            
+            # Read the training file to get roots and costs
+            if dat_path_train.endswith('.json'):
+                df_train = pd.read_json(dat_path_train)
+            else:
+                df_train = pd.read_csv(dat_path_train)
+            
+            # Get roots and costs for this training file
+            from evaluation.dataset_utils import df2nodes, get_costs
+            train_roots, train_js_nodes, train_idxs = df2nodes(df_train)
+            train_costs = get_costs(train_js_nodes, argsP.card)
+            
+            # Generate embedding file path for this training file
+            embedding_file_path_train = get_embedding_file_path(
+                argsP.algo, dat_path_train, argsP.workloads_train, argsP.workload_test, argsP.seed
+            )
+            
+            # Create dataset for this training file
+            train_ds = create_dataset_for_algo(
+                argsP.algo, ds_info, train_roots, train_costs, argsP, dat_path_train
+            )
+            
+            # Generate/load embeddings
+            train_embeddings = generate_and_save_embeddings_for_dataset(
+                trained_model, train_ds, embedding_file_path_train, device, argsP.algo
+            )
+            
+            train_embeddings_list.append(train_embeddings)
+        
+        # Concatenate all training embeddings
+        if train_embeddings_list:
+            train_embeddings_verbose = np.concatenate(train_embeddings_list, axis=0)
+            print(f"  Combined training embeddings shape: {train_embeddings_verbose.shape}")
+        else:
+            train_embeddings_verbose = None
+        
+        # Generate embeddings for test file separately
+        print(f"    Processing test file: {dat_path_test}")
+        
+        # Read test file to get roots and costs
+        if dat_path_test.endswith('.json'):
+            df_test = pd.read_json(dat_path_test)
+        else:
+            df_test = pd.read_csv(dat_path_test)
+        
+        from evaluation.dataset_utils import df2nodes, get_costs
+        test_roots, test_js_nodes, test_idxs = df2nodes(df_test)
+        test_costs = get_costs(test_js_nodes, argsP.card)
+        
+        # Generate embedding file path for test file
+        embedding_file_path_test = get_embedding_file_path(
+            argsP.algo, dat_path_test, argsP.workloads_train, argsP.workload_test, argsP.seed
+        )
+        
+        # Create dataset for test file
+        test_ds_full = create_dataset_for_algo(
+            argsP.algo, ds_info, test_roots, test_costs, argsP, dat_path_test
+        )
+        
+        # Generate/load embeddings for test
+        test_embeddings_full = generate_and_save_embeddings_for_dataset(
+            trained_model, test_ds_full, embedding_file_path_test, device, argsP.algo
+        )
+        
+        # Store metadata for verbose output
+        argsP.test_plan_file_path = dat_path_test
+        argsP.test_embedding_cache_path = embedding_file_path_test
+        
+        # Do NOT set test_original_indices in this case (same as LLM logic)
+        
+        return train_embeddings_verbose
+
+
 def create_dataset_for_algo(algo, ds_info, roots, costs, argsP, dat_path, query_ids=None):
     """
     Helper function to create a dataset for a specific algorithm and set of roots/costs.

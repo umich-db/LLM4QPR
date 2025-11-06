@@ -431,21 +431,13 @@ def evaluate(model, args, loader, norm, device, prints=True, data_sec="unknown",
                 # Generate verbose output path
                 verbose_output_path = get_verbose_output_path(output_dir_qerror)
                 
-                # Get plan file path and test indices
+                # Get plan file path, embedding path, and index mapping
                 plan_file_path = getattr(args, 'test_plan_file_path', None)
-                test_ids = getattr(args, 'test_ids', None)
+                embedding_file_path = getattr(args, 'test_embedding_cache_path', None)
+                index_map = getattr(args, 'test_original_indices', None)
                 
-                # Generate embedding file path
-                if plan_file_path:
-                    embedding_file_path = get_embedding_file_path(
-                        args.algo,
-                        plan_file_path,
-                        getattr(args, 'workloads_train', []),
-                        getattr(args, 'workload_test', None),
-                        getattr(args, 'seed', 42)
-                    )
-                    
-                    # Save verbose output
+                # Save verbose output
+                if plan_file_path and embedding_file_path:
                     save_verbose_output(
                         verbose_output_path,
                         None,  # No test texts for non-LLM
@@ -458,7 +450,7 @@ def evaluate(model, args, loader, norm, device, prints=True, data_sec="unknown",
                         is_card=getattr(args, 'card', False),
                         plan_file_path=plan_file_path,
                         embedding_file_path=embedding_file_path,
-                        index_map=test_ids
+                        index_map=index_map
                     )
                 else:
                     print("  Warning: Plan file path not available for verbose output")
@@ -864,6 +856,9 @@ def train_and_test_bao(train_roots, train_costs, test_roots, test_costs, args, d
         # Generate verbose output path
         verbose_output_path = get_verbose_output_path(output_dir_qerror if output_dir_qerror else args.output_dir_qerror)
         
+        # Get index mapping (only set when train/test from same file)
+        index_map = getattr(args, 'test_original_indices', None)
+        
         # Save verbose output
         save_verbose_output(
             verbose_output_path,
@@ -877,7 +872,7 @@ def train_and_test_bao(train_roots, train_costs, test_roots, test_costs, args, d
             is_card=getattr(args, 'card', False),
             plan_file_path=plan_file_path,
             embedding_file_path=embedding_file_path,
-            index_map=test_ids
+            index_map=index_map
         )
     
     return {

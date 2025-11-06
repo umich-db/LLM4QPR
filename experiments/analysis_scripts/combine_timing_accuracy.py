@@ -290,7 +290,7 @@ def main():
     args = parse_args()
     base_dir = Path(args.base_dir)
     
-    logs_dir = base_dir / 'logs'
+    logs_dir = base_dir / 'logs_theOne'
     results_dir = base_dir / 'results'
     
     print(f"Processing base directory: {base_dir}")

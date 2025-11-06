@@ -119,6 +119,18 @@ if argsP.algo == "bao":
   train_ids = dat_dict.get('train_ids', None)
   test_ids = dat_dict.get('test_ids', None)
   
+  # Set test_original_indices only when train/val/test are from the same file
+  same_file = (len(dat_paths_train_list) == 1 and dat_paths_train_list[0] == dat_path_test)
+  if same_file and test_ids is not None:
+    argsP.test_original_indices = test_ids
+    print(f"  BAO: Set test_original_indices for index mapping (same file scenario)")
+  else:
+    # Don't set test_original_indices when train and test are from different files
+    print(f"  BAO: Separate train/test files - no index mapping")
+  
+  # Set metadata for verbose output
+  argsP.test_plan_file_path = dat_path_test
+  
   results = train_and_test_bao(
       train_roots, train_costs, test_roots, test_costs, argsP, device,
       total_roots=total_roots, total_costs=total_costs,
@@ -205,54 +217,10 @@ else:
     
     elif argsP.algo in ['aimai', 'qf', 'e2e_cost']:
       # For non-LLM algorithms with Sequential models
-      # Need to extract embeddings from model[0] for ALL data (matching the plan file)
-      from trainer import generate_and_save_embeddings_for_dataset, get_embedding_file_path
-      
-      print(f"  Generating embeddings for {argsP.algo}...")
-      
-      # Get plan file path
-      plan_file_path = dat_path_test
-      
-      # Generate embedding file path
-      embedding_file_path = get_embedding_file_path(
-          argsP.algo,
-          plan_file_path,
-          argsP.workloads_train,
-          argsP.workload_test,
-          argsP.seed
+      train_embeddings_verbose = utilsTrain.prepare_non_llm_verbose_embeddings(
+          argsP, trained_model, device, ds_info, dat_dict,
+          dat_paths_train_list, dat_path_test, dat_path
       )
-      
-      # Get complete dataset (train+val+test combined) from dat_dict
-      total_roots = dat_dict.get('total_roots', None)
-      total_costs = dat_dict.get('total_costs', None)
-      
-      if total_roots is not None and total_costs is not None:
-        print(f"  Creating dataset for all {len(total_roots)} samples from plan file...")
-        
-        # Use helper function from utilsTrain to create full dataset
-        full_ds = utilsTrain.create_dataset_for_algo(
-            argsP.algo, ds_info, total_roots, total_costs, argsP, dat_path
-        )
-        
-        # Generate and save embeddings for the complete dataset
-        all_embeddings = generate_and_save_embeddings_for_dataset(
-            trained_model, full_ds, embedding_file_path, device, argsP.algo
-        )
-        
-        # Extract training embeddings for KNN (using train_ids)
-        train_ids = dat_dict.get('train_ids', None)
-        if train_ids is not None:
-          train_embeddings_verbose = all_embeddings[train_ids]
-          print(f"  Training embeddings for KNN shape: {train_embeddings_verbose.shape}")
-        else:
-          print("  Warning: train_ids not found - using full dataset for KNN")
-          train_embeddings_verbose = all_embeddings
-        
-        # Store metadata for verbose output
-        argsP.test_plan_file_path = plan_file_path
-        argsP.test_ids = dat_dict.get('test_ids', None)
-      else:
-        print("  Warning: total_roots not available - skipping embedding generation")
   
   if not argsP.card:
     q_errors, abs_errors, q_errors_dist, abs_errors_dist = evaluate(trained_model, argsP, test_loader, ds_info.cost_norm, device, data_sec="test",

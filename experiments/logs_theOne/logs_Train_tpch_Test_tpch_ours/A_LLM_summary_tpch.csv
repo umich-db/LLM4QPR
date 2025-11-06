@@ -1,0 +1,13 @@
+task,model,dat_path,total_time_ms,max_prompt_num
+time,Qwen-Qwen3-Embedding-0.6B,tpch,316944.59,2200
+time,Qwen-Qwen3-Embedding-4B,tpch,1957502.93,2200
+time,Qwen-Qwen3-Embedding-8B,tpch,3610115.12,2200
+time,answerdotai-ModernBERT-base,tpch,124848.35,2200
+time,bert-base-uncased,tpch,67683.12,2200
+time,google-gemma-3-12b-pt,tpch,1085753.98,2200
+time,google-gemma-3-1b-pt,tpch,186243.4,2200
+time,google-gemma-3-4b-pt,tpch,432601.03,2200
+time,meta-llama-Llama-3.1-8B,tpch,657113.25,2200
+time,meta-llama-Llama-3.2-1B,tpch,153093.35,2200
+time,meta-llama-Llama-3.2-3B,tpch,340266.07,2200
+time,sentence-transformers-all-MiniLM-L6-v2,tpch,44051.1,2200

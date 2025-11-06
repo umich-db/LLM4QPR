@@ -329,14 +329,15 @@ class QueryFormerDataset(Dataset):
         t3 = time.perf_counter()
 
         # log step timings if main_logger is configured
-        try:
-            main_logger = logging.getLogger("main_logger")
-            if main_logger and main_logger.handlers:
-                main_logger.info(f"[DataLoad] __getitem__ node2dict — {(t1-t0)*1000:.2f} ms")
-                main_logger.info(f"[DataLoad] __getitem__ pre_collate — {(t2-t1)*1000:.2f} ms")
-                main_logger.info(f"[DataLoad] __getitem__ fetch_label — {(t3-t2)*1000:.2f} ms")
-        except Exception:
-            pass
+        # TEMPORARILY DISABLED
+        # try:
+        #     main_logger = logging.getLogger("main_logger")
+        #     if main_logger and main_logger.handlers:
+        #         main_logger.info(f"[DataLoad] __getitem__ node2dict — {(t1-t0)*1000:.2f} ms")
+        #         main_logger.info(f"[DataLoad] __getitem__ pre_collate — {(t2-t1)*1000:.2f} ms")
+        #         main_logger.info(f"[DataLoad] __getitem__ fetch_label — {(t3-t2)*1000:.2f} ms")
+        # except Exception:
+        #     pass
 
         # # return self.collated_dicts[idx], self.cost_labels[idx]
         # sample = self.collated_dicts[idx]
@@ -659,11 +660,12 @@ def collator(small_set):
     # print(f"Final dimensions of heights: {heights.shape}")
     
     _t1 = time.perf_counter()
-    try:
-        main_logger = logging.getLogger("main_logger")
-        if main_logger and main_logger.handlers:
-            main_logger.info(f"[DataLoad] collator total — {(_t1-_t0)*1000:.2f} ms")
-    except Exception:
-        pass
+    # TEMPORARILY DISABLED
+    # try:
+    #     main_logger = logging.getLogger("main_logger")
+    #     if main_logger and main_logger.handlers:
+    #         main_logger.info(f"[DataLoad] collator total — {(_t1-_t0)*1000:.2f} ms")
+    # except Exception:
+    #     pass
 
     return Batch(attn_bias, rel_pos, heights, x, y, additional_feature), y

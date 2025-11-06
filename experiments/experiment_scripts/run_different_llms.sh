@@ -269,7 +269,7 @@ for SEED in "${seeds[@]}"; do
             
             # Run cardinality prediction experiment if selected and workload supports it
             if [ "$RUN_CARD" = true ]; then
-                if [[ "$WORKLOAD" == "job" || "$WORKLOAD" == "job_full" || "$WORKLOAD" == "syn" || "$WORKLOAD" == "stats" ]]; then
+                if [[ "$WORKLOAD" == "job" || "$WORKLOAD" == "syn" || "$WORKLOAD" == "stats" ]]; then
                     bash experiment_scripts/core_scripts/run_llm_card.sh $WORKLOAD $WORKLOAD 1.0 False $model_name $model_name1 $SEED
                 fi
             fi

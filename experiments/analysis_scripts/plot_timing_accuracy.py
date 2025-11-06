@@ -27,8 +27,9 @@ def parse_args():
                         help="Output directory for graphs (default: graphs)")
     parser.add_argument("--outlier_nth", type=int, default=3,
                         help="Use nth highest value for outlier filtering (default: 3). Outliers are filtered if > 10x this value.")
-    parser.add_argument("--relative", action="store_true",
-                        help="Plot relative error with postgres as baseline (postgres error = 1)")
+    parser.add_argument("--relative", type=str, choices=["pg", "min"], default=None,
+                        help="Plot relative error. Use 'pg' for postgres baseline (current behavior) "
+                             "or 'min' to use the smallest error as baseline.")
     return parser.parse_args()
 
 
@@ -192,7 +193,7 @@ def filter_extreme_outliers(df, error_col='error', nth_highest=3):
         print(f"    Note: outlier_nth ({nth_highest}) > data points ({len(sorted_errors)}), using smallest error as reference")
     else:
     # Get the nth highest value (nth_highest - 1 because of 0-indexing)
-    reference_value = sorted_errors[nth_highest - 1]
+        reference_value = sorted_errors[nth_highest - 1]
     
     # Calculate threshold (10x the reference value, or 10 if reference is negative)
     if reference_value < 0:
@@ -231,40 +232,61 @@ def assign_colors_to_dataframe(df, all_llm_models_in_group):
     return colors
 
 
-def convert_to_relative_error(df, error_col='error'):
+def convert_to_relative_error(df, error_col='error', mode='pg'):
     """
-    Convert errors to relative errors with postgres as baseline (postgres error = 1).
+    Convert errors to relative errors.
     
     Args:
         df: DataFrame with error column and algo column
         error_col: Name of the error column
+        mode: 'pg' to use postgres as baseline (current behavior),
+              'min' to use the smallest error as baseline.
     
     Returns:
         DataFrame with relative errors
     """
     df = df.copy()
     
-    # Find postgres error
-    postgres_rows = df[df['algo'] == 'postgres']
-    if postgres_rows.empty or pd.isna(postgres_rows[error_col].iloc[0]):
-        raise ValueError("No postgres error found or postgres error is NaN, cannot compute relative error")
-    
-    postgres_error = postgres_rows[error_col].iloc[0]
-    
-    # Handle special cases
-    if postgres_error == 0:
-        raise ValueError("Postgres error is 0, cannot compute relative error")
-    
-    if postgres_error == np.inf:
-        raise ValueError("Postgres error is inf, cannot compute relative error")
-    
-    # Convert all errors to relative errors
-    df[error_col] = df[error_col] / postgres_error - postgres_error / df[error_col]
+    if mode == 'pg':
+        # Find postgres error
+        postgres_rows = df[df['algo'] == 'postgres']
+        if postgres_rows.empty or pd.isna(postgres_rows[error_col].iloc[0]):
+            raise ValueError("No postgres error found or postgres error is NaN, cannot compute relative error")
+        
+        postgres_error = postgres_rows[error_col].iloc[0]
+        
+        # Handle special cases
+        if postgres_error == 0:
+            raise ValueError("Postgres error is 0, cannot compute relative error")
+        
+        if postgres_error == np.inf:
+            raise ValueError("Postgres error is inf, cannot compute relative error")
+        
+        # Convert all errors to relative errors (postgres baseline becomes 0)
+        df[error_col] = df[error_col] / postgres_error - postgres_error / df[error_col]
+    elif mode == 'min':
+        # Use the smallest non-NaN, non-negative error as baseline
+        errors = df[error_col].dropna()
+        if errors.empty:
+            raise ValueError("Cannot compute relative error - all errors are NaN")
+        
+        # Prefer strictly positive minimum to avoid divide-by-zero; fallback to zero if all zeros
+        positive_errors = errors[errors > 0]
+        if not positive_errors.empty:
+            baseline = positive_errors.min()
+        else:
+            # If all errors are zero, relative comparison is undefined
+            raise ValueError("Cannot compute relative error - all errors are zero")
+        
+        df[error_col] = df[error_col] / baseline
+    else:
+        raise ValueError(f"Unsupported relative mode: {mode}")
     
     return df
 
 
-def create_scatter_plot(df, phase, metric, group_name, output_dir, all_llm_models_in_group, nth_highest=3, relative=False, convert_relative=False):
+def create_scatter_plot(df, phase, metric, group_name, output_dir, all_llm_models_in_group,
+                        nth_highest=3, relative_mode=None, convert_relative=False):
     """
     Create a scatter plot for a specific phase (train/test) and metric (q50/q90/q95/qmax).
     
@@ -276,7 +298,7 @@ def create_scatter_plot(df, phase, metric, group_name, output_dir, all_llm_model
         output_dir: Directory to save the plot
         all_llm_models_in_group: List of ALL LLM models in the group (before filtering)
         nth_highest: Which highest value to use for outlier filtering (default: 3)
-        relative: If True, plot relative error with postgres as baseline (default: False)
+        relative_mode: None for absolute error, 'pg' for postgres baseline, 'min' for minimum baseline
         convert_relative: If True, convert to relative error (default: False, used when data is not already relative)
     """
     # Filter out rows with missing data and exclude postgres
@@ -297,7 +319,7 @@ def create_scatter_plot(df, phase, metric, group_name, output_dir, all_llm_model
     
     # Convert to relative error if requested and not already converted
     if convert_relative:
-        df = convert_to_relative_error(df, error_col='error')
+        df = convert_to_relative_error(df, error_col='error', mode=relative_mode if relative_mode else 'pg')
     
     # Separate postgres rows (may have NaN time)
     postgres_rows = df[df['algo'] == 'postgres'].copy()
@@ -405,7 +427,10 @@ def create_scatter_plot(df, phase, metric, group_name, output_dir, all_llm_model
     
     # Save data to CSV
     csv_df = pd.DataFrame(csv_data)
-    filename_suffix = '_relative' if relative else ''
+    if relative_mode:
+        filename_suffix = f'_relative-{relative_mode}'
+    else:
+        filename_suffix = ''
     csv_output_path = Path(output_dir) / group_name / f'{phase}_{metric}{filename_suffix}_data.csv'
     csv_output_path.parent.mkdir(parents=True, exist_ok=True)
     csv_df.to_csv(csv_output_path, index=False)
@@ -519,17 +544,31 @@ def create_scatter_plot(df, phase, metric, group_name, output_dir, all_llm_model
     # Set log scale for x-axis (time), but use linear scale for y-axis in relative mode
     # (because relative error can be negative or zero)
     ax.set_xscale('log')
-    if not relative:
-    ax.set_yscale('log')
+    # For absolute errors and min-relative mode use log scale; for postgres-relative mode keep linear (values can be negative)
+    if not relative_mode or relative_mode == 'min':
+        ax.set_yscale('log')
     else:
-        # In relative mode, add a horizontal line at y=0 to show postgres baseline
+        # In postgres-relative mode, values can be negative; keep linear scale and show baseline at 0
         ax.axhline(y=0, color='gray', linestyle='--', linewidth=1, alpha=0.5)
+
+    if relative_mode == 'min':
+        ax.axhline(y=1, color='gray', linestyle='--', linewidth=1, alpha=0.5)
     
     # Labels and title
     ax.set_xlabel('Time (ms)', fontsize=12)
-    error_label = f'Relative Q-Error ({metric})' if relative else f'Q-Error ({metric})'
+    if relative_mode == 'pg':
+        error_label = f'Relative Q-Error vs Postgres ({metric})'
+    elif relative_mode == 'min':
+        error_label = f'Relative Q-Error vs Min ({metric})'
+    else:
+        error_label = f'Q-Error ({metric})'
     ax.set_ylabel(error_label, fontsize=12)
-    title_suffix = ' (Relative)' if relative else ''
+    if relative_mode == 'pg':
+        title_suffix = ' (Relative to Postgres)'
+    elif relative_mode == 'min':
+        title_suffix = ' (Relative to Min Error)'
+    else:
+        title_suffix = ''
     ax.set_title(f'{group_name} - {phase.capitalize()} - {metric.upper()}{title_suffix}', fontsize=14)
     
     # Legend
@@ -550,7 +589,7 @@ def create_scatter_plot(df, phase, metric, group_name, output_dir, all_llm_model
     print(f"  Created: {output_path}")
 
 
-def process_group(group_df, group_name, output_dir, nth_highest=3, relative=False, already_relative=False):
+def process_group(group_df, group_name, output_dir, nth_highest=3, relative_mode=None, already_relative=False):
     """Process a group and create all 8 plots."""
     print(f"\nProcessing group: {group_name}")
     
@@ -589,8 +628,17 @@ def process_group(group_df, group_name, output_dir, nth_highest=3, relative=Fals
             
             # Create the plot
             # Pass convert_relative flag: only convert if relative is True and data is not already relative
-            create_scatter_plot(plot_df, phase, metric, group_name, output_dir, all_llm_models_in_group, 
-                              nth_highest=nth_highest, relative=relative, convert_relative=(relative and not already_relative))
+            create_scatter_plot(
+                plot_df,
+                phase,
+                metric,
+                group_name,
+                output_dir,
+                all_llm_models_in_group,
+                nth_highest=nth_highest,
+                relative_mode=relative_mode,
+                convert_relative=(relative_mode is not None and not already_relative)
+            )
 
 
 def main():
@@ -615,35 +663,31 @@ def main():
     }, inplace=True)
     
     # Remove job_full/card combination (applies to both grouping modes)
-        print("\nFiltering out job_full/card combination...")
-        original_len = len(df)
-        df = df[~((df['dataset'] == 'job_full') & (df['task'] == 'card'))].copy()
-        filtered_count = original_len - len(df)
-        print(f"Removed {filtered_count} rows with job_full/card")
+    print("\nFiltering out job_full/card combination...")
+    original_len = len(df)
+    df = df[~((df['dataset'] == 'job_full') & (df['task'] == 'card'))].copy()
+    filtered_count = original_len - len(df)
+    print(f"Removed {filtered_count} rows with job_full/card")
     
     # If grouping by task only, automatically average across datasets
+    relative_mode = args.relative
+
     if args.group_by == "task":
         # If relative mode, calculate relative error for each dataset first, then average
-        if args.relative:
-            print("\nCalculating relative error for each dataset before averaging...")
+        if relative_mode:
+            print(f"\nCalculating relative error ({relative_mode}) for each dataset before averaging...")
             df_list = []
             for (dataset, task), group in df.groupby(['dataset', 'task']):
                 # Make a copy to avoid modifying the view
                 group = group.copy()
                 # Convert each metric to relative error for this dataset
-                # Use the same signed formula as convert_to_relative_error()
                 for metric in ['q50', 'q90', 'q95', 'qmax']:
-                    postgres_rows = group[group['algo'] == 'postgres']
-                    if not postgres_rows.empty and not pd.isna(postgres_rows[metric].iloc[0]):
-                        postgres_error = postgres_rows[metric].iloc[0]
-                        if postgres_error != 0 and postgres_error != np.inf:
-                            # Formula: (algo_error / postgres_error) - (postgres_error / algo_error)
-                            # This makes postgres = 0, negative = better, positive = worse
-                            group[metric] = group[metric] / postgres_error - postgres_error / group[metric]
-                        else:
-                            print(f"    Warning: Skipping {dataset}/{task}/{metric} - postgres error is {postgres_error}")
-                    else:
-                        print(f"    Warning: Skipping {dataset}/{task}/{metric} - no postgres error found")
+                    temp_df = group[['algo', metric]].rename(columns={metric: 'error'})
+                    try:
+                        converted = convert_to_relative_error(temp_df, error_col='error', mode=relative_mode)
+                        group[metric] = converted['error']
+                    except ValueError as exc:
+                        print(f"    Warning: Skipping {dataset}/{task}/{metric} - {exc}")
                 df_list.append(group)
             df = pd.concat(df_list, ignore_index=True)
             print("Relative error calculated for each dataset")
@@ -692,8 +736,15 @@ def main():
         
         # Process this group
         # If we're grouping by task and in relative mode, the data is already relative
-        already_relative = (args.group_by == "task" and args.relative)
-        process_group(group_df, group_name, output_dir, nth_highest=args.outlier_nth, relative=args.relative, already_relative=already_relative)
+        already_relative = (args.group_by == "task" and relative_mode is not None)
+        process_group(
+            group_df,
+            group_name,
+            output_dir,
+            nth_highest=args.outlier_nth,
+            relative_mode=relative_mode,
+            already_relative=already_relative
+        )
     
     print(f"\n✓ All graphs saved to: {output_dir.absolute()}")
     print(f"  Total groups processed: {total_groups}")

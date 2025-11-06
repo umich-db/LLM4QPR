@@ -745,53 +745,51 @@ def train_and_test_bao(train_roots, train_costs, test_roots, test_costs, args, d
             getattr(args, 'seed', 42)
         )
         
-        # Check if embeddings already exist
         if os.path.exists(embedding_file_path):
-            print(f"  Loading existing BAO embeddings from: {embedding_file_path}")
-            all_embeddings = load_non_llm_embeddings(embedding_file_path)
-        else:
-            print(f"  Generating embeddings for {len(total_roots)} samples...")
-            all_embeddings_list = []
-            max_embedding_len = 500  # Fixed size for variable-length embeddings
+            print(f"  Existing BAO embeddings found at {embedding_file_path} - regenerating and overwriting.")
+        
+        print(f"  Generating embeddings for {len(total_roots)} samples...")
+        all_embeddings_list = []
+        max_embedding_len = 500  # Fixed size for variable-length embeddings
+        
+        for idx, root in enumerate(total_roots):
+            if idx % 100 == 0:
+                print(f"    Progress: {idx}/{len(total_roots)}", end='\r')
             
-            for idx, root in enumerate(total_roots):
-                if idx % 100 == 0:
-                    print(f"    Progress: {idx}/{len(total_roots)}", end='\r')
-                
-                # Featurize
-                featurized = bao._BaoRegression__tree_transform.transform([root])
-                batch, _ = bao_collate(list(zip(featurized, [0.0])))
-                batch = batch.to(device)
-                
-                # Extract embedding BEFORE DynamicPooling (variable-length tree structure)
-                with torch.no_grad():
-                    # Get tree embedding before pooling: [batch, channels, nodes]
-                    # tree_conv includes DynamicPooling at the end, so use tree_conv[:-1]
-                    tree_conv_without_pooling = bao._BaoRegression__net.tree_conv[:-1]
-                    tree_embedding = tree_conv_without_pooling((batch.trees, batch.idxes))
-                    
-                    # Extract features from tree structure
-                    if isinstance(tree_embedding, tuple):
-                        tree_feats = tree_embedding[0]  # [batch, channels, nodes]
-                    else:
-                        tree_feats = tree_embedding
-                    
-                    # Flatten to 1D: [batch * channels * nodes]
-                    flat_embedding = tree_feats.cpu().numpy().flatten()
-                    
-                    # Pad or truncate to fixed size
-                    if len(flat_embedding) >= max_embedding_len:
-                        embedding_vector = flat_embedding[:max_embedding_len]
-                    else:
-                        # Pad with zeros
-                        embedding_vector = np.zeros(max_embedding_len)
-                        embedding_vector[:len(flat_embedding)] = flat_embedding
-                    
-                    all_embeddings_list.append(embedding_vector)
+            # Featurize
+            featurized = bao._BaoRegression__tree_transform.transform([root])
+            batch, _ = bao_collate(list(zip(featurized, [0.0])))
+            batch = batch.to(device)
             
-            print(f"\n    Generated embeddings for all {len(total_roots)} samples")
-            all_embeddings = np.array(all_embeddings_list)
-            save_non_llm_embeddings(all_embeddings, embedding_file_path)
+            # Extract embedding BEFORE DynamicPooling (variable-length tree structure)
+            with torch.no_grad():
+                # Get tree embedding before pooling: [batch, channels, nodes]
+                # tree_conv includes DynamicPooling at the end, so use tree_conv[:-1]
+                tree_conv_without_pooling = bao._BaoRegression__net.tree_conv[:-1]
+                tree_embedding = tree_conv_without_pooling((batch.trees, batch.idxes))
+                
+                # Extract features from tree structure
+                if isinstance(tree_embedding, tuple):
+                    tree_feats = tree_embedding[0]  # [batch, channels, nodes]
+                else:
+                    tree_feats = tree_embedding
+                
+                # Flatten to 1D: [batch * channels * nodes]
+                flat_embedding = tree_feats.cpu().numpy().flatten()
+                
+                # Pad or truncate to fixed size
+                if len(flat_embedding) >= max_embedding_len:
+                    embedding_vector = flat_embedding[:max_embedding_len]
+                else:
+                    # Pad with zeros
+                    embedding_vector = np.zeros(max_embedding_len)
+                    embedding_vector[:len(flat_embedding)] = flat_embedding
+                
+                all_embeddings_list.append(embedding_vector)
+        
+        print(f"\n    Generated embeddings for all {len(total_roots)} samples")
+        all_embeddings = np.array(all_embeddings_list)
+        save_non_llm_embeddings(all_embeddings, embedding_file_path)
         
         # Extract training embeddings for KNN
         if train_ids is not None:
@@ -1104,10 +1102,8 @@ def generate_and_save_embeddings_for_dataset(model, dataset, embedding_file_path
     Returns:
         numpy array of embeddings [N, D]
     """
-    # Check if embedding file already exists
     if os.path.exists(embedding_file_path):
-        print(f"  Loading existing embeddings from: {embedding_file_path}")
-        return load_non_llm_embeddings(embedding_file_path)
+        print(f"  Existing embeddings found at {embedding_file_path} - regenerating and overwriting.")
     
     print(f"  Generating embeddings for {len(dataset)} samples...")
     

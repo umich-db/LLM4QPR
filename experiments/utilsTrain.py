@@ -220,7 +220,7 @@ def prepare_non_llm_verbose_embeddings(argsP, trained_model, device, ds_info, da
                 argsP.algo, ds_info, total_roots, total_costs, argsP, dat_path
             )
             
-            # Generate/load embeddings for all data
+            # Generate embeddings for all data (overwrites existing cache)
             all_embeddings = generate_and_save_embeddings_for_dataset(
                 trained_model, full_ds, embedding_file_path, device, argsP.algo
             )
@@ -282,7 +282,7 @@ def prepare_non_llm_verbose_embeddings(argsP, trained_model, device, ds_info, da
                 argsP.algo, ds_info, train_roots, train_costs, argsP, dat_path_train
             )
             
-            # Generate/load embeddings
+            # Generate embeddings (overwrites existing cache)
             train_embeddings = generate_and_save_embeddings_for_dataset(
                 trained_model, train_ds, embedding_file_path_train, device, argsP.algo
             )
@@ -319,7 +319,7 @@ def prepare_non_llm_verbose_embeddings(argsP, trained_model, device, ds_info, da
             argsP.algo, ds_info, test_roots, test_costs, argsP, dat_path_test
         )
         
-        # Generate/load embeddings for test
+        # Generate embeddings for test (overwrites existing cache)
         test_embeddings_full = generate_and_save_embeddings_for_dataset(
             trained_model, test_ds_full, embedding_file_path_test, device, argsP.algo
         )

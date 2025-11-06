@@ -25,10 +25,10 @@
 
 
 # python analysis_scripts/card_rm_analysis.py --datasets job stats --average_by dataset
-python analysis_scripts/card_rm_analysis.py --datasets job stats --average_by model dataset
+# python analysis_scripts/card_rm_analysis.py --datasets job stats --average_by model dataset
 # python analysis_scripts/card_rm_analysis.py --datasets job stats --models h2048_google-gemma-3-1b-pt --average_by model dataset
 # python analysis_scripts/card_rm_analysis.py --datasets job stats --models h2048_Qwen-Qwen3-Embedding-8B --average_by model dataset
 # python analysis_scripts/card_rm_analysis.py --datasets job stats --models h2048_meta-llama-Llama-3.1-8B --average_by model dataset
 
-
+python analysis_scripts/check_missing_seeds.py --results_root results
 

@@ -8,7 +8,17 @@ import torch.nn.init as init
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader, TensorDataset
 import logging
-sys.path.append('../evaluation/')
+from pathlib import Path
+
+# Ensure absolute paths are available on sys.path for sibling modules
+_CURRENT_DIR = Path(__file__).resolve().parent
+_PROJECT_ROOT = _CURRENT_DIR.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+_EVALUATION_DIR = _PROJECT_ROOT / "evaluation"
+if str(_EVALUATION_DIR) not in sys.path:
+    sys.path.insert(0, str(_EVALUATION_DIR))
+
 from feature_extractor import DatasetInfo
 from dataset_utils import *
 from algorithms.aimeetsai import *

@@ -712,7 +712,7 @@ def check_batch_for_nans(batch):
 
 def train_and_test_bao(train_roots, train_costs, test_roots, test_costs, args, device,
                        total_roots=None, total_costs=None, train_ids=None, test_ids=None,
-                       plan_file_path=None, output_dir_qerror=None):
+                       plan_file_path=None, output_dir_qerror=None, dat_paths_train_list=None):
     """
     Train and test the BaoRegression model. Returns metrics and predictions.
     Optionally generates embeddings and verbose output if verbose_info is enabled.
@@ -733,68 +733,114 @@ def train_and_test_bao(train_roots, train_costs, test_roots, test_costs, args, d
     test_embeddings = None
     embedding_file_path = None
     
-    if getattr(args, 'verbose_info', False) and total_roots is not None and plan_file_path:
+    if getattr(args, 'verbose_info', False) and plan_file_path:
         print("Generating embeddings for BAO verbose output...")
-        
-        # Generate embedding file path
-        embedding_file_path = get_embedding_file_path(
-            'bao',
-            plan_file_path,
-            getattr(args, 'workloads_train', []),
-            getattr(args, 'workload_test', None),
-            getattr(args, 'seed', 42)
-        )
-        
-        if os.path.exists(embedding_file_path):
-            print(f"  Existing BAO embeddings found at {embedding_file_path} - regenerating and overwriting.")
-        
-        print(f"  Generating embeddings for {len(total_roots)} samples...")
-        all_embeddings_list = []
         max_embedding_len = 500  # Fixed size for variable-length embeddings
-        
-        for idx, root in enumerate(total_roots):
-            if idx % 100 == 0:
-                print(f"    Progress: {idx}/{len(total_roots)}", end='\r')
-            
-            # Featurize
-            featurized = bao._BaoRegression__tree_transform.transform([root])
-            batch, _ = bao_collate(list(zip(featurized, [0.0])))
-            batch = batch.to(device)
-            
-            # Extract embedding BEFORE DynamicPooling (variable-length tree structure)
-            with torch.no_grad():
-                # Get tree embedding before pooling: [batch, channels, nodes]
-                # tree_conv includes DynamicPooling at the end, so use tree_conv[:-1]
-                tree_conv_without_pooling = bao._BaoRegression__net.tree_conv[:-1]
-                tree_embedding = tree_conv_without_pooling((batch.trees, batch.idxes))
-                
-                # Extract features from tree structure
-                if isinstance(tree_embedding, tuple):
-                    tree_feats = tree_embedding[0]  # [batch, channels, nodes]
-                else:
-                    tree_feats = tree_embedding
-                
-                # Flatten to 1D: [batch * channels * nodes]
-                flat_embedding = tree_feats.cpu().numpy().flatten()
-                
-                # Pad or truncate to fixed size
-                if len(flat_embedding) >= max_embedding_len:
-                    embedding_vector = flat_embedding[:max_embedding_len]
-                else:
-                    # Pad with zeros
-                    embedding_vector = np.zeros(max_embedding_len)
-                    embedding_vector[:len(flat_embedding)] = flat_embedding
-                
-                all_embeddings_list.append(embedding_vector)
-        
-        print(f"\n    Generated embeddings for all {len(total_roots)} samples")
-        all_embeddings = np.array(all_embeddings_list)
-        save_non_llm_embeddings(all_embeddings, embedding_file_path)
-        
-        # Extract training embeddings for KNN
-        if train_ids is not None:
-            train_embeddings_for_knn = all_embeddings[train_ids]
-            print(f"  Training embeddings for KNN shape: {train_embeddings_for_knn.shape}")
+
+        def generate_embeddings_for_roots(roots, progress_label="samples"):
+            embeddings_list = []
+            total = len(roots)
+            for idx, root in enumerate(roots):
+                if idx % 100 == 0:
+                    print(f"    {progress_label}: {idx}/{total}", end='\r')
+
+                featurized = bao._BaoRegression__tree_transform.transform([root])
+                batch, _ = bao_collate(list(zip(featurized, [0.0])))
+                batch = batch.to(device)
+
+                with torch.no_grad():
+                    tree_conv_without_pooling = bao._BaoRegression__net.tree_conv[:-1]
+                    tree_embedding = tree_conv_without_pooling((batch.trees, batch.idxes))
+
+                    if isinstance(tree_embedding, tuple):
+                        tree_feats = tree_embedding[0]
+                    else:
+                        tree_feats = tree_embedding
+
+                    flat_embedding = tree_feats.cpu().numpy().flatten()
+                    if len(flat_embedding) >= max_embedding_len:
+                        embedding_vector = flat_embedding[:max_embedding_len]
+                    else:
+                        embedding_vector = np.zeros(max_embedding_len)
+                        embedding_vector[:len(flat_embedding)] = flat_embedding
+
+                    embeddings_list.append(embedding_vector)
+
+            print(f"\n    Generated embeddings for {progress_label} ({len(embeddings_list)} samples)")
+            return np.array(embeddings_list)
+
+        workloads_train = getattr(args, 'workloads_train', [])
+        workload_test = getattr(args, 'workload_test', None)
+        seed = getattr(args, 'seed', 42)
+
+        same_file = (
+            dat_paths_train_list is not None
+            and len(dat_paths_train_list) == 1
+            and dat_paths_train_list[0] == plan_file_path
+        )
+
+        if same_file and total_roots is not None:
+            embedding_file_path = get_embedding_file_path('bao', plan_file_path, workloads_train, workload_test, seed)
+            if os.path.exists(embedding_file_path):
+                print(f"  Existing BAO embeddings found at {embedding_file_path} - regenerating and overwriting.")
+
+            all_embeddings = generate_embeddings_for_roots(total_roots, "all samples")
+            save_non_llm_embeddings(all_embeddings, embedding_file_path)
+
+            if train_ids is not None:
+                train_embeddings_for_knn = all_embeddings[train_ids]
+                print(f"  Training embeddings for KNN shape: {train_embeddings_for_knn.shape}")
+        else:
+            from evaluation.dataset_utils import df2nodes
+
+            train_embeddings_chunks = []
+            if dat_paths_train_list:
+                for dat_path_train in dat_paths_train_list:
+                    print(f"  Processing train file: {dat_path_train}")
+                    if dat_path_train.endswith('.json'):
+                        df_train = pd.read_json(dat_path_train)
+                    else:
+                        df_train = pd.read_csv(dat_path_train)
+
+                    train_roots_file, _, _ = df2nodes(df_train)
+                    train_embeddings = generate_embeddings_for_roots(
+                        train_roots_file,
+                        f"train file {os.path.basename(dat_path_train)}"
+                    )
+
+                    embedding_path_train = get_embedding_file_path(
+                        'bao', dat_path_train, workloads_train, workload_test, seed
+                    )
+                    if os.path.exists(embedding_path_train):
+                        print(f"  Existing BAO embeddings found at {embedding_path_train} - regenerating and overwriting.")
+
+                    save_non_llm_embeddings(train_embeddings, embedding_path_train)
+                    train_embeddings_chunks.append(train_embeddings)
+
+            if train_embeddings_chunks:
+                train_embeddings_for_knn = np.concatenate(train_embeddings_chunks, axis=0)
+                print(f"  Training embeddings for KNN shape: {train_embeddings_for_knn.shape}")
+
+            print(f"  Processing test file: {plan_file_path}")
+            if plan_file_path.endswith('.json'):
+                df_test = pd.read_json(plan_file_path)
+            else:
+                df_test = pd.read_csv(plan_file_path)
+
+            test_roots_full, _, _ = df2nodes(df_test)
+
+            embedding_file_path = get_embedding_file_path('bao', plan_file_path, workloads_train, workload_test, seed)
+            if os.path.exists(embedding_file_path):
+                print(f"  Existing BAO embeddings found at {embedding_file_path} - regenerating and overwriting.")
+
+            test_embeddings_full = generate_embeddings_for_roots(
+                test_roots_full,
+                f"test file {os.path.basename(plan_file_path)}"
+            )
+            save_non_llm_embeddings(test_embeddings_full, embedding_file_path)
+
+        if embedding_file_path:
+            setattr(args, 'test_embedding_cache_path', embedding_file_path)
 
     # Testing
     test_start = time.time()

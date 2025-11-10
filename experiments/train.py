@@ -136,7 +136,8 @@ if argsP.algo == "bao":
       total_roots=total_roots, total_costs=total_costs,
       train_ids=train_ids, test_ids=test_ids,
       plan_file_path=dat_path_test,
-      output_dir_qerror=argsP.output_dir_qerror
+      output_dir_qerror=argsP.output_dir_qerror,
+      dat_paths_train_list=dat_paths_train_list
   )
   save_error_cdf(results['qerr_dist'], argsP.output_dir_qerror, error_type="Qerror")
   # save_error_cdf(results['abserr_dist'], argsP.output_dir_abs,   error_type="abs_error")

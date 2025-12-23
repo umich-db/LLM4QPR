@@ -57,6 +57,8 @@ def parse_args():
                         help="If set, override test dat_path (otherwise use --dat_path)")
     parser.add_argument("--train_ratio", type=float, default=-1)
     parser.add_argument("--llm_mode", type=str, default="inference")
+    parser.add_argument("--llm_downstream", type=str, choices=['mlp', 'autogluon'], default='mlp',
+                        help="Downstream learner for LLM embeddings (default: mlp)")
     parser.add_argument("--workloads_train", nargs="+", default=["tpcds", "tpch", "syn", "job", "job_full", "stats"], help="one or more workloads to train on")
     parser.add_argument("--dat_paths_train", nargs="+", default=["../data/imdb/postgres/"], help="one or more data paths to train on")
 
@@ -220,8 +222,9 @@ def prepare_non_llm_verbose_embeddings(argsP, trained_model, device, ds_info, da
         
         if total_roots is not None and total_costs is not None:
             # Generate embedding file path for the single file
+            removed_fields = getattr(argsP, 'removed_fields', None)
             embedding_file_path = get_embedding_file_path(
-                argsP.algo, dat_path_test, argsP.workloads_train, argsP.workload_test, argsP.seed
+                argsP.algo, dat_path_test, argsP.workloads_train, argsP.workload_test, argsP.seed, removed_fields
             )
             
             # Create dataset for all data
@@ -283,8 +286,9 @@ def prepare_non_llm_verbose_embeddings(argsP, trained_model, device, ds_info, da
             train_costs = get_costs(train_js_nodes, argsP.card)
             
             # Generate embedding file path for this training file
+            removed_fields = getattr(argsP, 'removed_fields', None)
             embedding_file_path_train = get_embedding_file_path(
-                argsP.algo, dat_path_train, argsP.workloads_train, argsP.workload_test, argsP.seed
+                argsP.algo, dat_path_train, argsP.workloads_train, argsP.workload_test, argsP.seed, removed_fields
             )
             
             # Create dataset for this training file
@@ -320,8 +324,9 @@ def prepare_non_llm_verbose_embeddings(argsP, trained_model, device, ds_info, da
         test_costs = get_costs(test_js_nodes, argsP.card)
         
         # Generate embedding file path for test file
+        removed_fields = getattr(argsP, 'removed_fields', None)
         embedding_file_path_test = get_embedding_file_path(
-            argsP.algo, dat_path_test, argsP.workloads_train, argsP.workload_test, argsP.seed
+            argsP.algo, dat_path_test, argsP.workloads_train, argsP.workload_test, argsP.seed, removed_fields
         )
         
         # Create dataset for test file
@@ -366,8 +371,10 @@ def create_dataset_for_algo(algo, ds_info, roots, costs, argsP, dat_path, query_
     elif algo == "qf":
         from algorithms.queryformer.dataset_utils import Encoding, get_hist_file, get_job_table_sample, QueryFormerDataset
         encoding = Encoding(ds_info)
-        hist_file = get_hist_file(dat_path + 'histogram_string.csv')
-        table_sample = get_job_table_sample(dat_path + 'long_df')
+        data_path = Path(dat_path)
+        data_dir = data_path.parent if data_path.suffix == ".csv" else data_path
+        hist_file = get_hist_file(str(data_dir / 'histogram_string.csv'))
+        table_sample = get_job_table_sample(str(data_dir / 'long_df'))
         
         if argsP.workload_test in ["syn", "job", "job_full", "tpch", "stats"]:
             max_node = 35

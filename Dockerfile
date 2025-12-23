@@ -16,27 +16,27 @@ ENV PATH="/venv/bin:$PATH"
 # Upgrade pip
 RUN pip install --upgrade pip
 
-# Install Python packages with specific versions
+# Install PyTorch (CUDA 12.6 wheels)
 RUN pip install \
-    torch==2.5.1 \
-    torchvision==0.20.1 \
-    torchaudio==2.5.1 \
-    --index-url https://download.pytorch.org/whl/cu124
+    torch==2.7.0 \
+    torchvision==0.22.0 \
+    torchaudio==2.7.0 \
+    --index-url https://download.pytorch.org/whl/cu126
 
-RUN pip install wheel
+# Core Python packages
+RUN pip install huggingface_hub wheel alive_progress seaborn
+RUN pip install transformers==4.55.2
+RUN pip install bitsandbytes==0.46.0
+RUN pip install pandas
+RUN pip install scikit-learn einops numpy pyparsing
+RUN pip install peft==0.15.2
 
+# FlashAttention prebuilt wheel
+# NOTE: This wheel is built for Python 3.12 (cp312). If you keep Python 3.11 in this image,
+# you may need to change the wheel URL to a cp311-compatible one.
 RUN pip install \
-    transformers==4.49.0 \
-    peft==0.15.2 \
-    bitsandbytes==0.46.0 \
-    pandas \
-    scikit-learn \
-    einops numpy pyparsing
-
-# Install flash-attn (skip if build fails - it's optional for basic functionality)
-RUN pip install flash-attn==2.8.0.post2 --no-build-isolation --no-cache-dir --verbose || echo "Flash-attn installation failed, continuing without it"
+  https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3%2Bcu12torch2.7cxx11abiFALSE-cp312-cp312-linux_x86_64.whl || \
+  echo "Flash-attn installation failed (likely Python version mismatch), continuing without it"
 
 # Set working directory
 WORKDIR /workspace
-
-

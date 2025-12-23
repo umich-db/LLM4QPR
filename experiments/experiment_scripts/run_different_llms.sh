@@ -94,6 +94,20 @@ fi
 
 echo "Selected workloads: ${selected_workloads[*]}"
 
+# Get downstream learner
+echo ""
+echo "=== Downstream Learner for LLM embeddings ==="
+echo "1. mlp (default)"
+echo "2. autogluon"
+echo "Enter choice (1 or 2):"
+read -r downstream_choice
+if [[ "$downstream_choice" == "2" ]]; then
+    LLM_DOWNSTREAM="autogluon"
+else
+    LLM_DOWNSTREAM="mlp"
+fi
+echo "Using downstream: $LLM_DOWNSTREAM"
+
 # Get bucketize option
 echo ""
 echo "=== Bucketize Option ==="
@@ -224,7 +238,7 @@ if [[ -n "$removed_fields_input" ]]; then
     
     if [[ -n "$REMOVED_FIELDS" ]]; then
         echo "Will remove fields: $REMOVED_FIELDS (+ runtime fields which are always removed)"
-    else
+else
         echo "No valid categories specified. Will only remove runtime fields (default behavior)"
     fi
 else
@@ -264,12 +278,14 @@ for SEED in "${seeds[@]}"; do
             
             # Run time prediction experiment if selected
             if [ "$RUN_TIME" = true ]; then
+                export LLM_DOWNSTREAM
                 bash experiment_scripts/core_scripts/run_llm_time.sh $WORKLOAD $WORKLOAD 1.0 False $model_name $model_name1 $SEED
             fi
             
             # Run cardinality prediction experiment if selected and workload supports it
             if [ "$RUN_CARD" = true ]; then
                 if [[ "$WORKLOAD" == "job" || "$WORKLOAD" == "syn" || "$WORKLOAD" == "stats" ]]; then
+                    export LLM_DOWNSTREAM
                     bash experiment_scripts/core_scripts/run_llm_card.sh $WORKLOAD $WORKLOAD 1.0 False $model_name $model_name1 $SEED
                 fi
             fi

@@ -257,6 +257,55 @@ def evaluate(model, args, loader, norm, device, prints=True, data_sec="unknown",
     print("evaluating")
     if data_sec == "test":
         eval_start = timer()
+    # Non-PyTorch model branch (e.g., AutoGluon)
+    if not isinstance(model, nn.Module):
+        X_list, y_list = [], []
+        for x, y in loader:
+            X_list.append(x.detach().cpu().numpy() if torch.is_tensor(x) else np.asarray(x))
+            y_list.append(y.detach().cpu().numpy() if torch.is_tensor(y) else np.asarray(y))
+        X = np.concatenate(X_list, axis=0)
+        y = np.concatenate(y_list, axis=0).reshape(-1)
+        preds = model.predict(X).reshape(-1)
+        preds_true = norm.unnormalize_labels(preds)
+        labels_true = norm.unnormalize_labels(y)
+        q_errors      = print_qerror(preds_true, labels_true, prints, data_sec=data_sec)
+        abs_errors    = get_abs_errors(preds_true, labels_true)
+        q_errors_dist = get_qerror_distribution(preds_true, labels_true)
+        abs_errors_dist = get_abs_error_distribution(preds_true, labels_true)
+        # Generate verbose output for LLM if requested (embeddings are produced upstream)
+        if verbose_info and args.algo == "llm" and output_dir_qerror and train_embeddings is not None and test_embeddings is not None:
+            try:
+                # Find KNN distances
+                k = getattr(args, 'knn_k', 5)
+                knn_distances, knn_indices = find_knn_distances(test_embeddings, train_embeddings, k)
+                # Generate verbose output path
+                verbose_output_path = get_verbose_output_path(output_dir_qerror)
+                # Determine plan/embedding file paths and indices mapping
+                plan_file_path = getattr(args, 'test_plan_file_path', None)
+                embedding_file_path = getattr(args, 'test_embedding_cache_path', None)
+                index_map = getattr(args, 'test_original_indices', None)
+                # Save verbose output
+                save_verbose_output(
+                    verbose_output_path,
+                    test_texts,                 # may be None
+                    test_embeddings,
+                    labels_true,
+                    preds_true,
+                    q_errors_dist,
+                    knn_distances,
+                    knn_indices,
+                    is_card=getattr(args, 'card', False),
+                    plan_file_path=plan_file_path,
+                    embedding_file_path=embedding_file_path,
+                    index_map=index_map if index_map is not None else None
+                )
+            except Exception as e:
+                print(f"[Verbose] Skipped verbose generation for non-torch model: {e}")
+        if data_sec == "test":
+            eval_time = timer() - eval_start
+            args.main_logger.info(f"[Test] Total evaluation time — {eval_time*1000:.2f} ms")
+        print("evaluated")
+        return q_errors, abs_errors, q_errors_dist, abs_errors_dist
     model.to(device)
     model.eval()
 
@@ -312,6 +361,9 @@ def evaluate(model, args, loader, norm, device, prints=True, data_sec="unknown",
             if is_sequential:
                 # For qf/e2e_cost: Extract embedding from first module
                 embedding = model[0](x)
+                # Convert embedding to float32 if needed (LLM may output float16/bfloat16)
+                if embedding.dtype != torch.float32:
+                    embedding = embedding.float()
                 # Store embedding for verbose output
                 if extract_non_llm_embeddings:
                     embeddings_list.append(embedding.cpu().numpy())
@@ -321,7 +373,7 @@ def evaluate(model, args, loader, norm, device, prints=True, data_sec="unknown",
                 # For aimai: Input features ARE the embeddings
                 if extract_non_llm_embeddings and args.algo == 'aimai':
                     embeddings_list.append(x.cpu().numpy())
-                preds = model(x).squeeze()
+            preds = model(x).squeeze()
             
             # Collect predictions
             if isinstance(preds, torch.Tensor):
@@ -550,6 +602,17 @@ def Logging(args, epoch, qscores, absscores, time, filename = None, save_model =
 def train(model, train_loader, val_loader, \
     ds_info, args, crit=None, optimizer=None, scheduler=None, prints=True, record=True):
 
+    # Non-PyTorch model branch (e.g., AutoGluon)
+    if not isinstance(model, nn.Module):
+        X_list, y_list = [], []
+        for x, y in train_loader:
+            X_list.append(x.detach().cpu().numpy() if torch.is_tensor(x) else np.asarray(x))
+            y_list.append(y.detach().cpu().numpy() if torch.is_tensor(y) else np.asarray(y))
+        X = np.concatenate(X_list, axis=0)
+        y = np.concatenate(y_list, axis=0).reshape(-1)
+        model.fit(X, y)
+        return model
+
     # Set random seeds for reproducibility
     if hasattr(args, 'seed'):
         np.random.seed(args.seed)
@@ -600,6 +663,9 @@ def train(model, train_loader, val_loader, \
             if is_sequential:
                 # For Sequential: extract embedding from first module, then pass to second
                 embedding = model[0](x)
+                # Convert embedding to float32 if needed (LLM may output float16/bfloat16)
+                if embedding.dtype != torch.float32:
+                    embedding = embedding.float()
                 preds = model[1](embedding)
             else:
                 preds = model(x)
@@ -735,7 +801,7 @@ def train_and_test_bao(train_roots, train_costs, test_roots, test_costs, args, d
     
     if getattr(args, 'verbose_info', False) and plan_file_path:
         print("Generating embeddings for BAO verbose output...")
-        max_embedding_len = 500  # Fixed size for variable-length embeddings
+        max_embedding_len = 5000  # Fixed size for variable-length embeddings
 
         def generate_embeddings_for_roots(roots, progress_label="samples"):
             embeddings_list = []
@@ -780,7 +846,8 @@ def train_and_test_bao(train_roots, train_costs, test_roots, test_costs, args, d
         )
 
         if same_file and total_roots is not None:
-            embedding_file_path = get_embedding_file_path('bao', plan_file_path, workloads_train, workload_test, seed)
+            removed_fields = getattr(args, 'removed_fields', None)
+            embedding_file_path = get_embedding_file_path('bao', plan_file_path, workloads_train, workload_test, seed, removed_fields)
             if os.path.exists(embedding_file_path):
                 print(f"  Existing BAO embeddings found at {embedding_file_path} - regenerating and overwriting.")
 
@@ -829,7 +896,8 @@ def train_and_test_bao(train_roots, train_costs, test_roots, test_costs, args, d
 
             test_roots_full, _, _ = df2nodes(df_test)
 
-            embedding_file_path = get_embedding_file_path('bao', plan_file_path, workloads_train, workload_test, seed)
+            removed_fields = getattr(args, 'removed_fields', None)
+            embedding_file_path = get_embedding_file_path('bao', plan_file_path, workloads_train, workload_test, seed, removed_fields)
             if os.path.exists(embedding_file_path):
                 print(f"  Existing BAO embeddings found at {embedding_file_path} - regenerating and overwriting.")
 
@@ -846,7 +914,7 @@ def train_and_test_bao(train_roots, train_costs, test_roots, test_costs, args, d
     test_start = time.time()
     preds_test = []
     test_embeddings_list = []
-    max_embedding_len = 500  # Must match training embedding size
+    max_embedding_len = 5000  # Must match training embedding size
     
     for root in test_roots:
         featurized = bao._BaoRegression__tree_transform.transform([root])
@@ -1052,20 +1120,38 @@ def get_verbose_output_path(output_dir_qerror):
     Returns:
         verbose_output_path: transformed path (e.g., "verbose/results_Train_tpcds_Test_tpcds_ours/qerror_verbose.csv")
     """
-    # Replace "results" with "verbose" and remove "cdf"
-    verbose_path = output_dir_qerror.replace("results", "verbose").replace("_cdf", "")
+    # Check if path contains _rm- to determine which verbose directory to use
+    use_rm_dir = "_rm-" in output_dir_qerror
+    
+    # Replace "results" or "results_rm" with "verbose" or "verbose_rm" and remove "cdf"
+    if use_rm_dir:
+        verbose_path = output_dir_qerror.replace("results_rm", "verbose_rm").replace("_cdf", "")
+        # Also handle case where it's just "results" but filename has _rm-
+        if "verbose_rm" not in verbose_path:
+            verbose_path = verbose_path.replace("results", "verbose_rm")
+    else:
+        verbose_path = output_dir_qerror.replace("results", "verbose").replace("_cdf", "")
     
     # If no "results" found, try to construct from the directory structure
     if verbose_path == output_dir_qerror:
         dir_path = os.path.dirname(output_dir_qerror)
         filename = os.path.basename(output_dir_qerror)
         
+        # Determine verbose directory name
+        if use_rm_dir:
+            verbose_dir_name = "verbose_rm"
+        else:
+            verbose_dir_name = "verbose"
+        
         # Replace the directory name if it contains "results"
         if "results" in dir_path:
-            verbose_dir = dir_path.replace("results", "verbose")
+            if use_rm_dir:
+                verbose_dir = dir_path.replace("results_rm", verbose_dir_name).replace("results", verbose_dir_name)
+            else:
+                verbose_dir = dir_path.replace("results", verbose_dir_name)
         else:
             # Create verbose directory at the same level
-            verbose_dir = os.path.join(os.path.dirname(dir_path), "verbose", os.path.basename(dir_path))
+            verbose_dir = os.path.join(os.path.dirname(dir_path), verbose_dir_name, os.path.basename(dir_path))
         
         # Transform filename
         verbose_filename = filename.replace("_cdf", "")
@@ -1074,7 +1160,7 @@ def get_verbose_output_path(output_dir_qerror):
     return verbose_path
 
 
-def get_embedding_file_path(algo, plan_file_path, workloads_train, workload_test, seed):
+def get_embedding_file_path(algo, plan_file_path, workloads_train, workload_test, seed, removed_fields=None):
     """
     Generate embedding file path for non-LLM algorithms.
     
@@ -1084,6 +1170,7 @@ def get_embedding_file_path(algo, plan_file_path, workloads_train, workload_test
         workloads_train: List of training workloads
         workload_test: Test workload name
         seed: Random seed
+        removed_fields: Optional comma-separated string of removed field categories (to detect _rm-)
     
     Returns:
         Embedding file path (e.g., "embeddings/non-llm/aimai_Train_tpch_Test_tpch_seed42_tpch.csv")
@@ -1093,12 +1180,18 @@ def get_embedding_file_path(algo, plan_file_path, workloads_train, workload_test
     # Extract dataset identifier (e.g., "tpch", "imdb_job", etc.)
     dataset_id = plan_basename.replace("long_raw_postgres_", "").replace(".csv", "")
     
+    # Determine embeddings directory based on whether _rm- is detected
+    embeddings_base_dir = "embeddings"
+    if removed_fields:
+        # Check if removed_fields indicates field removal (non-empty means _rm- will be in filename)
+        embeddings_base_dir = "embeddings_rm"
+    
     # Build embedding file path
     train_str = '-'.join(workloads_train) if workloads_train else 'unknown'
     test_str = workload_test if workload_test else 'unknown'
     
     embedding_filename = f"{algo}_Train_{train_str}_Test_{test_str}_seed{seed}_{dataset_id}.csv"
-    embedding_path = os.path.join("embeddings", "non-llm", embedding_filename)
+    embedding_path = os.path.join(embeddings_base_dir, "non-llm", embedding_filename)
     
     return embedding_path
 

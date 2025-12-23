@@ -1,7 +1,7 @@
 ## 📑 Project Overview
 
 This repository contains the code and experiments for **"An Empirical Evaluation of Pretrained LLMs for Query Plan Representation."**
-All results in the paper were produced on Ubuntu 22.04 with CUDA‑enabled NVIDIA GPUs.
+All results in the paper were produced on Ubuntu 22.04 with CUDA-enabled NVIDIA GPUs.
 
 ---
 
@@ -30,8 +30,8 @@ If you want to reproduce the query plans in **`queryPlans/`** from scratch, you'
 - **`queries/`** - SQL queries used to generate the query plans
 - **Database data** - Raw data for each dataset
   - **TPC-H & TPC-DS**: Generated using official TPC toolkits (https://www.tpc.org/)
-  - **IMDB**: Downloaded from [Learning-based-cost-estimator](https://github.com/greatji/Learning-based-cost-estimator?tab=readme-ov-file) repository
-  - **STATS**: Downloaded from [End-to-End-CardEst-Benchmark](https://github.com/wuziniu/End-to-End-CardEst-Benchmark/tree/master/datasets/stats_simplified) repository
+  - **IMDB**: Downloaded from [Learning-based-cost-estimator](https://github.com/greatji/Learning-based-cost-estimator?tab=readme-ov-file)
+  - **STATS**: Downloaded from [End-to-End-CardEst-Benchmark](https://github.com/wuziniu/End-to-End-CardEst-Benchmark/tree/master/datasets/stats_simplified)
 
 ---
 
@@ -43,20 +43,20 @@ This project uses Meta's Llama models which require authentication:
    - [Meta Llama 3.2 Collection](https://huggingface.co/collections/meta-llama/llama-32-66f448ffc8c32f949b04c8cf)
    - [Meta Llama 3.1 Collection](https://huggingface.co/collections/meta-llama/llama-31-669fc079a0c406a149a5738f)
 
-2. **Get your Hugging Face token** from [https://huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
+2. **Get your Hugging Face token** from  
+   https://huggingface.co/settings/tokens
 
 3. **Set up your token** using environment variables:
 
 **macOS/Linux (bash/zsh)**
 ```bash
-export HF_TOKEN="hf_xxx"    # current shell only
-# or add the same line to ~/.zshrc or ~/.bashrc to persist
+export HF_TOKEN="hf_xxx"
 ```
 
 **Windows PowerShell**
 ```powershell
-$env:HF_TOKEN="hf_xxx"      # current session
-setx HF_TOKEN "hf_xxx"      # persist for new sessions
+$env:HF_TOKEN="hf_xxx"
+setx HF_TOKEN "hf_xxx"
 ```
 
 ---
@@ -65,12 +65,23 @@ setx HF_TOKEN "hf_xxx"      # persist for new sessions
 
 | Option                       | When to use                                                                      |
 | ---------------------------- | -------------------------------------------------------------------------------- |
-| **A. Docker (automated)**    | You have Docker + NVIDIA GPU support                                             |
-| **B. Manual (shell script)** | You prefer a local/conda virtual environment or need to tweak CUDA, Python, etc. |
+| **A. Manual** | You prefer a local/conda environment or need to tweak CUDA, Python, etc.         |
+| **B. Docker**    | You want a plug-and-play environment with GPU support                             |
 
-> **Note**: "NVIDIA GPU support" means you have Docker with NVIDIA Container Toolkit installed. This allows Docker containers to access your NVIDIA GPU. If you don't have this set up, see [NVIDIA Container Toolkit installation guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html).
+---
 
-### A. Reproduce with Docker (automated setup)
+## A. Manual installation
+
+```bash
+# Run the manual installation script
+bash setup_manual.sh
+```
+
+**Note**: The script installs PyTorch 2.7.0 (cu126), Transformers 4.55.2, FlashAttention 2.8.3 (prebuilt), and other dependencies.
+
+---
+
+## B. Reproduce with Docker
 
 ```bash
 # 1. Build the image (takes ~5 min)
@@ -84,69 +95,67 @@ docker run --gpus all -it \
   llm4qpr \
   bash
 
-# 3. To stop the container
+# 3. Stop the container
 docker stop my-container
 
-# 4. To restart the container
+# 4. Restart the container
 docker start -ai my-container
 
-# 5. To remove the container
+# 5. Remove the container
 docker rm my-container
 ```
 
-The Dockerfile (see `Dockerfile`) is based on **`nvidia/cuda:12.1.1‑devel‑ubuntu22.04`** and installs:
+The Dockerfile (see `Dockerfile`) is based on **`nvidia/cuda:12.1.1-devel-ubuntu22.04`** and installs:
 
-* Python 3.11 (isolated in `/venv`)
-* CUDA 12.x toolkit & driver headers
-* `transformers==4.49.0`, `peft==0.15.2`, `bitsandbytes==0.46.0`
-* `flash‑attn==2.8.0.post2` built with the same compiler flags we used
-
-### B. Manual installation
-
-```bash
-# Run the manual installation script
-bash setup_manual.sh
-```
-
-**Note**: The script installs CUDA 12.4, Python packages, and sets up environment variables.
+* Python 3.11 (in `/venv`)
+* PyTorch 2.7.0 (cu126)
+* `transformers==4.55.2`, `peft==0.15.2`, `bitsandbytes==0.46.0`
+* FlashAttention 2.8.3 prebuilt (CUDA 12 + Torch 2.7)
 
 ---
 
 ## 🏃 Quick Start
 
 ### Prerequisites
-1. **NVIDIA GPU** with CUDA support
-2. **Docker** (for automated setup) OR **Python 3.11** (for manual setup)
-3. **Hugging Face account** with access to Llama models
+1. **NVIDIA GPU**  
+2. **Hugging Face token** with Llama, Qwen, Gemma, Bert access  
 
 ### Step-by-Step Setup
 
 ```bash
-# 1. Clone and enter the repo
+# 1. Clone the repo
 git clone https://github.com/umich-db/LLM4QPR.git
 cd LLM4QPR
 
-# 2. Download and extract query plans
-# See queryPlans/README.md and deepdb_augmented/README.md for download instructions
+# 2. Download query plans (see subdirectory README files)
 
-# 3. Set up Hugging Face token
+# 3. Set your Hugging Face token
 export HF_TOKEN="your_hf_token_here"
 
-# 4. (Docker) Build & run OR (Manual) create your venv and install packages
+# 4. Build & run Docker OR run manual setup script
 
 # 5. Run experiments
-cd experiments
-bash run_experiments.sh
+
+# For pretrained LLM experiments:
+bash experiment_scripts/run_different_llms.sh
+
+# For baselines:
+bash experiment_scripts/run_baseline_comparison.sh
+
+# For finetuning LLM experiments:
+bash experiment_scripts/run_finetuning_experiments.sh
+
+# For cross-workload experiments:
+bash experiment_scripts/run_cross_workload_experiments.sh
 ```
 
 ### Output Files
 
 After running experiments, you'll find:
-- **`experiments/results/`** - CSV files with error distributions
-- **`experiments/logs/`** - Training and inference logs
-- **`experiments/embeddings/`** - Saved query plan embeddings
-- **`experiments/finetuned_models/`** - Finetuned LLM models
-
+- **`experiments/results/`** — error distribution CSVs  
+- **`experiments/logs/`** — training & inference logs  
+- **`experiments/embeddings/`** — saved query plan embeddings  
+- **`experiments/finetuned_models/`** — fine-tuned LLMs  
 
 ---
 
@@ -155,7 +164,7 @@ After running experiments, you'll find:
 If you use this code in your research, please cite the related works:
 
 ### Related Work
-This repository is based on the [qp_evaluation](https://github.com/zhaoyue-ntu/qp_evaluation) framework:
+This repository is based on:
 
 ```
 @article{DBLP:journals/pvldb/ZhaoLC23,
@@ -175,9 +184,8 @@ This repository is based on the [qp_evaluation](https://github.com/zhaoyue-ntu/q
 ```
 
 ### Datasets
-If you use the IMDB or STATS datasets, please cite the original papers:
 
-**IMDB Dataset:**
+**IMDB Dataset**
 ```
 @article{DBLP:journals/pvldb/SunL19,
   author       = {Ji Sun and Guoliang Li},
@@ -192,7 +200,7 @@ If you use the IMDB or STATS datasets, please cite the original papers:
 }
 ```
 
-**STATS Dataset:**
+**STATS Dataset**
 ```
 @article{DBLP:journals/pvldb/HanWWZYTZCQPQZL21,
   author       = {Yuxing Han and
@@ -220,7 +228,7 @@ If you use the IMDB or STATS datasets, please cite the original papers:
 }
 ```
 
-**DeepDB Augmented Dataset:**
+**DeepDB Augmented Dataset**
 ```
 @article{DBLP:journals/pvldb/HilprechtB22,
   author       = {Benjamin Hilprecht and
@@ -232,10 +240,7 @@ If you use the IMDB or STATS datasets, please cite the original papers:
   pages        = {2361--2374},
   year         = {2022},
   url          = {https://www.vldb.org/pvldb/vol15/p2361-hilprecht.pdf},
-  doi          = {10.14778/3551793.3551799},
-  timestamp    = {Sun, 04 Aug 2024 19:47:54 +0200},
-  biburl       = {https://dblp.org/rec/journals/pvldb/HilprechtB22.bib},
-  bibsource    = {dblp computer science bibliography, https://dblp.org}
+  doi          = {10.14778/3551793.3551799}
 }
 ```
 

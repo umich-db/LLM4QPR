@@ -136,17 +136,20 @@ class QueryPlanPredictor(nn.Module):
         elif mode == "last":
             # Freeze everything except the last layer's weights
             for name, p in self.model.named_parameters():
+                # For PEFT models, structure is: base_model.model.model.layers.{layer_idx}.{rest}
+                # So layer index is at split index 4, not 3
+                parts = name.split(".")
                 layer_ok = (
-                    name.startswith("base_model.model.layers")
-                    and name.split(".")[3]
-                    == str(self.model.config.num_hidden_layers - 1)
+                    name.startswith("base_model.model.model.layers")
+                    and len(parts) > 4
+                    and parts[4] == str(self.model.config.num_hidden_layers - 1)
                 )
                 if p.dtype.is_floating_point or p.dtype.is_complex:
                     p.requires_grad = layer_ok
                 else:
                     # All bitsandbytes-quantized (int/4-bit) tensors or buffers get frozen
                     p.requires_grad = False
-                print(name, name.split(".")[3], p.requires_grad)
+                print(name, parts[4] if len(parts) > 4 else "N/A", p.requires_grad)
         else:
             raise ValueError(f"Unknown mode {mode!r}")
 
@@ -1529,6 +1532,56 @@ def _find_actual_rows(root_node):
     return float(root_node["Actual Rows"])
 
 
+def _truncate_text_to_max_tokens(tokenizer, text, max_tokens):
+    """
+    Truncate text to a maximum number of tokens by decoding tokens back to text.
+    
+    Args:
+        tokenizer: The tokenizer to use
+        text: The text to truncate
+        max_tokens: Maximum number of tokens
+        
+    Returns:
+        Truncated text
+    """
+    # Tokenize the text
+    tokens = tokenizer.encode(text, add_special_tokens=False)
+    
+    # If already within limit, return as is
+    if len(tokens) <= max_tokens:
+        return text
+    
+    # Truncate tokens
+    truncated_tokens = tokens[:max_tokens]
+    
+    # Decode back to text
+    truncated_text = tokenizer.decode(truncated_tokens, skip_special_tokens=True)
+    
+    return truncated_text
+
+
+def _should_truncate_for_llama70b_tpcds(predictor, argsP):
+    """
+    Check if truncation should be applied: llama-70b model + tpcds workload.
+    
+    Args:
+        predictor: The QueryPlanPredictor model
+        argsP: Arguments object
+        
+    Returns:
+        True if truncation should be applied, False otherwise
+    """
+    # Check if model is llama-70b (case insensitive)
+    model_name_lower = predictor.model_name.lower() if hasattr(predictor, 'model_name') else ""
+    is_llama70b = "llama" in model_name_lower and ("70b" in model_name_lower or "70-b" in model_name_lower)
+    
+    # Check if test workload is tpcds
+    workload_test = getattr(argsP, 'workload_test', None) or getattr(argsP, 'workload', None)
+    is_tpcds = workload_test == "tpcds" if workload_test else False
+    
+    return is_llama70b and is_tpcds
+
+
 def _clean_node(obj, fields_to_remove=None):
     """
     Recursively clean a query plan node by removing runtime fields and optionally
@@ -1856,7 +1909,7 @@ def _collect_column_ids(node):
 
     return used_cols
 
-def _collect_column_ids_and_replace(node, stats):
+def _collect_column_ids_and_replace(node, stats, replace_type="all"):
     """
     Recursively traverse `node` (a dict representing one plan‐node), collect all integer
     column‐IDs into a set, and ALSO replace each occurrence of a column‐ID i with stats[i].
@@ -1876,11 +1929,32 @@ def _collect_column_ids_and_replace(node, stats):
             }
         stats (list or dict): A sequence or mapping such that stats[i] is the value
             you want to substitute for column‐ID i.
+        replace_type (str): Type of replacement to perform.
+            - "all": Replace with the entire stats[col_id] value (default, current behavior)
+            - "name": Extract "tablename" and "attname" from stats[col_id], and create
+              a dict with "tablename" and "columnname" (where "columnname" is the value
+              from "attname")
 
     Returns:
         set[int]: All unique column‐IDs encountered (before replacement).
     """
     used_cols = set()
+
+    def _get_replacement_value(col_id):
+        """Helper function to get the replacement value based on replace_type."""
+        if replace_type == "name":
+            # Extract tablename and attname, rename attname to columnname
+            col_stat = stats[col_id]
+            if isinstance(col_stat, dict):
+                return {
+                    "tablename": col_stat.get("tablename"),
+                    "columnname": col_stat.get("attname")
+                }
+            else:
+                # Fallback to original behavior if not a dict
+                return stats[col_id]
+        else:  # replace_type == "all" (default)
+            return stats[col_id]
 
     # 1) Handle "output_columns", which is a list of dicts each containing a "columns" list
     plan_params = node.get("plan_parameters", {})
@@ -1892,9 +1966,9 @@ def _collect_column_ids_and_replace(node, stats):
             # Collect the original integer ID
             used_cols.add(col_id)
 
-            # Replace it in‐place with stats[col_id]
+            # Replace it in‐place based on replace_type
             # (Assumes stats[col_id] exists; if not, you might check bounds first)
-            out_entry["columns"][idx] = stats[col_id]
+            out_entry["columns"][idx] = _get_replacement_value(col_id)
 
     # 2) Handle "filter_columns", which might be a dict {"column": 7, ...}
     filter_col = plan_params.get("filter_columns", {})
@@ -1903,12 +1977,12 @@ def _collect_column_ids_and_replace(node, stats):
         if isinstance(col_id, int):
             used_cols.add(col_id)
 
-            # Replace with stats[col_id]
-            filter_col["column"] = stats[col_id]
+            # Replace with value based on replace_type
+            filter_col["column"] = _get_replacement_value(col_id)
 
     # 3) Recurse into children
     for child in node.get("children", []):
-        used_cols.update(_collect_column_ids_and_replace(child, stats))
+        used_cols.update(_collect_column_ids_and_replace(child, stats, replace_type))
 
     return used_cols
 
@@ -1989,6 +2063,14 @@ def read_json_and_clean(predictor, ds_info, dat_path, argsP, all=False):
         plan_jsons = bucketize_plans_unified(plan_jsons)
     # If bucketize_input is None, no bucketizing is applied
 
+    # Set up token logging file if truncation will be needed
+    token_log_file = None
+    if _should_truncate_for_llama70b_tpcds(predictor, argsP):
+        token_log_path = dat_path.replace(".csv", "_token_counts_before_truncation.txt")
+        token_log_file = open(token_log_path, 'w')
+        token_log_file.write(f"Token counts before truncation (llama-70b + tpcds, max=8000 tokens)\n")
+        token_log_file.write(f"Index\tToken_Count\n")
+
     for idx, plan_json in enumerate(plan_jsons):
         if "failed" in plan_json:
             continue
@@ -2000,6 +2082,16 @@ def read_json_and_clean(predictor, ds_info, dat_path, argsP, all=False):
         cards.append(_find_actual_rows(orig_root))
         cleaned_root = _clean_node(root, fields_to_remove)
         txt = json.dumps(cleaned_root)
+        
+        # Log token count before truncation if needed
+        if token_log_file is not None:
+            token_count = len(predictor.tokenizer(txt, add_special_tokens=False)["input_ids"])
+            token_log_file.write(f"{idx + 1}\t{token_count}\n")
+        
+        # Truncate if llama-70b + tpcds
+        if _should_truncate_for_llama70b_tpcds(predictor, argsP):
+            txt = _truncate_text_to_max_tokens(predictor.tokenizer, txt, 8000)
+        
         cleaned_texts.append(txt)
         tok = predictor.tokenizer(txt, add_special_tokens=False)
         lengths.append(len(tok["input_ids"]))
@@ -2011,6 +2103,12 @@ def read_json_and_clean(predictor, ds_info, dat_path, argsP, all=False):
             templates.append(None)
 
     print(f"Read {len(cleaned_texts)} plans")
+    
+    # Close token log file if it was opened
+    if token_log_file is not None:
+        token_log_path = token_log_file.name
+        token_log_file.close()
+        print(f"  Logged token counts to {token_log_path}")
 
     update_ds_info_minmax(ds_info, costs, cards)
 
@@ -2072,7 +2170,7 @@ def read_json_and_clean_v2(predictor, ds_info, dat_path, argsP, all=False):
         template = orig_plan.get("template", None)
         templates.append(template)
 
-        # used_column_ids = _collect_column_ids_and_replace(cleaned_plan, original_data["database_stats"]["column_stats"])
+        used_column_ids = _collect_column_ids_and_replace(cleaned_plan, original_data["database_stats"]["column_stats"])
         # stats = [
         #     original_data["database_stats"]["column_stats"][cid]
         #     for cid in used_column_ids
@@ -2081,6 +2179,21 @@ def read_json_and_clean_v2(predictor, ds_info, dat_path, argsP, all=False):
         # cleaned_plan["used_column_stats"] = stats
 
     txts = [json.dumps(cleaned_plan, indent=2) for cleaned_plan in cleaned["parsed_plans"]]
+    
+    # Truncate if llama-70b + tpcds
+    if _should_truncate_for_llama70b_tpcds(predictor, argsP):
+        # Log token counts before truncation
+        token_log_path = dat_path.replace(".json", "_token_counts_before_truncation.txt")
+        with open(token_log_path, 'w') as f:
+            f.write(f"Token counts before truncation (llama-70b + tpcds, max=8000 tokens)\n")
+            f.write(f"Index\tToken_Count\n")
+            for idx, txt in enumerate(txts):
+                token_count = len(predictor.tokenizer(txt, add_special_tokens=False)["input_ids"])
+                f.write(f"{idx + 1}\t{token_count}\n")
+        print(f"  Logged token counts to {token_log_path}")
+        
+        txts = [_truncate_text_to_max_tokens(predictor.tokenizer, txt, 8000) for txt in txts]
+    
     lengths = [len(predictor.tokenizer(txt, add_special_tokens=False)["input_ids"]) for txt in txts]
 
     print(f"Read {len(cleaned['parsed_plans'])} plans")
@@ -2099,7 +2212,6 @@ def read_json_and_clean_v2(predictor, ds_info, dat_path, argsP, all=False):
 
 
 def get_embeddings(predictor, ds_info, dat_path, argsP, batch_size=1, normalize_feats=True, collect_test_info=False):
-    cache_dir  = "embeddings"
     # Add target workload info to filename when conditions are met
     target_suffix = ""
     if hasattr(argsP, 'workload_test') and argsP.workload_test in ["synthetic", "job-light", "tpc_h"] and argsP.llm_pretrained is not None:
@@ -2125,6 +2237,11 @@ def get_embeddings(predictor, ds_info, dat_path, argsP, batch_size=1, normalize_
         abbrevs = [category_abbrev.get(cat, cat) for cat in categories if cat in category_abbrev]
         if abbrevs:
             removed_fields_suffix = f"_rm-{'-'.join(abbrevs)}"
+    
+    # Determine cache directory based on whether _rm- is in the filename
+    cache_dir = "embeddings"
+    if "_rm-" in removed_fields_suffix:
+        cache_dir = "embeddings_rm"
     
     cache_file = f"embeddings_{argsP.model_name}_bucketize-{argsP.bucketize_input}_quant-{argsP.quantification}_pretrained-{argsP.llm_pretrained}_pretrainedTask-{argsP.llm_pretrained_task}{target_suffix}{seed_suffix}{removed_fields_suffix}_{dat_path}".replace("json", "csv") 
     cache_file = cache_file.replace("/","-")
@@ -2173,6 +2290,7 @@ def get_embeddings(predictor, ds_info, dat_path, argsP, batch_size=1, normalize_
             texts, costs, cards, lengths, templates = read_json_and_clean(predictor, ds_info, dat_path, argsP, all=True)
         
         # Track max query plan token length for this workload
+        # Note: Truncation for llama-70b + tpcds is already handled in read_json_and_clean() and read_json_and_clean_v2()
         for text in texts:
             token_length = len(predictor.tokenizer.encode(text, add_special_tokens=True))
             if token_length > max_plan_tokens:

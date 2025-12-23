@@ -168,8 +168,19 @@ elif argsP.algo == "e2e_cost":
     model_comb = nn.Sequential(model, MLP)
 elif argsP.algo == "llm":
   input_dim = argsP.embed_size
-  MLP = Prediction(input_dim, argsP.hid_units)
-  model_comb = MLP
+  downstream = getattr(argsP, "llm_downstream", "mlp")
+  if downstream == "autogluon":
+    try:
+      from models.autogluon_wrapper import AutoGluonRegressor
+      model_comb = AutoGluonRegressor(problem_type="regression")
+      print("Using AutoGluon as downstream learner for LLM embeddings.")
+    except Exception as e:
+      print(f"Falling back to MLP due to AutoGluon error: {e}")
+      MLP = Prediction(input_dim, argsP.hid_units)
+      model_comb = MLP
+  else:
+    MLP = Prediction(input_dim, argsP.hid_units)
+    model_comb = MLP
 elif argsP.algo == "llm_finetune":
   input_dim = argsP.embed_size
   MLP = Prediction(input_dim, argsP.hid_units)

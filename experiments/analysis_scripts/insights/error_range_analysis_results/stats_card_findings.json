@@ -1,0 +1,3522 @@
+[
+  {
+    "metric": "num_tables",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 7.0,
+    "low_metric_value": 2.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2220,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_columns",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 40.0,
+    "low_metric_value": 9.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2220,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_joins",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 6.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2220,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_filters",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 6.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2220,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "longest_path_len",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 7.0,
+    "low_metric_value": 3.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2220,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_nodes",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 17.0,
+    "low_metric_value": 4.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2220,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_nested_loop",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 4.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2220,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "max_log_card_error",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 2.729824192827971,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2220,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_tables",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.0460465026310948,
+    "high_metric_value": 7.0,
+    "low_metric_value": 2.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.0316455549623824,
+      1.097991693258486,
+      1.008502259672416
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2066,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_columns",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.0460465026310948,
+    "high_metric_value": 40.0,
+    "low_metric_value": 9.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.0316455549623824,
+      1.097991693258486,
+      1.008502259672416
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2066,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_joins",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.0460465026310948,
+    "high_metric_value": 6.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.0316455549623824,
+      1.097991693258486,
+      1.008502259672416
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2066,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_filters",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.0460465026310948,
+    "high_metric_value": 6.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.0316455549623824,
+      1.097991693258486,
+      1.008502259672416
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2066,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "longest_path_len",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.0460465026310948,
+    "high_metric_value": 7.0,
+    "low_metric_value": 3.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.0316455549623824,
+      1.097991693258486,
+      1.008502259672416
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2066,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_nodes",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.0460465026310948,
+    "high_metric_value": 17.0,
+    "low_metric_value": 4.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.0316455549623824,
+      1.097991693258486,
+      1.008502259672416
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2066,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_nested_loop",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.0460465026310948,
+    "high_metric_value": 4.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.0316455549623824,
+      1.097991693258486,
+      1.008502259672416
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2066,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "max_log_card_error",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.0460465026310948,
+    "high_metric_value": 2.729824192827971,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.0316455549623824,
+      1.097991693258486,
+      1.008502259672416
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2066,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_tables",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 7.0,
+    "low_metric_value": 2.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2295,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_columns",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 40.0,
+    "low_metric_value": 9.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2295,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_joins",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 6.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2295,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_filters",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 6.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2295,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "longest_path_len",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 7.0,
+    "low_metric_value": 3.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2295,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_nodes",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 17.0,
+    "low_metric_value": 4.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2295,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_nested_loop",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 4.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2295,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "max_log_card_error",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 2.729824192827971,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2295,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_tables",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 7.0,
+    "low_metric_value": 2.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1310,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_columns",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 40.0,
+    "low_metric_value": 9.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1310,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_joins",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 6.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1310,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_filters",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 6.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1310,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "longest_path_len",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 7.0,
+    "low_metric_value": 3.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1310,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_nodes",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 17.0,
+    "low_metric_value": 4.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1310,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_nested_loop",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 4.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1310,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "max_log_card_error",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 2.729824192827971,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1310,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_tables",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.0460465026310948,
+    "high_metric_value": 7.0,
+    "low_metric_value": 2.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.0316455549623824,
+      1.097991693258486,
+      1.008502259672416
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1775,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_columns",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.0460465026310948,
+    "high_metric_value": 40.0,
+    "low_metric_value": 9.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.0316455549623824,
+      1.097991693258486,
+      1.008502259672416
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1775,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_joins",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.0460465026310948,
+    "high_metric_value": 6.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.0316455549623824,
+      1.097991693258486,
+      1.008502259672416
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1775,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_filters",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.0460465026310948,
+    "high_metric_value": 6.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.0316455549623824,
+      1.097991693258486,
+      1.008502259672416
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1775,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "longest_path_len",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.0460465026310948,
+    "high_metric_value": 7.0,
+    "low_metric_value": 3.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.0316455549623824,
+      1.097991693258486,
+      1.008502259672416
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1775,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_nodes",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.0460465026310948,
+    "high_metric_value": 17.0,
+    "low_metric_value": 4.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.0316455549623824,
+      1.097991693258486,
+      1.008502259672416
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1775,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_nested_loop",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.0460465026310948,
+    "high_metric_value": 4.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.0316455549623824,
+      1.097991693258486,
+      1.008502259672416
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1775,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "max_log_card_error",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.0460465026310948,
+    "high_metric_value": 2.729824192827971,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.0316455549623824,
+      1.097991693258486,
+      1.008502259672416
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1775,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_tables",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 7.0,
+    "low_metric_value": 2.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 123,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_columns",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 40.0,
+    "low_metric_value": 9.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 123,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_joins",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 6.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 123,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_filters",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 6.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 123,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "longest_path_len",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 7.0,
+    "low_metric_value": 3.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 123,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_nodes",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 17.0,
+    "low_metric_value": 4.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 123,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_nested_loop",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 4.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 123,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "max_log_card_error",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 2.729824192827971,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 123,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_tables",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 7.0,
+    "low_metric_value": 2.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2024,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_columns",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 40.0,
+    "low_metric_value": 9.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2024,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_joins",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 6.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2024,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_filters",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 6.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2024,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "longest_path_len",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 7.0,
+    "low_metric_value": 3.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2024,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_nodes",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 17.0,
+    "low_metric_value": 4.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2024,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_nested_loop",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 4.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2024,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "max_log_card_error",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.2446672522229747,
+    "high_metric_value": 2.729824192827971,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.2045152329806017,
+      1.1438299657383086,
+      1.385656557950014
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 9.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 2024,
+    "avg_relative_value": 0.16765581232492996
+  },
+  {
+    "metric": "num_tables",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.8858799254919545,
+    "high_metric_value": 7.0,
+    "low_metric_value": 2.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.5950163415794598,
+      2.011071897421622,
+      2.051551537474782
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 15.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 912,
+    "avg_relative_value": 0.18640581232492998
+  },
+  {
+    "metric": "num_columns",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.8858799254919545,
+    "high_metric_value": 40.0,
+    "low_metric_value": 15.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.5950163415794598,
+      2.011071897421622,
+      2.051551537474782
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 15.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 912,
+    "avg_relative_value": 0.18640581232492998
+  },
+  {
+    "metric": "num_joins",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.8858799254919545,
+    "high_metric_value": 6.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.5950163415794598,
+      2.011071897421622,
+      2.051551537474782
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 15.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 912,
+    "avg_relative_value": 0.18640581232492998
+  },
+  {
+    "metric": "num_filters",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.8858799254919545,
+    "high_metric_value": 6.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.5950163415794598,
+      2.011071897421622,
+      2.051551537474782
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 15.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 912,
+    "avg_relative_value": 0.18640581232492998
+  },
+  {
+    "metric": "longest_path_len",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.8858799254919545,
+    "high_metric_value": 7.0,
+    "low_metric_value": 3.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.5950163415794598,
+      2.011071897421622,
+      2.051551537474782
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 15.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 912,
+    "avg_relative_value": 0.18640581232492998
+  },
+  {
+    "metric": "num_nodes",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.8858799254919545,
+    "high_metric_value": 17.0,
+    "low_metric_value": 4.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.5950163415794598,
+      2.011071897421622,
+      2.051551537474782
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 15.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 912,
+    "avg_relative_value": 0.18640581232492998
+  },
+  {
+    "metric": "num_nested_loop",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.8858799254919545,
+    "high_metric_value": 4.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.5950163415794598,
+      2.011071897421622,
+      2.051551537474782
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 15.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 912,
+    "avg_relative_value": 0.18640581232492998
+  },
+  {
+    "metric": "max_log_card_error",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.8858799254919545,
+    "high_metric_value": 2.729824192827971,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.5950163415794598,
+      2.011071897421622,
+      2.051551537474782
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 15.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 912,
+    "avg_relative_value": 0.18640581232492998
+  },
+  {
+    "metric": "num_tables",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.3282596791605519,
+    "high_metric_value": 7.0,
+    "low_metric_value": 2.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.139673935736683,
+      1.8039348463098612,
+      1.0411702554351112
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 15.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1660,
+    "avg_relative_value": 0.18640581232492998
+  },
+  {
+    "metric": "num_columns",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.3282596791605519,
+    "high_metric_value": 40.0,
+    "low_metric_value": 15.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.139673935736683,
+      1.8039348463098612,
+      1.0411702554351112
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 15.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1660,
+    "avg_relative_value": 0.18640581232492998
+  },
+  {
+    "metric": "num_joins",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.3282596791605519,
+    "high_metric_value": 6.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.139673935736683,
+      1.8039348463098612,
+      1.0411702554351112
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 15.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1660,
+    "avg_relative_value": 0.18640581232492998
+  },
+  {
+    "metric": "num_filters",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.3282596791605519,
+    "high_metric_value": 6.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.139673935736683,
+      1.8039348463098612,
+      1.0411702554351112
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 15.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1660,
+    "avg_relative_value": 0.18640581232492998
+  },
+  {
+    "metric": "longest_path_len",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.3282596791605519,
+    "high_metric_value": 7.0,
+    "low_metric_value": 3.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.139673935736683,
+      1.8039348463098612,
+      1.0411702554351112
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 15.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1660,
+    "avg_relative_value": 0.18640581232492998
+  },
+  {
+    "metric": "num_nodes",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.3282596791605519,
+    "high_metric_value": 17.0,
+    "low_metric_value": 4.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.139673935736683,
+      1.8039348463098612,
+      1.0411702554351112
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 15.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1660,
+    "avg_relative_value": 0.18640581232492998
+  },
+  {
+    "metric": "num_nested_loop",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.3282596791605519,
+    "high_metric_value": 4.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.139673935736683,
+      1.8039348463098612,
+      1.0411702554351112
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 15.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1660,
+    "avg_relative_value": 0.18640581232492998
+  },
+  {
+    "metric": "max_log_card_error",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.3282596791605519,
+    "high_metric_value": 2.729824192827971,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.139673935736683,
+      1.8039348463098612,
+      1.0411702554351112
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 15.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1660,
+    "avg_relative_value": 0.18640581232492998
+  },
+  {
+    "metric": "num_tables",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.7440581657867036,
+    "high_metric_value": 7.0,
+    "low_metric_value": 2.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.9866138681456125,
+      1.0171648754048062,
+      2.228395753809692
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 15.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1665,
+    "avg_relative_value": 0.18640581232492998
+  },
+  {
+    "metric": "num_columns",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.7440581657867036,
+    "high_metric_value": 40.0,
+    "low_metric_value": 15.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.9866138681456125,
+      1.0171648754048062,
+      2.228395753809692
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 15.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1665,
+    "avg_relative_value": 0.18640581232492998
+  },
+  {
+    "metric": "num_joins",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.7440581657867036,
+    "high_metric_value": 6.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.9866138681456125,
+      1.0171648754048062,
+      2.228395753809692
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 15.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1665,
+    "avg_relative_value": 0.18640581232492998
+  },
+  {
+    "metric": "num_filters",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.7440581657867036,
+    "high_metric_value": 6.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.9866138681456125,
+      1.0171648754048062,
+      2.228395753809692
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 15.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1665,
+    "avg_relative_value": 0.18640581232492998
+  },
+  {
+    "metric": "longest_path_len",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.7440581657867036,
+    "high_metric_value": 7.0,
+    "low_metric_value": 3.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.9866138681456125,
+      1.0171648754048062,
+      2.228395753809692
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 15.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1665,
+    "avg_relative_value": 0.18640581232492998
+  },
+  {
+    "metric": "num_nodes",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.7440581657867036,
+    "high_metric_value": 17.0,
+    "low_metric_value": 4.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.9866138681456125,
+      1.0171648754048062,
+      2.228395753809692
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 15.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1665,
+    "avg_relative_value": 0.18640581232492998
+  },
+  {
+    "metric": "num_nested_loop",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.7440581657867036,
+    "high_metric_value": 4.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.9866138681456125,
+      1.0171648754048062,
+      2.228395753809692
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 15.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1665,
+    "avg_relative_value": 0.18640581232492998
+  },
+  {
+    "metric": "max_log_card_error",
+    "high_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "low_error_plan": "{\"Node Type\": \"Hash Join\", \"Parallel Aware\": false, \"Async Capable\": false, \"Join Type\": \"Inner\", \"S...",
+    "high_error_avg": 366.5366588390851,
+    "low_error_avg": 1.7440581657867036,
+    "high_metric_value": 2.729824192827971,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      948.5082275558872,
+      96.45929920224454,
+      54.64244975912358
+    ],
+    "low_plan_errors": [
+      1.9866138681456125,
+      1.0171648754048062,
+      2.228395753809692
+    ],
+    "high_plan_metrics": {
+      "num_tables": 7.0,
+      "num_columns": 40.0,
+      "num_joins": 6.0,
+      "num_filters": 6.0,
+      "longest_path_len": 7.0,
+      "num_nodes": 17.0,
+      "num_nested_loop": 4.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 2.729824192827971
+    },
+    "low_plan_metrics": {
+      "num_tables": 2.0,
+      "num_columns": 15.0,
+      "num_joins": 1.0,
+      "num_filters": 0.0,
+      "longest_path_len": 3.0,
+      "num_nodes": 4.0,
+      "num_nested_loop": 0.0,
+      "num_highly_selective_filters": 0.0,
+      "max_log_card_error": 0.0
+    },
+    "high_plan_idx": 989,
+    "low_plan_idx": 1665,
+    "avg_relative_value": 0.18640581232492998
+  }
+]

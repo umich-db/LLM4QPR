@@ -13,6 +13,9 @@ import pandas as pd
 from pathlib import Path
 import numpy as np
 
+# Allowed datasets to process
+ALLOWED_DATASETS = {'job_full', 'job', 'stats', 'syn', 'tpcds', 'tpch'}
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Combine timing and accuracy metrics")
@@ -68,12 +71,15 @@ def collect_timing_data(logs_dir):
     if not logs_path.exists():
         return pd.DataFrame()
     
-    # Find all A_Train_Eva files
-    train_eva_files = list(logs_path.glob('*/A_Train_Eva_*.csv'))
+    # Find all A_Train_Eva files (ending with 0.csv)
+    train_eva_files = list(logs_path.glob('*/A_Train_Eva_*0.csv'))
     
     for file_path in train_eva_files:
-        # Extract dataset from filename
-        dataset = file_path.stem.replace('A_Train_Eva_', '')
+        # Extract dataset from filename (remove 'A_Train_Eva_' prefix and '0' suffix)
+        dataset = file_path.stem.replace('A_Train_Eva_', '').rstrip('0')
+        # Only process allowed datasets
+        if dataset not in ALLOWED_DATASETS:
+            continue
         df = pd.read_csv(file_path)
         df['dataset'] = dataset
         timing_data.append(df)
@@ -99,12 +105,15 @@ def collect_llm_inference_data(logs_dir):
     if not logs_path.exists():
         return pd.DataFrame()
     
-    # Find all A_LLM_summary files
-    summary_files = list(logs_path.glob('*/A_LLM_summary_*.csv'))
+    # Find all A_LLM_summary files (ending with 0.csv)
+    summary_files = list(logs_path.glob('*/A_LLM_summary_*0.csv'))
     
     for file_path in summary_files:
-        # Extract dataset from filename
-        dataset = file_path.stem.replace('A_LLM_summary_', '')
+        # Extract dataset from filename (remove 'A_LLM_summary_' prefix and '0' suffix)
+        dataset = file_path.stem.replace('A_LLM_summary_', '').rstrip('0')
+        # Only process allowed datasets
+        if dataset not in ALLOWED_DATASETS:
+            continue
         df = pd.read_csv(file_path)
         df['dataset'] = dataset
         llm_data.append(df)
@@ -218,6 +227,10 @@ def collect_accuracy_data(results_dir):
         else:
             continue
         
+        # Only process allowed datasets
+        if dataset not in ALLOWED_DATASETS:
+            continue
+        
         # Extract task from filename
         filename = file_path.name
         if '_card.csv' in filename:
@@ -237,6 +250,9 @@ def collect_accuracy_data(results_dir):
             
             # Filter: skip LLM models with removed fields (indicated by _rm-)
             if 'llm' in col.lower() and '_rm-' in col.lower():
+                continue
+
+            if 'llm' in col.lower() and ('lora' in col.lower() or 'last' in col.lower()):
                 continue
             
             algo, model = parse_column_name_for_algo_model(col)
@@ -290,7 +306,8 @@ def main():
     args = parse_args()
     base_dir = Path(args.base_dir)
     
-    logs_dir = base_dir / 'logs_theOne'
+    logs_dir = base_dir / 'logs'
+    # logs_dir = base_dir / 'logs_theOne'
     results_dir = base_dir / 'results'
     
     print(f"Processing base directory: {base_dir}")

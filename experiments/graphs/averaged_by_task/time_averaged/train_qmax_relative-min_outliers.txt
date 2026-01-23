@@ -1,0 +1,20 @@
+Outlier Filtering Information
+============================================================
+
+Group: time_averaged
+Phase: train
+Metric: qmax
+Relative Mode: min
+
+Filtering Method:
+  Distance-based filtering on log scale
+  Ensures distance between smallest and 5th smallest >= 1/5 of total range
+
+Filtering Parameters:
+  Smallest error value: 1.635468
+  5th smallest error value: 2.449590
+  Distance (log scale): 0.403991
+  Total range (log scale): 3.540770
+  Required minimum distance: 0.708154 (1/5 of range)
+
+No outliers were filtered (distance criterion already satisfied)

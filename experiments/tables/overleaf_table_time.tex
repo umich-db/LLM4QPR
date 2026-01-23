@@ -1,0 +1,43 @@
+\begin{tabular}{l|cccc|cccc|cccc}
+
+\toprule
+
+\multirow{2}{*}{Algorithm} & \multicolumn{4}{c|}{TPC-H} & \multicolumn{4}{c|}{TPC-DS} & \multicolumn{4}{c|}{Synthetic} \\
+
+ & 50th & 90th & 95th & Max & 50th & 90th & 95th & Max & 50th & 90th & 95th & Max \\
+
+\midrule
+
+PostgreSQL & 1.370 & 2.067 & 3.816 & 5.727 & 5.557 & 69.683 & 95.914 & 1.78e+03 & 2.359 & 4.335 & 5.135 & \cellcolor{green2}{9.657} \\
+ALECE & - & - & - & - & - & - & - & - & 1.560 & 3.080 & 4.300 & 20.640 \\
+AiMeetsAi & \cellcolor{green4}{1.015} & 1.048 & 5.041 & 5.257 & 1.100 & 2.545 & 5.730 & 143.72 & 1.100 & 1.625 & 2.009 & 12.985 \\
+Bao & 1.083 & 1.363 & 1.415 & 1.678 & 1.468 & 6.645 & 38.379 & 89.104 & 1.444 & 4.333 & 7.627 & 17.292 \\
+E2E-Cost & 1.095 & 1.792 & 1.901 & 2.187 & 1.885 & 3.924 & 5.179 & 61.406 & 1.154 & 2.160 & 2.829 & 35.174 \\
+MSCN & - & - & - & - & - & - & - & - & 1.450 & 4.510 & 6.620 & 59.810 \\
+PRICE & - & - & - & - & - & - & - & - & 2.780 & 9.320 & 12.350 & 325.66 \\
+QueryFormer & 1.046 & 1.076 & 1.091 & 1.225 & 1.084 & \cellcolor{green5}{1.284} & \cellcolor{green5}{1.393} & 9.397 & 1.190 & 2.030 & 2.611 & 25.231 \\
+\midrule
+
+\textbf{SentenceBert} & 1.018 & \cellcolor{green1}{1.044} & 1.060 & \cellcolor{green5}{1.122} & 1.086 & 1.403 & 1.626 & 88.231 & 1.088 & 1.670 & 2.107 & 21.042 \\
+\textbf{Bert} & 1.022 & 1.063 & 1.081 & 1.222 & 1.119 & 1.855 & 2.231 & \cellcolor{green3}{3.488} & 1.090 & 1.729 & 2.279 & 23.153 \\
+\textbf{ModernBert} & 1.018 & 1.051 & 1.062 & 1.136 & 1.160 & 1.982 & 2.487 & 4.254 & 1.092 & 1.701 & 2.218 & 22.326 \\
+\midrule
+
+\textbf{Gemma-1B} & 1.017 & 1.045 & \cellcolor{green1}{1.057} & \cellcolor{green2}{1.126} & \cellcolor{green3}{1.068} & 1.358 & 1.652 & 4.433 & 1.063 & 1.471 & 1.771 & 12.894 \\
+\textbf{Gemma-4B} & \cellcolor{green5}{1.014} & \cellcolor{green5}{1.039} & \cellcolor{green4}{1.051} & \cellcolor{green1}{1.128} & \cellcolor{green1}{1.071} & \cellcolor{green3}{1.325} & 1.637 & 4.206 & \cellcolor{green1}{1.063} & 1.529 & 1.861 & 12.461 \\
+\textbf{Gemma-12B} & 1.021 & 1.050 & 1.064 & 1.134 & 1.072 & 1.353 & \cellcolor{green2}{1.569} & \cellcolor{green4}{3.024} & 1.069 & 1.530 & 1.889 & 12.822 \\
+\textbf{Gemma-27B} & \cellcolor{green2}{1.015} & \cellcolor{green3}{1.041} & \cellcolor{green3}{1.054} & \cellcolor{green4}{1.126} & 1.075 & 1.363 & \cellcolor{green4}{1.527} & \cellcolor{green1}{3.872} & \cellcolor{green4}{1.055} & \cellcolor{green3}{1.377} & \cellcolor{green3}{1.646} & 11.704 \\
+\midrule
+
+\textbf{Llama-1B} & \cellcolor{green1}{1.016} & \cellcolor{green4}{1.041} & \cellcolor{green5}{1.051} & 1.130 & 1.084 & \cellcolor{green2}{1.330} & \cellcolor{green1}{1.574} & \cellcolor{green2}{3.681} & 1.067 & 1.477 & 1.815 & \cellcolor{green1}{10.868} \\
+\textbf{Llama-3B} & \cellcolor{green3}{1.015} & \cellcolor{green2}{1.042} & \cellcolor{green2}{1.054} & 1.129 & \cellcolor{green2}{1.070} & \cellcolor{green4}{1.312} & \cellcolor{green3}{1.544} & 5.274 & 1.066 & 1.507 & 1.828 & 10.988 \\
+\textbf{Llama-8B} & 1.021 & 1.048 & 1.059 & 1.128 & 1.091 & 1.363 & 1.618 & 5.669 & 1.064 & 1.472 & 1.778 & 12.319 \\
+\textbf{Llama-70B} & 1.021 & 1.050 & 1.062 & \cellcolor{green3}{1.126} & \cellcolor{green4}{1.067} & \cellcolor{green1}{1.350} & 1.614 & \cellcolor{green5}{2.620} & \cellcolor{green2}{1.060} & \cellcolor{green2}{1.422} & \cellcolor{green2}{1.716} & 13.732 \\
+\midrule
+
+\textbf{Qwen-0.6B} & 1.025 & 1.056 & 1.068 & 1.142 & 1.076 & 1.511 & 1.746 & 7.519 & 1.066 & \cellcolor{green1}{1.432} & \cellcolor{green1}{1.727} & \cellcolor{green4}{8.508} \\
+\textbf{Qwen-4B} & 1.026 & 1.057 & 1.072 & 1.155 & \cellcolor{green5}{1.065} & 1.438 & 1.879 & 8.638 & \cellcolor{green3}{1.057} & \cellcolor{green4}{1.357} & \cellcolor{green4}{1.610} & \cellcolor{green5}{7.787} \\
+\textbf{Qwen-8B} & 1.018 & 1.049 & 1.063 & 1.170 & 1.078 & 1.586 & 1.894 & 72.717 & \cellcolor{green5}{1.051} & \cellcolor{green5}{1.288} & \cellcolor{green5}{1.465} & \cellcolor{green3}{8.996} \\
+
+\bottomrule
+\end{tabular}

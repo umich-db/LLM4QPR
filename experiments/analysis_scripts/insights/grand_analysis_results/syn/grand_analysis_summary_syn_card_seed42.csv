@@ -1,0 +1,16 @@
+algo_model,type_1,type_2,type_3,type_4,type_5,type_6,type_7,type_8,true_label_vs_embedding_spearman,est_label_vs_embedding_spearman
+bao_none,4,0,4,4,2,2,1,0,-0.1154***,-0.1577***
+e2e_cost_none,8,0,0,4,1,0,0,4,-0.0452***,-0.2445***
+llm_Qwen-Qwen3-Embedding-0.6B,0,7,4,1,1,2,1,1,0.2148***,0.2074***
+llm_Qwen-Qwen3-Embedding-4B,0,4,7,1,1,3,1,0,0.2148***,0.2132***
+llm_Qwen-Qwen3-Embedding-8B,0,4,7,1,1,3,1,0,0.2148***,0.2149***
+llm_answerdotai-ModernBERT-base,0,5,5,2,1,2,1,1,0.2087***,0.1957***
+llm_bert-base-uncased,0,7,3,2,1,3,1,0,0.1964***,0.1812***
+llm_google-gemma-3-12b-pt,0,7,3,2,1,2,1,1,0.2088***,0.1992***
+llm_google-gemma-3-1b-pt,0,5,5,2,1,3,1,0,0.2090***,0.2034***
+llm_google-gemma-3-4b-pt,0,4,6,2,1,3,1,0,0.2088***,0.2056***
+llm_meta-llama-Llama-3.1-8B,0,5,6,1,1,3,1,0,0.2158***,0.2097***
+llm_meta-llama-Llama-3.2-1B,0,7,4,1,1,2,1,1,0.2159***,0.2102***
+llm_meta-llama-Llama-3.2-3B,0,7,4,1,1,2,1,1,0.2157***,0.2107***
+llm_sentence-transformers-all-MiniLM-L6-v2,0,5,5,2,1,2,1,1,0.1964***,0.1878***
+qf_none,9,0,0,3,1,1,1,2,-0.0427***,-0.3360***

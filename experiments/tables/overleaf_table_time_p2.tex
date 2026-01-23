@@ -1,0 +1,43 @@
+\begin{tabular}{l|cccc|cccc|cccc}
+
+\toprule
+
+\multirow{2}{*}{Algorithm} & \multicolumn{4}{c|}{JOB-light} & \multicolumn{4}{c|}{JOB} & \multicolumn{4}{c|}{STATS} \\
+
+ & 50th & 90th & 95th & Max & 50th & 90th & 95th & Max & 50th & 90th & 95th & Max \\
+
+\midrule
+
+PostgreSQL & 2.191 & 14.442 & 16.476 & 59.906 & \cellcolor{green3}{2.756} & \cellcolor{green4}{13.080} & \cellcolor{green4}{22.475} & 254.44 & 21.352 & 959.79 & 3.72e+03 & 7.72e+03 \\
+ALECE & 2.740 & 10.630 & \cellcolor{green2}{12.560} & 162.41 & - & - & - & - & \cellcolor{green5}{1.470} & \cellcolor{green5}{3.760} & \cellcolor{green5}{5.030} & \cellcolor{green5}{37.670} \\
+AiMeetsAi & 1.907 & 98.920 & 156.48 & 454.12 & 385.21 & 3.54e+03 & 6.56e+03 & 2.67e+04 & 1.968 & 11.954 & 56.793 & \cellcolor{green2}{410.76} \\
+Bao & 1.820 & 28.796 & 40.991 & 150.33 & 11.857 & 201.88 & 748.19 & 2.22e+04 & 2.074 & 15.330 & \cellcolor{green1}{38.137} & \cellcolor{green4}{255.89} \\
+E2E-Cost & 1.632 & \cellcolor{green1}{9.376} & \cellcolor{green4}{11.549} & \cellcolor{green3}{30.175} & 4.414 & 29.144 & 45.841 & \cellcolor{green3}{130.52} & 1.827 & 9.199 & \cellcolor{green4}{20.815} & \cellcolor{green3}{345.18} \\
+MSCN & 1.570 & \cellcolor{green3}{8.710} & \cellcolor{green5}{11.400} & \cellcolor{green2}{33.040} & - & - & - & - & 1.19e+03 & 1.44e+05 & 5.05e+05 & 3.45e+07 \\
+PRICE & 14.100 & 291.25 & 631.21 & 2.50e+03 & - & - & - & - & 2.880 & 102.37 & 541.42 & 1.16e+03 \\
+QueryFormer & 1.931 & 10.265 & 19.204 & 67.145 & 7.360 & 68.230 & 161.33 & 508.13 & 5.934 & 124.86 & 393.80 & 1.56e+03 \\
+\midrule
+
+SentenceBert & 1.705 & 13.761 & 33.827 & 106.31 & 3.357 & 22.537 & 159.10 & 951.15 & 2.062 & 16.859 & 64.721 & 1.51e+03 \\
+Bert & \cellcolor{green3}{1.467} & 13.960 & 22.425 & 45.463 & \cellcolor{green4}{2.746} & 19.267 & 36.341 & 228.58 & 1.958 & 15.455 & 90.790 & 1.34e+03 \\
+ModernBert & \cellcolor{green4}{1.453} & \cellcolor{green2}{9.127} & \cellcolor{green3}{12.291} & \cellcolor{green5}{24.537} & 4.624 & 42.566 & 150.29 & 2.18e+03 & 1.879 & 17.131 & 103.25 & 1.05e+03 \\
+\midrule
+
+Gemma-1B & 1.768 & 22.822 & 31.832 & 202.27 & \cellcolor{green1}{2.922} & \cellcolor{green1}{18.663} & 46.058 & \cellcolor{green4}{109.70} & 1.624 & \cellcolor{green3}{8.404} & 38.712 & 835.03 \\
+\textbf{Gemma-4B} & \cellcolor{green5}{1.425} & 17.565 & 34.114 & 225.16 & \cellcolor{green5}{2.667} & \cellcolor{green2}{15.437} & \cellcolor{green3}{26.018} & 176.94 & 1.600 & \cellcolor{green1}{8.453} & 87.317 & 820.89 \\
+Gemma-12B & 1.567 & 15.768 & 27.292 & 61.984 & 2.931 & 23.581 & 52.514 & 221.52 & 1.661 & 15.069 & 71.843 & 1.82e+03 \\
+Gemma-27B & \cellcolor{green2}{1.489} & 16.971 & 28.501 & 174.71 & 3.590 & 45.404 & 74.378 & \cellcolor{green2}{133.90} & \cellcolor{green4}{1.568} & \cellcolor{green2}{8.443} & 51.734 & 730.38 \\
+\midrule
+
+\textbf{Llama-1B} & \cellcolor{green1}{1.506} & 16.319 & 22.264 & \cellcolor{green1}{43.096} & 3.385 & 23.414 & \cellcolor{green1}{36.183} & \cellcolor{green5}{103.97} & \cellcolor{green2}{1.589} & 8.486 & 52.327 & 831.03 \\
+Llama-3B & 1.536 & 11.985 & 23.168 & 44.363 & 4.959 & 60.062 & 151.20 & 1.29e+03 & 1.614 & 11.339 & 57.518 & 3.53e+03 \\
+Llama-8B & 1.557 & 10.480 & \cellcolor{green1}{15.110} & 49.036 & 3.803 & 49.911 & 79.339 & 156.62 & \cellcolor{green1}{1.597} & \cellcolor{green4}{7.455} & 46.982 & 883.22 \\
+\textbf{Llama-70B} & 1.574 & 13.348 & 27.439 & 61.254 & 2.977 & 22.271 & 37.693 & \cellcolor{green1}{144.73} & 1.703 & 10.951 & 70.116 & 2.32e+03 \\
+\midrule
+
+Qwen-0.6B & 1.537 & 9.984 & 15.283 & \cellcolor{green4}{29.145} & 3.042 & \cellcolor{green3}{14.474} & \cellcolor{green2}{32.679} & 445.66 & 2.142 & 15.052 & 66.424 & 1.01e+03 \\
+Qwen-4B & 1.741 & \cellcolor{green4}{8.427} & 23.210 & 48.695 & 4.562 & 39.743 & 76.117 & 333.09 & 1.631 & 9.507 & \cellcolor{green2}{27.210} & 902.25 \\
+\textbf{Qwen-8B} & 1.525 & \cellcolor{green5}{8.374} & 19.314 & 93.228 & \cellcolor{green2}{2.759} & \cellcolor{green5}{9.557} & \cellcolor{green5}{15.150} & 370.78 & \cellcolor{green3}{1.576} & 8.566 & \cellcolor{green3}{25.626} & \cellcolor{green1}{529.35} \\
+
+\bottomrule
+\end{tabular}

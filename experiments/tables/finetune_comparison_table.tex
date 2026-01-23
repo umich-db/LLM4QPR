@@ -1,0 +1,16 @@
+\begin{tabular}{l|cccc|cccc|cccc|cccc}
+
+\toprule
+
+\multirow{2}{*}{Finetuning Method} & \multicolumn{4}{c|}{TPC-H cost} & \multicolumn{4}{c|}{TPC-DS cost} & \multicolumn{4}{c|}{JOB-FULL cost} & \multicolumn{4}{c|}{STATS card} \\
+
+ & 50th & 90th & 95th & Max & 50th & 90th & 95th & Max & 50th & 90th & 95th & Max & 50th & 90th & 95th & Max \\
+
+\midrule
+
+None & 1.021 & 1.048 & 1.059 & 1.128 & 1.091 & 1.363 & 1.618 & 5.669 & 3.803 & 49.911 & 79.339 & \cellcolor{myorange}\textbf{156.62} & 2.653 & 43.296 & 163.16 & 5.8e12 \\
+Last Transformer Block & 1.023 & 1.051 & 1.062 & \cellcolor{myorange}\textbf{1.127} & 1.080 & 1.330 & 1.617 & \cellcolor{myorange}\textbf{4.673} & 3.949 & 44.797 & 73.763 & 275.40 & 3.841 & 68.430 & 424.63 & 6.4e16 \\
+LoRA & \cellcolor{myorange}\textbf{1.017} & \cellcolor{myorange}\textbf{1.041} & \cellcolor{myorange}\textbf{1.052} & 1.129 & \cellcolor{myorange}\textbf{1.069} & \cellcolor{myorange}\textbf{1.313} & \cellcolor{myorange}\textbf{1.566} & 5.457 & \cellcolor{myorange}\textbf{2.213} & \cellcolor{myorange}\textbf{10.604} & \cellcolor{myorange}\textbf{15.632} & 235.10 & \cellcolor{myorange}\textbf{1.785} & \cellcolor{myorange}\textbf{12.366} & \cellcolor{myorange}\textbf{42.109} & \cellcolor{myorange}\textbf{6.0e10} \\
+
+\bottomrule
+\end{tabular}

@@ -1,0 +1,366 @@
+Analyzing data from: /home/jovyan/workspace/LLM4QPR/experiments/graphs/averaged_by_task
+Evaluating relative error (min)
+Threshold: LLM must beat non-LLM in at least 2 out of 4 evaluation points (q50, q90, q95, qmax)
+
+================================================================================
+CARD TASK ANALYSIS
+================================================================================
+
+test_q50_relative-min:
+  Best non-LLM error: 1.29
+  LLM models beating non-LLM: 2
+    - Qwen-Qwen3-Embedding-8B
+    - meta-llama-Llama-3.1-8B
+
+test_q90_relative-min:
+  Best non-LLM error: 1.68
+  No LLM models beat non-LLM
+
+test_q95_relative-min:
+  Best non-LLM error: 3.65
+  LLM models beating non-LLM: 1
+    - meta-llama-Llama-3.1-8B
+
+test_qmax_relative-min:
+  Best non-LLM error: 1.55
+  No LLM models beat non-LLM
+
+================================================================================
+LLM models that beat non-LLM in at least 2 card evaluation points:
+================================================================================
+  ✓ meta-llama-Llama-3.1-8B (2/4 points)
+
+================================================================================
+Non-LLM Algorithm Rankings (Card Task):
+================================================================================
+
+Ranks by evaluation point:
+
+  test_q50_relative-min:
+    1. aimai
+    2. postgres
+    3. bao
+    4. alece
+    5. price
+    6. e2e
+    7. mscn
+    8. qf
+
+  test_q90_relative-min:
+    1. alece
+    2. price
+    3. postgres
+    4. aimai
+    5. bao
+    6. qf
+    7. e2e
+    8. mscn
+
+  test_q95_relative-min:
+    1. price
+    2. postgres
+    3. alece
+    4. qf
+    5. bao
+    6. aimai
+    7. e2e
+    8. mscn
+
+  test_qmax_relative-min:
+    1. price
+    2. mscn
+    3. qf
+    4. bao
+    5. postgres
+    6. aimai
+    7. alece
+    8. e2e
+
+--------------------------------------------------------------------------------
+Average rank across all evaluation points (q50, q90, q95, qmax)
+(Lower average rank is better)
+
+  1. price: avg rank = 2.25
+  2. postgres: avg rank = 3.00
+  3. alece: avg rank = 3.75
+  4. aimai: avg rank = 4.25
+  5. bao: avg rank = 4.25
+  6. qf: avg rank = 5.25
+  7. mscn: avg rank = 6.25
+  8. e2e: avg rank = 7.00
+
+================================================================================
+LLM Model Rankings (Card Task):
+================================================================================
+
+Ranks by evaluation point:
+
+  test_q50_relative-min:
+    1. Qwen-Qwen3-Embedding-8B
+    2. meta-llama-Llama-3.1-8B
+    3. google-gemma-3-1b-pt
+    4. meta-llama-Llama-3.2-3B
+    5. google-gemma-3-12b-pt
+    6. meta-llama-Llama-3.2-1B
+    7. Qwen-Qwen3-Embedding-4B
+    8. google-gemma-3-4b-pt
+    9. Qwen-Qwen3-Embedding-0.6B
+
+  test_q90_relative-min:
+    1. meta-llama-Llama-3.1-8B
+    2. Qwen-Qwen3-Embedding-8B
+    3. meta-llama-Llama-3.2-3B
+    4. google-gemma-3-1b-pt
+    5. Qwen-Qwen3-Embedding-4B
+    6. google-gemma-3-12b-pt
+    7. meta-llama-Llama-3.2-1B
+    8. google-gemma-3-4b-pt
+    9. Qwen-Qwen3-Embedding-0.6B
+
+  test_q95_relative-min:
+    1. meta-llama-Llama-3.1-8B
+    2. Qwen-Qwen3-Embedding-8B
+    3. meta-llama-Llama-3.2-3B
+    4. google-gemma-3-1b-pt
+    5. google-gemma-3-12b-pt
+    6. Qwen-Qwen3-Embedding-4B
+    7. meta-llama-Llama-3.2-1B
+    8. google-gemma-3-4b-pt
+    9. Qwen-Qwen3-Embedding-0.6B
+
+  test_qmax_relative-min:
+    1. meta-llama-Llama-3.2-1B
+    2. google-gemma-3-4b-pt
+    3. meta-llama-Llama-3.2-3B
+    4. google-gemma-3-1b-pt
+    5. Qwen-Qwen3-Embedding-8B
+    6. google-gemma-3-12b-pt
+    7. meta-llama-Llama-3.1-8B
+    8. Qwen-Qwen3-Embedding-0.6B
+    9. Qwen-Qwen3-Embedding-4B
+
+--------------------------------------------------------------------------------
+Average rank across all evaluation points (q50, q90, q95, qmax)
+(Lower average rank is better)
+
+  1. Qwen-Qwen3-Embedding-8B: avg rank = 2.50
+  2. meta-llama-Llama-3.1-8B: avg rank = 2.75
+  3. meta-llama-Llama-3.2-3B: avg rank = 3.25
+  4. google-gemma-3-1b-pt: avg rank = 3.75
+  5. meta-llama-Llama-3.2-1B: avg rank = 5.25
+  6. google-gemma-3-12b-pt: avg rank = 5.50
+  7. google-gemma-3-4b-pt: avg rank = 6.50
+  8. Qwen-Qwen3-Embedding-4B: avg rank = 6.75
+  9. Qwen-Qwen3-Embedding-0.6B: avg rank = 8.75
+
+
+================================================================================
+TIME TASK ANALYSIS
+================================================================================
+
+test_q50_relative-min:
+  Best non-LLM error: 1.35
+  LLM models beating non-LLM: 9
+    - Qwen-Qwen3-Embedding-0.6B
+    - Qwen-Qwen3-Embedding-4B
+    - Qwen-Qwen3-Embedding-8B
+    - google-gemma-3-12b-pt
+    - google-gemma-3-1b-pt
+    - google-gemma-3-4b-pt
+    - meta-llama-Llama-3.1-8B
+    - meta-llama-Llama-3.2-1B
+    - meta-llama-Llama-3.2-3B
+
+test_q90_relative-min:
+  Best non-LLM error: 2.00
+  LLM models beating non-LLM: 8
+    - Qwen-Qwen3-Embedding-0.6B
+    - Qwen-Qwen3-Embedding-4B
+    - Qwen-Qwen3-Embedding-8B
+    - google-gemma-3-12b-pt
+    - google-gemma-3-1b-pt
+    - google-gemma-3-4b-pt
+    - meta-llama-Llama-3.1-8B
+    - meta-llama-Llama-3.2-1B
+
+test_q95_relative-min:
+  Best non-LLM error: 2.11
+  LLM models beating non-LLM: 8
+    - Qwen-Qwen3-Embedding-0.6B
+    - Qwen-Qwen3-Embedding-4B
+    - Qwen-Qwen3-Embedding-8B
+    - google-gemma-3-12b-pt
+    - google-gemma-3-1b-pt
+    - google-gemma-3-4b-pt
+    - meta-llama-Llama-3.1-8B
+    - meta-llama-Llama-3.2-1B
+
+test_qmax_relative-min:
+  Best non-LLM error: 3.68
+  LLM models beating non-LLM: 7
+    - Qwen-Qwen3-Embedding-0.6B
+    - Qwen-Qwen3-Embedding-4B
+    - google-gemma-3-12b-pt
+    - google-gemma-3-1b-pt
+    - google-gemma-3-4b-pt
+    - meta-llama-Llama-3.1-8B
+    - meta-llama-Llama-3.2-1B
+
+================================================================================
+LLM models that beat non-LLM in at least 2 time evaluation points:
+================================================================================
+  ✓ Qwen-Qwen3-Embedding-0.6B (4/4 points)
+  ✓ Qwen-Qwen3-Embedding-4B (4/4 points)
+  ✓ Qwen-Qwen3-Embedding-8B (3/4 points)
+  ✓ google-gemma-3-12b-pt (4/4 points)
+  ✓ google-gemma-3-1b-pt (4/4 points)
+  ✓ google-gemma-3-4b-pt (4/4 points)
+  ✓ meta-llama-Llama-3.1-8B (4/4 points)
+  ✓ meta-llama-Llama-3.2-1B (4/4 points)
+
+================================================================================
+Non-LLM Algorithm Rankings (Time Task):
+================================================================================
+
+Ranks by evaluation point:
+
+  test_q50_relative-min:
+    1. e2e
+    2. qf
+    3. bao
+    4. postgres
+    5. aimai
+
+  test_q90_relative-min:
+    1. e2e
+    2. qf
+    3. postgres
+    4. bao
+    5. aimai
+
+  test_q95_relative-min:
+    1. e2e
+    2. qf
+    3. postgres
+    4. aimai
+    5. bao
+
+  test_qmax_relative-min:
+    1. qf
+    2. e2e
+    3. aimai
+    4. postgres
+    5. bao
+
+--------------------------------------------------------------------------------
+Average rank across all evaluation points (q50, q90, q95, qmax)
+(Lower average rank is better)
+
+  1. e2e: avg rank = 1.25
+  2. qf: avg rank = 1.75
+  3. postgres: avg rank = 3.50
+  4. aimai: avg rank = 4.25
+  5. bao: avg rank = 4.25
+
+================================================================================
+LLM Model Rankings (Time Task):
+================================================================================
+
+Ranks by evaluation point:
+
+  test_q50_relative-min:
+    1. google-gemma-3-4b-pt
+    2. google-gemma-3-12b-pt
+    3. Qwen-Qwen3-Embedding-8B
+    4. google-gemma-3-1b-pt
+    5. meta-llama-Llama-3.2-1B
+    6. Qwen-Qwen3-Embedding-0.6B
+    7. meta-llama-Llama-3.1-8B
+    8. Qwen-Qwen3-Embedding-4B
+    9. meta-llama-Llama-3.2-3B
+
+  test_q90_relative-min:
+    1. Qwen-Qwen3-Embedding-8B
+    2. Qwen-Qwen3-Embedding-0.6B
+    3. meta-llama-Llama-3.2-1B
+    4. google-gemma-3-1b-pt
+    5. google-gemma-3-4b-pt
+    6. google-gemma-3-12b-pt
+    7. meta-llama-Llama-3.1-8B
+    8. Qwen-Qwen3-Embedding-4B
+    9. meta-llama-Llama-3.2-3B
+
+  test_q95_relative-min:
+    1. Qwen-Qwen3-Embedding-8B
+    2. meta-llama-Llama-3.2-1B
+    3. Qwen-Qwen3-Embedding-0.6B
+    4. google-gemma-3-1b-pt
+    5. google-gemma-3-12b-pt
+    6. Qwen-Qwen3-Embedding-4B
+    7. meta-llama-Llama-3.1-8B
+    8. google-gemma-3-4b-pt
+    9. meta-llama-Llama-3.2-3B
+
+  test_qmax_relative-min:
+    1. meta-llama-Llama-3.2-1B
+    2. meta-llama-Llama-3.1-8B
+    3. Qwen-Qwen3-Embedding-4B
+    4. google-gemma-3-1b-pt
+    5. Qwen-Qwen3-Embedding-0.6B
+    6. google-gemma-3-4b-pt
+    7. google-gemma-3-12b-pt
+    8. meta-llama-Llama-3.2-3B
+    9. Qwen-Qwen3-Embedding-8B
+
+--------------------------------------------------------------------------------
+Average rank across all evaluation points (q50, q90, q95, qmax)
+(Lower average rank is better)
+
+  1. meta-llama-Llama-3.2-1B: avg rank = 2.75
+  2. Qwen-Qwen3-Embedding-8B: avg rank = 3.50
+  3. google-gemma-3-1b-pt: avg rank = 4.00
+  4. Qwen-Qwen3-Embedding-0.6B: avg rank = 4.00
+  5. google-gemma-3-4b-pt: avg rank = 5.00
+  6. google-gemma-3-12b-pt: avg rank = 5.00
+  7. meta-llama-Llama-3.1-8B: avg rank = 5.75
+  8. Qwen-Qwen3-Embedding-4B: avg rank = 6.25
+  9. meta-llama-Llama-3.2-3B: avg rank = 8.75
+
+
+================================================================================
+OVERALL SUMMARY
+================================================================================
+
+✓ LLM models beating non-LLM in ≥2 card evaluation points (1):
+  - meta-llama-Llama-3.1-8B (2/4)
+
+✓ LLM models beating non-LLM in ≥2 time evaluation points (8):
+  - Qwen-Qwen3-Embedding-0.6B (4/4)
+  - Qwen-Qwen3-Embedding-4B (4/4)
+  - Qwen-Qwen3-Embedding-8B (3/4)
+  - google-gemma-3-12b-pt (4/4)
+  - google-gemma-3-1b-pt (4/4)
+  - google-gemma-3-4b-pt (4/4)
+  - meta-llama-Llama-3.1-8B (4/4)
+  - meta-llama-Llama-3.2-1B (4/4)
+
+================================================================================
+LLM models beating non-LLM in BOTH card AND time (≥2 points each):
+================================================================================
+  ⭐ meta-llama-Llama-3.1-8B (card: 2/4, time: 4/4)
+
+================================================================================
+Overall LLM Model Rankings (Average of Card and Time Tasks):
+================================================================================
+Ranked by average rank across both tasks and all evaluation points
+(Lower average rank is better)
+
+  1. Qwen-Qwen3-Embedding-8B: avg rank = 3.00 (card: 2.50, time: 3.50)
+  2. google-gemma-3-1b-pt: avg rank = 3.88 (card: 3.75, time: 4.00)
+  3. meta-llama-Llama-3.2-1B: avg rank = 4.00 (card: 5.25, time: 2.75)
+  4. meta-llama-Llama-3.1-8B: avg rank = 4.25 (card: 2.75, time: 5.75)
+  5. google-gemma-3-12b-pt: avg rank = 5.25 (card: 5.50, time: 5.00)
+  6. google-gemma-3-4b-pt: avg rank = 5.75 (card: 6.50, time: 5.00)
+  7. meta-llama-Llama-3.2-3B: avg rank = 6.00 (card: 3.25, time: 8.75)
+  8. Qwen-Qwen3-Embedding-0.6B: avg rank = 6.38 (card: 8.75, time: 4.00)
+  9. Qwen-Qwen3-Embedding-4B: avg rank = 6.50 (card: 6.75, time: 6.25)

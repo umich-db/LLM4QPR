@@ -1,0 +1,43 @@
+\begin{tabular}{l|cccc|cccc|cccc}
+
+\toprule
+
+\multirow{2}{*}{Algorithm} & \multicolumn{4}{c|}{Synthetic} & \multicolumn{4}{c|}{JOB-light} & \multicolumn{4}{c|}{STATS} \\
+
+ & 50th & 90th & 95th & Max & 50th & 90th & 95th & Max & 50th & 90th & 95th & Max \\
+
+\midrule
+
+PostgreSQL & 2.082 & 8.606 & 15.829 & 3.58e+04 & 2.582 & 42.072 & 122.34 & 1.01e+04 & \cellcolor{green5}{2.153} & \cellcolor{green3}{38.993} & \cellcolor{green4}{126.09} & 8.27e+06 \\
+ALECE & 1.870 & 9.600 & 21.400 & 3.00e+08 & 2.630 & \cellcolor{green1}{14.990} & 212.72 & 7.15e+10 & \cellcolor{green3}{2.780} & \cellcolor{green5}{13.360} & \cellcolor{green5}{25.150} & \cellcolor{green4}{7.58e+03} \\
+AiMeetsAi & 1.567 & 4.654 & 8.867 & 2.37e+04 & \cellcolor{green5}{1.629} & \cellcolor{green2}{14.769} & 46.357 & 4.01e+03 & 4.337 & 160.84 & 944.54 & 1.64e+09 \\
+Bao & 2.066 & 10.109 & 21.029 & 5.16e+04 & \cellcolor{green1}{2.042} & 107.12 & 444.06 & 9.05e+03 & 3.566 & 61.651 & 388.65 & \cellcolor{green1}{5.33e+06} \\
+E2E-Cost & 1.855 & 10.776 & 27.041 & 2.14e+05 & 2.779 & 44.996 & 81.202 & 1.37e+04 & 4.224 & 315.89 & 1.55e+03 & 4.80e+20 \\
+MSCN & 1.570 & 5.490 & 10.440 & \cellcolor{green5}{1.93e+03} & \cellcolor{green3}{1.830} & 23.960 & 55.870 & \cellcolor{green1}{752.69} & 7.690 & 556.13 & 2.08e+03 & \cellcolor{green3}{1.00e+06} \\
+PRICE & 1.680 & 7.140 & 10.440 & \cellcolor{green3}{5.10e+03} & \cellcolor{green2}{2.030} & \cellcolor{green3}{13.990} & \cellcolor{green3}{32.510} & \cellcolor{green5}{309.66} & 4.170 & \cellcolor{green4}{28.690} & \cellcolor{green1}{195.94} & \cellcolor{green5}{1.81e+03} \\
+QueryFormer & 2.290 & 11.799 & 29.361 & 3.98e+05 & 3.319 & 64.622 & 205.06 & 3.48e+03 & 4.649 & 93.665 & 347.57 & \cellcolor{green2}{2.81e+06} \\
+\midrule
+
+SentenceBert & 1.536 & 5.784 & 11.465 & 6.61e+05 & 2.359 & 25.909 & 74.147 & 7.31e+04 & 4.962 & 407.90 & 3.69e+03 & 2.19e+12 \\
+Bert & 1.662 & 6.151 & 11.942 & 3.18e+04 & 2.465 & 32.118 & 94.526 & 3.42e+04 & 4.204 & 167.49 & 907.10 & 1.17e+12 \\
+ModernBert & 1.595 & 5.637 & 10.544 & 2.00e+04 & 2.239 & 35.630 & 142.80 & 2.59e+04 & 3.420 & 144.87 & 1.55e+03 & 1.82e+16 \\
+\midrule
+
+Gemma-1B & \cellcolor{green2}{1.370} & \cellcolor{green3}{4.043} & \cellcolor{green5}{7.009} & 2.07e+04 & 2.306 & 23.455 & 60.753 & 1.38e+04 & 3.327 & 98.331 & 539.67 & 1.32e+11 \\
+Gemma-4B & 1.395 & 4.153 & \cellcolor{green3}{7.298} & 1.68e+04 & 3.207 & 98.021 & 477.93 & 2.22e+04 & \cellcolor{green1}{2.988} & 69.927 & 364.55 & 4.84e+10 \\
+Gemma-12B & 1.395 & \cellcolor{green1}{4.084} & \cellcolor{green4}{7.210} & 1.57e+04 & 2.060 & 15.681 & \cellcolor{green2}{37.171} & \cellcolor{green3}{545.83} & 3.723 & 134.22 & 735.39 & 2.03e+11 \\
+\textbf{Gemma-27B} & \cellcolor{green4}{1.327} & \cellcolor{green5}{3.803} & \cellcolor{green1}{7.458} & 3.39e+04 & 2.050 & \cellcolor{green4}{13.034} & \cellcolor{green4}{32.353} & \cellcolor{green2}{603.20} & 3.382 & 139.00 & 1.20e+03 & 7.65e+16 \\
+\midrule
+
+Llama-1B & \cellcolor{green1}{1.374} & 4.239 & 7.630 & \cellcolor{green2}{6.38e+03} & 2.106 & 20.469 & 53.010 & 2.74e+03 & 4.082 & 145.11 & 912.16 & 1.32e+09 \\
+Llama-3B & 1.387 & \cellcolor{green2}{4.061} & \cellcolor{green2}{7.344} & 1.49e+04 & 2.294 & 20.439 & \cellcolor{green1}{44.895} & 1.68e+03 & 3.199 & 64.871 & 239.78 & 9.80e+10 \\
+\textbf{Llama-8B} & 1.395 & 4.159 & 7.543 & \cellcolor{green1}{9.03e+03} & 2.048 & \cellcolor{green5}{8.565} & \cellcolor{green5}{17.331} & \cellcolor{green4}{510.50} & \cellcolor{green4}{2.653} & \cellcolor{green2}{43.296} & \cellcolor{green3}{163.16} & 5.76e+12 \\
+Llama-70B & \cellcolor{green3}{1.362} & 4.175 & 8.352 & 1.52e+04 & 2.158 & 16.696 & 49.561 & 2.66e+03 & 3.396 & 87.188 & 529.37 & 2.54e+13 \\
+\midrule
+
+Qwen-0.6B & 1.472 & 4.571 & 9.485 & \cellcolor{green4}{3.72e+03} & 2.643 & 24.274 & 55.591 & 3.54e+03 & 5.474 & 632.40 & 5.18e+03 & 7.85e+12 \\
+Qwen-4B & 1.384 & 4.552 & 9.969 & 1.24e+04 & 2.636 & 24.179 & 101.07 & 2.25e+05 & 3.333 & 101.67 & 605.91 & 4.32e+16 \\
+Qwen-8B & \cellcolor{green5}{1.292} & \cellcolor{green4}{4.012} & 8.610 & 2.28e+04 & \cellcolor{green4}{1.753} & 30.599 & 116.90 & 1.33e+05 & \cellcolor{green2}{2.935} & \cellcolor{green1}{48.352} & \cellcolor{green2}{181.43} & 1.34e+11 \\
+
+\bottomrule
+\end{tabular}

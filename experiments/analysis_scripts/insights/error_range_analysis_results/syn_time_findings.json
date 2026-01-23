@@ -1,0 +1,3962 @@
+[
+  {
+    "metric": "num_tables",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0152615893846024,
+    "high_metric_value": 3.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0027512524691196,
+      1.0145087571211668,
+      1.0285247585635209
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.4195360815705271e-06
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 2695,
+    "avg_relative_value": 0.11679903700159756
+  },
+  {
+    "metric": "num_columns",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0152615893846024,
+    "high_metric_value": 24.0,
+    "low_metric_value": 3.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0027512524691196,
+      1.0145087571211668,
+      1.0285247585635209
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.4195360815705271e-06
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 2695,
+    "avg_relative_value": 0.11679903700159756
+  },
+  {
+    "metric": "num_joins",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0152615893846024,
+    "high_metric_value": 2.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0027512524691196,
+      1.0145087571211668,
+      1.0285247585635209
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.4195360815705271e-06
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 2695,
+    "avg_relative_value": 0.11679903700159756
+  },
+  {
+    "metric": "num_filters",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0152615893846024,
+    "high_metric_value": 4.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0027512524691196,
+      1.0145087571211668,
+      1.0285247585635209
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.4195360815705271e-06
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 2695,
+    "avg_relative_value": 0.11679903700159756
+  },
+  {
+    "metric": "longest_path_len",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0152615893846024,
+    "high_metric_value": 5.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0027512524691196,
+      1.0145087571211668,
+      1.0285247585635209
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.4195360815705271e-06
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 2695,
+    "avg_relative_value": 0.11679903700159756
+  },
+  {
+    "metric": "num_nodes",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0152615893846024,
+    "high_metric_value": 7.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0027512524691196,
+      1.0145087571211668,
+      1.0285247585635209
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.4195360815705271e-06
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 2695,
+    "avg_relative_value": 0.11679903700159756
+  },
+  {
+    "metric": "join_tree_diameter",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0152615893846024,
+    "high_metric_value": 1.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0027512524691196,
+      1.0145087571211668,
+      1.0285247585635209
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.4195360815705271e-06
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 2695,
+    "avg_relative_value": 0.11679903700159756
+  },
+  {
+    "metric": "num_nested_loop",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0152615893846024,
+    "high_metric_value": 1.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0027512524691196,
+      1.0145087571211668,
+      1.0285247585635209
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.4195360815705271e-06
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 2695,
+    "avg_relative_value": 0.11679903700159756
+  },
+  {
+    "metric": "max_log_card_error",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0152615893846024,
+    "high_metric_value": 1.6567419257551013,
+    "low_metric_value": 1.4195360815705271e-06,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0027512524691196,
+      1.0145087571211668,
+      1.0285247585635209
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.4195360815705271e-06
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 2695,
+    "avg_relative_value": 0.11679903700159756
+  },
+  {
+    "metric": "num_tables",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0184179199688328,
+    "high_metric_value": 3.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.015809146330092,
+      1.0136066581027046,
+      1.0258379554737016
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 3.0555334031845405e-06
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 746,
+    "avg_relative_value": 0.11679914672145035
+  },
+  {
+    "metric": "num_columns",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0184179199688328,
+    "high_metric_value": 24.0,
+    "low_metric_value": 3.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.015809146330092,
+      1.0136066581027046,
+      1.0258379554737016
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 3.0555334031845405e-06
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 746,
+    "avg_relative_value": 0.11679914672145035
+  },
+  {
+    "metric": "num_joins",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0184179199688328,
+    "high_metric_value": 2.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.015809146330092,
+      1.0136066581027046,
+      1.0258379554737016
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 3.0555334031845405e-06
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 746,
+    "avg_relative_value": 0.11679914672145035
+  },
+  {
+    "metric": "num_filters",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0184179199688328,
+    "high_metric_value": 4.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.015809146330092,
+      1.0136066581027046,
+      1.0258379554737016
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 3.0555334031845405e-06
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 746,
+    "avg_relative_value": 0.11679914672145035
+  },
+  {
+    "metric": "longest_path_len",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0184179199688328,
+    "high_metric_value": 5.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.015809146330092,
+      1.0136066581027046,
+      1.0258379554737016
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 3.0555334031845405e-06
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 746,
+    "avg_relative_value": 0.11679914672145035
+  },
+  {
+    "metric": "num_nodes",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0184179199688328,
+    "high_metric_value": 7.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.015809146330092,
+      1.0136066581027046,
+      1.0258379554737016
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 3.0555334031845405e-06
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 746,
+    "avg_relative_value": 0.11679914672145035
+  },
+  {
+    "metric": "join_tree_diameter",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0184179199688328,
+    "high_metric_value": 1.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.015809146330092,
+      1.0136066581027046,
+      1.0258379554737016
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 3.0555334031845405e-06
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 746,
+    "avg_relative_value": 0.11679914672145035
+  },
+  {
+    "metric": "num_nested_loop",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0184179199688328,
+    "high_metric_value": 1.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.015809146330092,
+      1.0136066581027046,
+      1.0258379554737016
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 3.0555334031845405e-06
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 746,
+    "avg_relative_value": 0.11679914672145035
+  },
+  {
+    "metric": "max_log_card_error",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0184179199688328,
+    "high_metric_value": 1.6567419257551013,
+    "low_metric_value": 3.0555334031845405e-06,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.015809146330092,
+      1.0136066581027046,
+      1.0258379554737016
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 3.0555334031845405e-06
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 746,
+    "avg_relative_value": 0.11679914672145035
+  },
+  {
+    "metric": "num_tables",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48228.06, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.7542946901206362,
+    "low_error_avg": 1.0152615893846024,
+    "high_metric_value": 3.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.9341454119393635,
+      1.8959687764043864,
+      1.432769882018159
+    ],
+    "low_plan_errors": [
+      1.0027512524691196,
+      1.0145087571211668,
+      1.0285247585635209
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 0.6931471805599453
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.4195360815705271e-06
+    },
+    "high_plan_idx": 545,
+    "low_plan_idx": 2695,
+    "avg_relative_value": 0.11679916934979347
+  },
+  {
+    "metric": "num_columns",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48228.06, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.7542946901206362,
+    "low_error_avg": 1.0152615893846024,
+    "high_metric_value": 24.0,
+    "low_metric_value": 3.0,
+    "high_plan_errors": [
+      1.9341454119393635,
+      1.8959687764043864,
+      1.432769882018159
+    ],
+    "low_plan_errors": [
+      1.0027512524691196,
+      1.0145087571211668,
+      1.0285247585635209
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 0.6931471805599453
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.4195360815705271e-06
+    },
+    "high_plan_idx": 545,
+    "low_plan_idx": 2695,
+    "avg_relative_value": 0.11679916934979347
+  },
+  {
+    "metric": "num_joins",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48228.06, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.7542946901206362,
+    "low_error_avg": 1.0152615893846024,
+    "high_metric_value": 2.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.9341454119393635,
+      1.8959687764043864,
+      1.432769882018159
+    ],
+    "low_plan_errors": [
+      1.0027512524691196,
+      1.0145087571211668,
+      1.0285247585635209
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 0.6931471805599453
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.4195360815705271e-06
+    },
+    "high_plan_idx": 545,
+    "low_plan_idx": 2695,
+    "avg_relative_value": 0.11679916934979347
+  },
+  {
+    "metric": "num_filters",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48228.06, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.7542946901206362,
+    "low_error_avg": 1.0152615893846024,
+    "high_metric_value": 4.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.9341454119393635,
+      1.8959687764043864,
+      1.432769882018159
+    ],
+    "low_plan_errors": [
+      1.0027512524691196,
+      1.0145087571211668,
+      1.0285247585635209
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 0.6931471805599453
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.4195360815705271e-06
+    },
+    "high_plan_idx": 545,
+    "low_plan_idx": 2695,
+    "avg_relative_value": 0.11679916934979347
+  },
+  {
+    "metric": "longest_path_len",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48228.06, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.7542946901206362,
+    "low_error_avg": 1.0152615893846024,
+    "high_metric_value": 5.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.9341454119393635,
+      1.8959687764043864,
+      1.432769882018159
+    ],
+    "low_plan_errors": [
+      1.0027512524691196,
+      1.0145087571211668,
+      1.0285247585635209
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 0.6931471805599453
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.4195360815705271e-06
+    },
+    "high_plan_idx": 545,
+    "low_plan_idx": 2695,
+    "avg_relative_value": 0.11679916934979347
+  },
+  {
+    "metric": "num_nodes",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48228.06, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.7542946901206362,
+    "low_error_avg": 1.0152615893846024,
+    "high_metric_value": 7.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.9341454119393635,
+      1.8959687764043864,
+      1.432769882018159
+    ],
+    "low_plan_errors": [
+      1.0027512524691196,
+      1.0145087571211668,
+      1.0285247585635209
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 0.6931471805599453
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.4195360815705271e-06
+    },
+    "high_plan_idx": 545,
+    "low_plan_idx": 2695,
+    "avg_relative_value": 0.11679916934979347
+  },
+  {
+    "metric": "join_tree_diameter",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48228.06, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.7542946901206362,
+    "low_error_avg": 1.0152615893846024,
+    "high_metric_value": 1.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.9341454119393635,
+      1.8959687764043864,
+      1.432769882018159
+    ],
+    "low_plan_errors": [
+      1.0027512524691196,
+      1.0145087571211668,
+      1.0285247585635209
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 0.6931471805599453
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.4195360815705271e-06
+    },
+    "high_plan_idx": 545,
+    "low_plan_idx": 2695,
+    "avg_relative_value": 0.11679916934979347
+  },
+  {
+    "metric": "num_nested_loop",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48228.06, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.7542946901206362,
+    "low_error_avg": 1.0152615893846024,
+    "high_metric_value": 1.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.9341454119393635,
+      1.8959687764043864,
+      1.432769882018159
+    ],
+    "low_plan_errors": [
+      1.0027512524691196,
+      1.0145087571211668,
+      1.0285247585635209
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 0.6931471805599453
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.4195360815705271e-06
+    },
+    "high_plan_idx": 545,
+    "low_plan_idx": 2695,
+    "avg_relative_value": 0.11679916934979347
+  },
+  {
+    "metric": "max_log_card_error",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48228.06, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.7542946901206362,
+    "low_error_avg": 1.0152615893846024,
+    "high_metric_value": 0.6931471805599453,
+    "low_metric_value": 1.4195360815705271e-06,
+    "high_plan_errors": [
+      1.9341454119393635,
+      1.8959687764043864,
+      1.432769882018159
+    ],
+    "low_plan_errors": [
+      1.0027512524691196,
+      1.0145087571211668,
+      1.0285247585635209
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 0.6931471805599453
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.4195360815705271e-06
+    },
+    "high_plan_idx": 545,
+    "low_plan_idx": 2695,
+    "avg_relative_value": 0.11679916934979347
+  },
+  {
+    "metric": "num_tables",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0113196236558444,
+    "high_metric_value": 3.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0182093090865083,
+      1.009949168995518,
+      1.0058003928855064
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 5.334243711629938e-06
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 4792,
+    "avg_relative_value": 0.11679929954551443
+  },
+  {
+    "metric": "num_columns",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0113196236558444,
+    "high_metric_value": 24.0,
+    "low_metric_value": 3.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0182093090865083,
+      1.009949168995518,
+      1.0058003928855064
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 5.334243711629938e-06
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 4792,
+    "avg_relative_value": 0.11679929954551443
+  },
+  {
+    "metric": "num_joins",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0113196236558444,
+    "high_metric_value": 2.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0182093090865083,
+      1.009949168995518,
+      1.0058003928855064
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 5.334243711629938e-06
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 4792,
+    "avg_relative_value": 0.11679929954551443
+  },
+  {
+    "metric": "num_filters",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0113196236558444,
+    "high_metric_value": 4.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0182093090865083,
+      1.009949168995518,
+      1.0058003928855064
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 5.334243711629938e-06
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 4792,
+    "avg_relative_value": 0.11679929954551443
+  },
+  {
+    "metric": "longest_path_len",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0113196236558444,
+    "high_metric_value": 5.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0182093090865083,
+      1.009949168995518,
+      1.0058003928855064
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 5.334243711629938e-06
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 4792,
+    "avg_relative_value": 0.11679929954551443
+  },
+  {
+    "metric": "num_nodes",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0113196236558444,
+    "high_metric_value": 7.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0182093090865083,
+      1.009949168995518,
+      1.0058003928855064
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 5.334243711629938e-06
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 4792,
+    "avg_relative_value": 0.11679929954551443
+  },
+  {
+    "metric": "join_tree_diameter",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0113196236558444,
+    "high_metric_value": 1.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0182093090865083,
+      1.009949168995518,
+      1.0058003928855064
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 5.334243711629938e-06
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 4792,
+    "avg_relative_value": 0.11679929954551443
+  },
+  {
+    "metric": "num_nested_loop",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0113196236558444,
+    "high_metric_value": 1.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0182093090865083,
+      1.009949168995518,
+      1.0058003928855064
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 5.334243711629938e-06
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 4792,
+    "avg_relative_value": 0.11679929954551443
+  },
+  {
+    "metric": "max_log_card_error",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0113196236558444,
+    "high_metric_value": 1.6567419257551013,
+    "low_metric_value": 5.334243711629938e-06,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0182093090865083,
+      1.009949168995518,
+      1.0058003928855064
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 5.334243711629938e-06
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 4792,
+    "avg_relative_value": 0.11679929954551443
+  },
+  {
+    "metric": "num_tables",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48228.06, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.7542946901206362,
+    "low_error_avg": 1.0184179199688328,
+    "high_metric_value": 3.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.9341454119393635,
+      1.8959687764043864,
+      1.432769882018159
+    ],
+    "low_plan_errors": [
+      1.015809146330092,
+      1.0136066581027046,
+      1.0258379554737016
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 0.6931471805599453
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 3.0555334031845405e-06
+    },
+    "high_plan_idx": 545,
+    "low_plan_idx": 746,
+    "avg_relative_value": 0.11679943159926268
+  },
+  {
+    "metric": "num_columns",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48228.06, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.7542946901206362,
+    "low_error_avg": 1.0184179199688328,
+    "high_metric_value": 24.0,
+    "low_metric_value": 3.0,
+    "high_plan_errors": [
+      1.9341454119393635,
+      1.8959687764043864,
+      1.432769882018159
+    ],
+    "low_plan_errors": [
+      1.015809146330092,
+      1.0136066581027046,
+      1.0258379554737016
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 0.6931471805599453
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 3.0555334031845405e-06
+    },
+    "high_plan_idx": 545,
+    "low_plan_idx": 746,
+    "avg_relative_value": 0.11679943159926268
+  },
+  {
+    "metric": "num_joins",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48228.06, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.7542946901206362,
+    "low_error_avg": 1.0184179199688328,
+    "high_metric_value": 2.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.9341454119393635,
+      1.8959687764043864,
+      1.432769882018159
+    ],
+    "low_plan_errors": [
+      1.015809146330092,
+      1.0136066581027046,
+      1.0258379554737016
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 0.6931471805599453
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 3.0555334031845405e-06
+    },
+    "high_plan_idx": 545,
+    "low_plan_idx": 746,
+    "avg_relative_value": 0.11679943159926268
+  },
+  {
+    "metric": "num_filters",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48228.06, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.7542946901206362,
+    "low_error_avg": 1.0184179199688328,
+    "high_metric_value": 4.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.9341454119393635,
+      1.8959687764043864,
+      1.432769882018159
+    ],
+    "low_plan_errors": [
+      1.015809146330092,
+      1.0136066581027046,
+      1.0258379554737016
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 0.6931471805599453
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 3.0555334031845405e-06
+    },
+    "high_plan_idx": 545,
+    "low_plan_idx": 746,
+    "avg_relative_value": 0.11679943159926268
+  },
+  {
+    "metric": "longest_path_len",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48228.06, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.7542946901206362,
+    "low_error_avg": 1.0184179199688328,
+    "high_metric_value": 5.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.9341454119393635,
+      1.8959687764043864,
+      1.432769882018159
+    ],
+    "low_plan_errors": [
+      1.015809146330092,
+      1.0136066581027046,
+      1.0258379554737016
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 0.6931471805599453
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 3.0555334031845405e-06
+    },
+    "high_plan_idx": 545,
+    "low_plan_idx": 746,
+    "avg_relative_value": 0.11679943159926268
+  },
+  {
+    "metric": "num_nodes",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48228.06, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.7542946901206362,
+    "low_error_avg": 1.0184179199688328,
+    "high_metric_value": 7.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.9341454119393635,
+      1.8959687764043864,
+      1.432769882018159
+    ],
+    "low_plan_errors": [
+      1.015809146330092,
+      1.0136066581027046,
+      1.0258379554737016
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 0.6931471805599453
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 3.0555334031845405e-06
+    },
+    "high_plan_idx": 545,
+    "low_plan_idx": 746,
+    "avg_relative_value": 0.11679943159926268
+  },
+  {
+    "metric": "join_tree_diameter",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48228.06, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.7542946901206362,
+    "low_error_avg": 1.0184179199688328,
+    "high_metric_value": 1.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.9341454119393635,
+      1.8959687764043864,
+      1.432769882018159
+    ],
+    "low_plan_errors": [
+      1.015809146330092,
+      1.0136066581027046,
+      1.0258379554737016
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 0.6931471805599453
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 3.0555334031845405e-06
+    },
+    "high_plan_idx": 545,
+    "low_plan_idx": 746,
+    "avg_relative_value": 0.11679943159926268
+  },
+  {
+    "metric": "num_nested_loop",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48228.06, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.7542946901206362,
+    "low_error_avg": 1.0184179199688328,
+    "high_metric_value": 1.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.9341454119393635,
+      1.8959687764043864,
+      1.432769882018159
+    ],
+    "low_plan_errors": [
+      1.015809146330092,
+      1.0136066581027046,
+      1.0258379554737016
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 0.6931471805599453
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 3.0555334031845405e-06
+    },
+    "high_plan_idx": 545,
+    "low_plan_idx": 746,
+    "avg_relative_value": 0.11679943159926268
+  },
+  {
+    "metric": "max_log_card_error",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48228.06, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.7542946901206362,
+    "low_error_avg": 1.0184179199688328,
+    "high_metric_value": 0.6931471805599453,
+    "low_metric_value": 3.0555334031845405e-06,
+    "high_plan_errors": [
+      1.9341454119393635,
+      1.8959687764043864,
+      1.432769882018159
+    ],
+    "low_plan_errors": [
+      1.015809146330092,
+      1.0136066581027046,
+      1.0258379554737016
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 0.6931471805599453
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 3.0555334031845405e-06
+    },
+    "high_plan_idx": 545,
+    "low_plan_idx": 746,
+    "avg_relative_value": 0.11679943159926268
+  },
+  {
+    "metric": "num_tables",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48228.06, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.7542946901206362,
+    "low_error_avg": 1.0113196236558444,
+    "high_metric_value": 3.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.9341454119393635,
+      1.8959687764043864,
+      1.432769882018159
+    ],
+    "low_plan_errors": [
+      1.0182093090865083,
+      1.009949168995518,
+      1.0058003928855064
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 0.6931471805599453
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 5.334243711629938e-06
+    },
+    "high_plan_idx": 545,
+    "low_plan_idx": 4792,
+    "avg_relative_value": 0.11679979687526952
+  },
+  {
+    "metric": "num_columns",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48228.06, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.7542946901206362,
+    "low_error_avg": 1.0113196236558444,
+    "high_metric_value": 24.0,
+    "low_metric_value": 3.0,
+    "high_plan_errors": [
+      1.9341454119393635,
+      1.8959687764043864,
+      1.432769882018159
+    ],
+    "low_plan_errors": [
+      1.0182093090865083,
+      1.009949168995518,
+      1.0058003928855064
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 0.6931471805599453
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 5.334243711629938e-06
+    },
+    "high_plan_idx": 545,
+    "low_plan_idx": 4792,
+    "avg_relative_value": 0.11679979687526952
+  },
+  {
+    "metric": "num_joins",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48228.06, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.7542946901206362,
+    "low_error_avg": 1.0113196236558444,
+    "high_metric_value": 2.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.9341454119393635,
+      1.8959687764043864,
+      1.432769882018159
+    ],
+    "low_plan_errors": [
+      1.0182093090865083,
+      1.009949168995518,
+      1.0058003928855064
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 0.6931471805599453
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 5.334243711629938e-06
+    },
+    "high_plan_idx": 545,
+    "low_plan_idx": 4792,
+    "avg_relative_value": 0.11679979687526952
+  },
+  {
+    "metric": "num_filters",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48228.06, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.7542946901206362,
+    "low_error_avg": 1.0113196236558444,
+    "high_metric_value": 4.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.9341454119393635,
+      1.8959687764043864,
+      1.432769882018159
+    ],
+    "low_plan_errors": [
+      1.0182093090865083,
+      1.009949168995518,
+      1.0058003928855064
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 0.6931471805599453
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 5.334243711629938e-06
+    },
+    "high_plan_idx": 545,
+    "low_plan_idx": 4792,
+    "avg_relative_value": 0.11679979687526952
+  },
+  {
+    "metric": "longest_path_len",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48228.06, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.7542946901206362,
+    "low_error_avg": 1.0113196236558444,
+    "high_metric_value": 5.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.9341454119393635,
+      1.8959687764043864,
+      1.432769882018159
+    ],
+    "low_plan_errors": [
+      1.0182093090865083,
+      1.009949168995518,
+      1.0058003928855064
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 0.6931471805599453
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 5.334243711629938e-06
+    },
+    "high_plan_idx": 545,
+    "low_plan_idx": 4792,
+    "avg_relative_value": 0.11679979687526952
+  },
+  {
+    "metric": "num_nodes",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48228.06, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.7542946901206362,
+    "low_error_avg": 1.0113196236558444,
+    "high_metric_value": 7.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.9341454119393635,
+      1.8959687764043864,
+      1.432769882018159
+    ],
+    "low_plan_errors": [
+      1.0182093090865083,
+      1.009949168995518,
+      1.0058003928855064
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 0.6931471805599453
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 5.334243711629938e-06
+    },
+    "high_plan_idx": 545,
+    "low_plan_idx": 4792,
+    "avg_relative_value": 0.11679979687526952
+  },
+  {
+    "metric": "join_tree_diameter",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48228.06, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.7542946901206362,
+    "low_error_avg": 1.0113196236558444,
+    "high_metric_value": 1.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.9341454119393635,
+      1.8959687764043864,
+      1.432769882018159
+    ],
+    "low_plan_errors": [
+      1.0182093090865083,
+      1.009949168995518,
+      1.0058003928855064
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 0.6931471805599453
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 5.334243711629938e-06
+    },
+    "high_plan_idx": 545,
+    "low_plan_idx": 4792,
+    "avg_relative_value": 0.11679979687526952
+  },
+  {
+    "metric": "num_nested_loop",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48228.06, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.7542946901206362,
+    "low_error_avg": 1.0113196236558444,
+    "high_metric_value": 1.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.9341454119393635,
+      1.8959687764043864,
+      1.432769882018159
+    ],
+    "low_plan_errors": [
+      1.0182093090865083,
+      1.009949168995518,
+      1.0058003928855064
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 0.6931471805599453
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 5.334243711629938e-06
+    },
+    "high_plan_idx": 545,
+    "low_plan_idx": 4792,
+    "avg_relative_value": 0.11679979687526952
+  },
+  {
+    "metric": "max_log_card_error",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48228.06, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.7542946901206362,
+    "low_error_avg": 1.0113196236558444,
+    "high_metric_value": 0.6931471805599453,
+    "low_metric_value": 5.334243711629938e-06,
+    "high_plan_errors": [
+      1.9341454119393635,
+      1.8959687764043864,
+      1.432769882018159
+    ],
+    "low_plan_errors": [
+      1.0182093090865083,
+      1.009949168995518,
+      1.0058003928855064
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 0.6931471805599453
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 5.334243711629938e-06
+    },
+    "high_plan_idx": 545,
+    "low_plan_idx": 4792,
+    "avg_relative_value": 0.11679979687526952
+  },
+  {
+    "metric": "num_tables",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0137284119534098,
+    "high_metric_value": 3.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.017798907325614,
+      1.0224854822589078,
+      1.000900846275708
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.6564814529829164e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 468,
+    "avg_relative_value": 0.11680005273536415
+  },
+  {
+    "metric": "num_columns",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0137284119534098,
+    "high_metric_value": 24.0,
+    "low_metric_value": 3.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.017798907325614,
+      1.0224854822589078,
+      1.000900846275708
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.6564814529829164e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 468,
+    "avg_relative_value": 0.11680005273536415
+  },
+  {
+    "metric": "num_joins",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0137284119534098,
+    "high_metric_value": 2.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.017798907325614,
+      1.0224854822589078,
+      1.000900846275708
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.6564814529829164e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 468,
+    "avg_relative_value": 0.11680005273536415
+  },
+  {
+    "metric": "num_filters",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0137284119534098,
+    "high_metric_value": 4.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.017798907325614,
+      1.0224854822589078,
+      1.000900846275708
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.6564814529829164e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 468,
+    "avg_relative_value": 0.11680005273536415
+  },
+  {
+    "metric": "longest_path_len",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0137284119534098,
+    "high_metric_value": 5.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.017798907325614,
+      1.0224854822589078,
+      1.000900846275708
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.6564814529829164e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 468,
+    "avg_relative_value": 0.11680005273536415
+  },
+  {
+    "metric": "num_nodes",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0137284119534098,
+    "high_metric_value": 7.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.017798907325614,
+      1.0224854822589078,
+      1.000900846275708
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.6564814529829164e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 468,
+    "avg_relative_value": 0.11680005273536415
+  },
+  {
+    "metric": "join_tree_diameter",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0137284119534098,
+    "high_metric_value": 1.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.017798907325614,
+      1.0224854822589078,
+      1.000900846275708
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.6564814529829164e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 468,
+    "avg_relative_value": 0.11680005273536415
+  },
+  {
+    "metric": "num_nested_loop",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0137284119534098,
+    "high_metric_value": 1.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.017798907325614,
+      1.0224854822589078,
+      1.000900846275708
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.6564814529829164e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 468,
+    "avg_relative_value": 0.11680005273536415
+  },
+  {
+    "metric": "max_log_card_error",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0137284119534098,
+    "high_metric_value": 1.6567419257551013,
+    "low_metric_value": 1.6564814529829164e-05,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.017798907325614,
+      1.0224854822589078,
+      1.000900846275708
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.6564814529829164e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 468,
+    "avg_relative_value": 0.11680005273536415
+  },
+  {
+    "metric": "num_tables",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.019732855058377,
+    "high_metric_value": 3.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0109394592191894,
+      1.025037422675395,
+      1.0232216832805463
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.758577662336336e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 2818,
+    "avg_relative_value": 0.11680012120724309
+  },
+  {
+    "metric": "num_columns",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.019732855058377,
+    "high_metric_value": 24.0,
+    "low_metric_value": 3.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0109394592191894,
+      1.025037422675395,
+      1.0232216832805463
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.758577662336336e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 2818,
+    "avg_relative_value": 0.11680012120724309
+  },
+  {
+    "metric": "num_joins",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.019732855058377,
+    "high_metric_value": 2.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0109394592191894,
+      1.025037422675395,
+      1.0232216832805463
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.758577662336336e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 2818,
+    "avg_relative_value": 0.11680012120724309
+  },
+  {
+    "metric": "num_filters",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.019732855058377,
+    "high_metric_value": 4.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0109394592191894,
+      1.025037422675395,
+      1.0232216832805463
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.758577662336336e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 2818,
+    "avg_relative_value": 0.11680012120724309
+  },
+  {
+    "metric": "longest_path_len",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.019732855058377,
+    "high_metric_value": 5.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0109394592191894,
+      1.025037422675395,
+      1.0232216832805463
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.758577662336336e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 2818,
+    "avg_relative_value": 0.11680012120724309
+  },
+  {
+    "metric": "num_nodes",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.019732855058377,
+    "high_metric_value": 7.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0109394592191894,
+      1.025037422675395,
+      1.0232216832805463
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.758577662336336e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 2818,
+    "avg_relative_value": 0.11680012120724309
+  },
+  {
+    "metric": "join_tree_diameter",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.019732855058377,
+    "high_metric_value": 1.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0109394592191894,
+      1.025037422675395,
+      1.0232216832805463
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.758577662336336e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 2818,
+    "avg_relative_value": 0.11680012120724309
+  },
+  {
+    "metric": "num_nested_loop",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.019732855058377,
+    "high_metric_value": 1.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0109394592191894,
+      1.025037422675395,
+      1.0232216832805463
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.758577662336336e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 2818,
+    "avg_relative_value": 0.11680012120724309
+  },
+  {
+    "metric": "max_log_card_error",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.019732855058377,
+    "high_metric_value": 1.6567419257551013,
+    "low_metric_value": 1.758577662336336e-05,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0109394592191894,
+      1.025037422675395,
+      1.0232216832805463
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 1.758577662336336e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 2818,
+    "avg_relative_value": 0.11680012120724309
+  },
+  {
+    "metric": "num_tables",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0105430058783107,
+    "high_metric_value": 3.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0077110151691973,
+      1.0148845767864487,
+      1.009033425679286
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 2.3282737206642423e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 4361,
+    "avg_relative_value": 0.11680050327979798
+  },
+  {
+    "metric": "num_columns",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0105430058783107,
+    "high_metric_value": 24.0,
+    "low_metric_value": 3.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0077110151691973,
+      1.0148845767864487,
+      1.009033425679286
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 2.3282737206642423e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 4361,
+    "avg_relative_value": 0.11680050327979798
+  },
+  {
+    "metric": "num_joins",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0105430058783107,
+    "high_metric_value": 2.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0077110151691973,
+      1.0148845767864487,
+      1.009033425679286
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 2.3282737206642423e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 4361,
+    "avg_relative_value": 0.11680050327979798
+  },
+  {
+    "metric": "num_filters",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0105430058783107,
+    "high_metric_value": 4.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0077110151691973,
+      1.0148845767864487,
+      1.009033425679286
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 2.3282737206642423e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 4361,
+    "avg_relative_value": 0.11680050327979798
+  },
+  {
+    "metric": "longest_path_len",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0105430058783107,
+    "high_metric_value": 5.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0077110151691973,
+      1.0148845767864487,
+      1.009033425679286
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 2.3282737206642423e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 4361,
+    "avg_relative_value": 0.11680050327979798
+  },
+  {
+    "metric": "num_nodes",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0105430058783107,
+    "high_metric_value": 7.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0077110151691973,
+      1.0148845767864487,
+      1.009033425679286
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 2.3282737206642423e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 4361,
+    "avg_relative_value": 0.11680050327979798
+  },
+  {
+    "metric": "join_tree_diameter",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0105430058783107,
+    "high_metric_value": 1.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0077110151691973,
+      1.0148845767864487,
+      1.009033425679286
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 2.3282737206642423e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 4361,
+    "avg_relative_value": 0.11680050327979798
+  },
+  {
+    "metric": "num_nested_loop",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0105430058783107,
+    "high_metric_value": 1.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0077110151691973,
+      1.0148845767864487,
+      1.009033425679286
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 2.3282737206642423e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 4361,
+    "avg_relative_value": 0.11680050327979798
+  },
+  {
+    "metric": "max_log_card_error",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.0105430058783107,
+    "high_metric_value": 1.6567419257551013,
+    "low_metric_value": 2.3282737206642423e-05,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0077110151691973,
+      1.0148845767864487,
+      1.009033425679286
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 2.3282737206642423e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 4361,
+    "avg_relative_value": 0.11680050327979798
+  },
+  {
+    "metric": "num_tables",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.019521135726235,
+    "high_metric_value": 3.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0204502923267518,
+      1.0085271080654756,
+      1.029586006786478
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 2.750920698879611e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 1074,
+    "avg_relative_value": 0.1168007867323661
+  },
+  {
+    "metric": "num_columns",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.019521135726235,
+    "high_metric_value": 24.0,
+    "low_metric_value": 3.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0204502923267518,
+      1.0085271080654756,
+      1.029586006786478
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 2.750920698879611e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 1074,
+    "avg_relative_value": 0.1168007867323661
+  },
+  {
+    "metric": "num_joins",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.019521135726235,
+    "high_metric_value": 2.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0204502923267518,
+      1.0085271080654756,
+      1.029586006786478
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 2.750920698879611e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 1074,
+    "avg_relative_value": 0.1168007867323661
+  },
+  {
+    "metric": "num_filters",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.019521135726235,
+    "high_metric_value": 4.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0204502923267518,
+      1.0085271080654756,
+      1.029586006786478
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 2.750920698879611e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 1074,
+    "avg_relative_value": 0.1168007867323661
+  },
+  {
+    "metric": "longest_path_len",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.019521135726235,
+    "high_metric_value": 5.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0204502923267518,
+      1.0085271080654756,
+      1.029586006786478
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 2.750920698879611e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 1074,
+    "avg_relative_value": 0.1168007867323661
+  },
+  {
+    "metric": "num_nodes",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.019521135726235,
+    "high_metric_value": 7.0,
+    "low_metric_value": 1.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0204502923267518,
+      1.0085271080654756,
+      1.029586006786478
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 2.750920698879611e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 1074,
+    "avg_relative_value": 0.1168007867323661
+  },
+  {
+    "metric": "join_tree_diameter",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.019521135726235,
+    "high_metric_value": 1.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0204502923267518,
+      1.0085271080654756,
+      1.029586006786478
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 2.750920698879611e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 1074,
+    "avg_relative_value": 0.1168007867323661
+  },
+  {
+    "metric": "num_nested_loop",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.019521135726235,
+    "high_metric_value": 1.0,
+    "low_metric_value": 0.0,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0204502923267518,
+      1.0085271080654756,
+      1.029586006786478
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 2.750920698879611e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 1074,
+    "avg_relative_value": 0.1168007867323661
+  },
+  {
+    "metric": "max_log_card_error",
+    "high_error_plan": "{\"Node Type\": \"Gather\", \"Parallel Aware\": false, \"Async Capable\": false, \"Startup Cost\": 48824.46, \"...",
+    "low_error_plan": "{\"Node Type\": \"Seq Scan\", \"Parallel Aware\": false, \"Async Capable\": false, \"Relation Name\": \"movie_k...",
+    "high_error_avg": 1.5179042784728063,
+    "low_error_avg": 1.019521135726235,
+    "high_metric_value": 1.6567419257551013,
+    "low_metric_value": 2.750920698879611e-05,
+    "high_plan_errors": [
+      1.5432255776870036,
+      1.6837834357351422,
+      1.3267038219962728
+    ],
+    "low_plan_errors": [
+      1.0204502923267518,
+      1.0085271080654756,
+      1.029586006786478
+    ],
+    "high_plan_metrics": {
+      "num_tables": 3.0,
+      "num_columns": 24.0,
+      "num_joins": 2.0,
+      "num_filters": 4.0,
+      "longest_path_len": 5.0,
+      "num_nodes": 7.0,
+      "join_tree_diameter": 1.0,
+      "num_nested_loop": 1.0,
+      "max_log_card_error": 1.6567419257551013
+    },
+    "low_plan_metrics": {
+      "num_tables": 1.0,
+      "num_columns": 3.0,
+      "num_joins": 0.0,
+      "num_filters": 1.0,
+      "longest_path_len": 1.0,
+      "num_nodes": 1.0,
+      "join_tree_diameter": 0.0,
+      "num_nested_loop": 0.0,
+      "max_log_card_error": 2.750920698879611e-05
+    },
+    "high_plan_idx": 422,
+    "low_plan_idx": 1074,
+    "avg_relative_value": 0.1168007867323661
+  }
+]

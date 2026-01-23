@@ -63,6 +63,17 @@ def build_quantile_table(csv_folder, quantiles=[50, 75, 90, 99]):
     """
     # 1. Find all CSV files
     csv_paths = glob.glob(os.path.join(csv_folder, f'{args.task}*cdf*seed*.csv'))
+    
+    # Filter out files with "_rm-" and "downstream" (ablation studies and downstream tasks)
+    filtered_paths = []
+    for path in csv_paths:
+        filename = os.path.basename(path)
+        if "_rm-" in filename:
+            continue
+        if "downstream" in filename:
+            continue
+        filtered_paths.append(path)
+    csv_paths = filtered_paths
 
     # 2. Group files by prefix
     grouped_paths = defaultdict(list)

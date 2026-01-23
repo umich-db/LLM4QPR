@@ -1,0 +1,22 @@
+Outlier Filtering Information
+============================================================
+
+Group: time_averaged
+Phase: train
+Metric: q95
+Relative Mode: min
+
+Filtering Method:
+  Distance-based filtering on log scale
+  Ensures distance between smallest and 5th smallest >= 1/5 of total range
+
+Filtering Parameters:
+  Smallest error value: 1.212021
+  5th smallest error value: 1.928221
+  Distance (log scale): 0.464309
+  Total range (log scale): 2.503696
+  Required minimum distance: 0.500739 (1/5 of range)
+
+Filtered Outliers (1 data point(s)):
+------------------------------------------------------------
+  aimai: error=76.559574, time_ms=396141.33

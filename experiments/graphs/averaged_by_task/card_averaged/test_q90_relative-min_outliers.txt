@@ -1,0 +1,22 @@
+Outlier Filtering Information
+============================================================
+
+Group: card_averaged
+Phase: test
+Metric: q90
+Relative Mode: min
+
+Filtering Method:
+  Distance-based filtering on log scale
+  Ensures distance between smallest and 5th smallest >= 1/5 of total range
+
+Filtering Parameters:
+  Smallest error value: 1.759161
+  5th smallest error value: 2.770603
+  Distance (log scale): 0.454228
+  Total range (log scale): 2.162368
+  Required minimum distance: 0.432474 (1/5 of range)
+
+Filtered Outliers (1 data point(s)):
+------------------------------------------------------------
+  llm-Qwen-Qwen3-Embedding-0.6B: error=17.124414, time_ms=624166.85

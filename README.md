@@ -37,11 +37,20 @@ If you want to reproduce the query plans in **`queryPlans/`** from scratch, you'
 
 ## 🔑 Model Access Requirements
 
-This project uses Meta's Llama models which require authentication:
+This project uses several LLM families which require authentication:
 
 1. **Apply for access** to the following models on Hugging Face:
-   - [Meta Llama 3.2 Collection](https://huggingface.co/collections/meta-llama/llama-32-66f448ffc8c32f949b04c8cf)
-   - [Meta Llama 3.1 Collection](https://huggingface.co/collections/meta-llama/llama-31-669fc079a0c406a149a5738f)
+   - **Llama models:**
+     - [Meta Llama 3.2 Collection](https://huggingface.co/collections/meta-llama/llama-32-66f448ffc8c32f949b04c8cf)
+     - [Meta Llama 3.1 Collection](https://huggingface.co/collections/meta-llama/llama-31-669fc079a0c406a149a5738f)
+   - **BERT family:**
+     - [sentence-transformers/all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2)
+     - [google-bert/bert-base-uncased](https://huggingface.co/google-bert/bert-base-uncased)
+     - [answerdotai/ModernBERT-base](https://huggingface.co/answerdotai/ModernBERT-base)
+   - **Qwen family:**
+     - [Qwen 3 Embedding Collection](https://huggingface.co/collections/Qwen/qwen3-embedding)
+   - **Gemma family:**
+     - [Google Gemma 3 Release Collection](https://huggingface.co/collections/google/gemma-3-release)
 
 2. **Get your Hugging Face token** from  
    https://huggingface.co/settings/tokens

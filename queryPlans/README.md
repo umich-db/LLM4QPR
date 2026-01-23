@@ -6,7 +6,7 @@ This folder contains the pre-generated query plans used in the LLM4QPR experimen
 
 Due to size constraints (1.42 GB), the query plans are hosted externally:
 
-**Google Drive**: [Download queryPlans.zip](https://drive.google.com/file/d/1bnto7FilrTMu7ugOKG0mgRG220Y4SVYV/view?usp=drive_link)
+**Google Drive**: [Download queryPlans.zip](https://drive.google.com/file/d/11HoE8nb1dZKl5ioOyAXoKSb4FAC3kARr/view?usp=sharing)
 
 ## Usage
 

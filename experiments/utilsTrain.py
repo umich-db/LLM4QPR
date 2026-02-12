@@ -83,6 +83,23 @@ def parse_args():
     # quantization arguments
     parser.add_argument("--quantification", type=str, choices=['4-bit', '8-bit', 'None'], default='None',
                         help="Quantization type: 4-bit (default), 8-bit, or None (no quantization)")
+    # stats token injection arguments (distribution stats in LLM)
+    parser.add_argument("--stats_token_inject", action="store_true", default=False,
+                        help="Enable [STAT] token injection with per-predicate stats vectors")
+    parser.add_argument("--stats_token_str", type=str, default="[STAT]",
+                        help="Special token string used for stats injection (default [STAT])")
+    parser.add_argument("--stats_token_dim", type=int, default=5,
+                        help="Dimension of per-[STAT] vector (default 5)")
+    parser.add_argument("--stats_token_mode", type=str, choices=["avg", "per_column"], default="per_column",
+                        help="Stats token mode: avg (one token per predicate) or per_column (one per column)")
+    parser.add_argument("--stats_pg_stats_path", type=str, default=None,
+                        help="Path to pg_stats.csv (optional override)")
+    parser.add_argument("--stats_table_sizes_path", type=str, default=None,
+                        help="Path to table_sizes.csv (optional override)")
+    parser.add_argument("--concat_true_embeddings", action="store_true", default=False,
+                        help="Concatenate queries_true embeddings to LLM embeddings (in inference mode)")
+    parser.add_argument("--queries_true_dir", type=str, default="../queries_true",
+                        help="Directory containing queries_true embedding CSVs")
     # aimeetsai feature mask (5 dims): 1 to enable, 0 to disable; order: [cost, card, wei_rows, byte, wei_costs]
     parser.add_argument("--aime_features", type=str, default="11111",
                         help="Binary mask of length 5 to enable/disable aimeetsai features")
@@ -485,13 +502,13 @@ def load_data(argsP, dat_path, dat_paths_train_list, dat_path_test, dat_dict, pr
                                 # batch_size = argsP.batch_size,
                                 collate_fn=collator,
                                 shuffle=False)
-    elif argsP.algo == "aimai" or argsP.algo == "llm":
+    elif argsP.algo == "aimai" or argsP.algo == "llm" or argsP.algo == "llm_stats":
         if argsP.algo == "aimai":
             # Use helper function to create datasets
             ds = create_dataset_for_algo('aimai', ds_info, train_roots, train_costs, argsP, dat_path)
             val_ds = create_dataset_for_algo('aimai', ds_info, val_roots, val_costs, argsP, dat_path)
             test_ds = create_dataset_for_algo('aimai', ds_info, test_roots, test_costs, argsP, dat_path)
-        elif argsP.algo == "llm":
+        elif argsP.algo == "llm" or argsP.algo == "llm_stats":
             from utilsLLM import QueryPlanDataset, QueryPlanPredictor, get_llm_ds_from_csv
             ds, val_ds, test_ds, val_costs, test_costs, test_lengths, test_templates = get_llm_ds_from_csv(predictor, dat_paths_train_list, dat_path_test, ds_info, argsP)
             if not argsP.embeddings_exist:

@@ -63,6 +63,8 @@ setup_args_and_suffixes() {
   DOWNSTREAM_SUFFIX=""
   REMOVED_FIELDS_ARG=""
   REMOVED_FIELDS_SUFFIX=""
+  STATS_ARGS=""
+  STATS_SUFFIX=""
   
   # Bucketize
   if [[ "$BUCKETIZE_INPUT" != "None" && "$BUCKETIZE_INPUT" != "" ]]; then
@@ -114,6 +116,40 @@ setup_args_and_suffixes() {
       REMOVED_FIELDS_SUFFIX="_rm-$(IFS=-; echo "${SUFFIX_PARTS[*]}")"
     fi
   fi
+
+  # queries_true embeddings concatenation
+  if [[ "$CONCAT_TRUE_EMBEDDINGS" == "true" || "$CONCAT_TRUE_EMBEDDINGS" == "True" ]]; then
+    CONCAT_TRUE_ARG="--concat_true_embeddings"
+    CONCAT_TRUE_SUFFIX="_trueEmb"
+    if [[ -n "$QUERIES_TRUE_DIR" ]]; then
+      CONCAT_TRUE_ARG="$CONCAT_TRUE_ARG --queries_true_dir $QUERIES_TRUE_DIR"
+    fi
+  else
+    CONCAT_TRUE_ARG=""
+    CONCAT_TRUE_SUFFIX=""
+  fi
+
+  # Stats token injection
+  if [[ "$STATS_TOKEN_INJECT" == "true" || "$STATS_TOKEN_INJECT" == "True" ]]; then
+    STATS_ARGS="--stats_token_inject"
+    STATS_SUFFIX="_statTok"
+    if [[ -n "$STATS_TOKEN_MODE" ]]; then
+      STATS_ARGS="$STATS_ARGS --stats_token_mode $STATS_TOKEN_MODE"
+      STATS_SUFFIX="${STATS_SUFFIX}-${STATS_TOKEN_MODE}"
+    fi
+    if [[ -n "$STATS_TOKEN_STR" ]]; then
+      STATS_ARGS="$STATS_ARGS --stats_token_str $STATS_TOKEN_STR"
+    fi
+    if [[ -n "$STATS_TOKEN_DIM" ]]; then
+      STATS_ARGS="$STATS_ARGS --stats_token_dim $STATS_TOKEN_DIM"
+    fi
+    if [[ -n "$STATS_PG_STATS_PATH" ]]; then
+      STATS_ARGS="$STATS_ARGS --stats_pg_stats_path $STATS_PG_STATS_PATH"
+    fi
+    if [[ -n "$STATS_TABLE_SIZES_PATH" ]]; then
+      STATS_ARGS="$STATS_ARGS --stats_table_sizes_path $STATS_TABLE_SIZES_PATH"
+    fi
+  fi
   
   # Determine directory names based on whether _rm- is in the filename
   RESULTS_DIR="results"
@@ -137,9 +173,9 @@ if [ "$finetune" == "False" ]; then
   setup_args_and_suffixes
   
   python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-None_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}_seed${SEED}.csv \
-                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-None_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}_seed${SEED}_abs.txt \
-                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-None_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}_seed${SEED}.log \
+                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-None_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}_seed${SEED}.csv \
+                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-None_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}_seed${SEED}_abs.txt \
+                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-None_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}_seed${SEED}.log \
                                       --db postgres \
                                       --workloads_train "${TRAIN_WLS[@]}" \
                                       --workload_test ${WORKLOAD_TEST} \
@@ -157,7 +193,9 @@ if [ "$finetune" == "False" ]; then
                                       $EMBEDDINGS_ARG \
                                       $VERBOSE_ARG \
                                       $DOWNSTREAM_ARG \
-                                      $REMOVED_FIELDS_ARG
+                                      $REMOVED_FIELDS_ARG \
+                                      $CONCAT_TRUE_ARG \
+                                      $STATS_ARGS
 fi
 
 if [ "$finetune" == "True" ]; then
@@ -174,7 +212,14 @@ if [ "$finetune" == "True" ]; then
   # Helper function to check if finetuned model exists
   check_model_exists() {
     local mode=$1
-    local model_file="finetuned_models/${TRAIN_WLS_HYPHEN}_time_${mode}_${model_name1}_llm.pt"
+    local stats_suffix=""
+    if [[ "$STATS_TOKEN_INJECT" == "true" || "$STATS_TOKEN_INJECT" == "True" ]]; then
+      stats_suffix="_statTok"
+      if [[ -n "$STATS_TOKEN_MODE" ]]; then
+        stats_suffix="${stats_suffix}-${STATS_TOKEN_MODE}"
+      fi
+    fi
+    local model_file="finetuned_models/${TRAIN_WLS_HYPHEN}_time_${mode}_${model_name1}${stats_suffix}_llm.pt"
     if [ -f "$model_file" ]; then
       echo "✅  Finetuned model already exists: $model_file"
       echo "    Skipping finetuning step for mode: $mode"
@@ -196,7 +241,7 @@ if [ "$finetune" == "True" ]; then
       setup_args_and_suffixes
       
       python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                          --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_last_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}.log \
+                                          --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_last_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}.log \
                                           --db postgres \
                                           --workloads_train "${TRAIN_WLS[@]}" \
                                           --workload_test ${WORKLOAD_TEST} \
@@ -211,7 +256,9 @@ if [ "$finetune" == "True" ]; then
                                           --seed $SEED \
                                           $BUCKETIZE_ARG \
                                           $QUANTIFICATION_ARG \
-                                          $REMOVED_FIELDS_ARG
+                                          $REMOVED_FIELDS_ARG \
+                                          $CONCAT_TRUE_ARG \
+                                          $STATS_ARGS
     fi
   fi
 
@@ -227,7 +274,7 @@ if [ "$finetune" == "True" ]; then
       setup_args_and_suffixes
       
       python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                          --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_lora_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}.log \
+                                          --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_lora_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}.log \
                                           --db postgres \
                                           --workloads_train "${TRAIN_WLS[@]}" \
                                           --workload_test ${WORKLOAD_TEST} \
@@ -242,7 +289,9 @@ if [ "$finetune" == "True" ]; then
                                           --seed $SEED \
                                           $BUCKETIZE_ARG \
                                           $QUANTIFICATION_ARG \
-                                          $REMOVED_FIELDS_ARG
+                                          $REMOVED_FIELDS_ARG \
+                                          $CONCAT_TRUE_ARG \
+                                          $STATS_ARGS
     fi
   fi
 
@@ -260,9 +309,9 @@ if [ "$finetune" == "True" ]; then
     setup_args_and_suffixes
     
     python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                        --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}_seed${SEED}.csv \
-                                        --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}_seed${SEED}_abs.txt \
-                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}_seed${SEED}.log \
+                                        --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}_seed${SEED}.csv \
+                                        --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}_seed${SEED}_abs.txt \
+                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}_seed${SEED}.log \
                                         --db postgres \
                                         --workloads_train "${TRAIN_WLS[@]}" \
                                         --workload_test ${WORKLOAD_TEST} \
@@ -283,7 +332,9 @@ if [ "$finetune" == "True" ]; then
                                         $EMBEDDINGS_ARG \
                                         $VERBOSE_ARG \
                                         $DOWNSTREAM_ARG \
-                                        $REMOVED_FIELDS_ARG
+                                        $REMOVED_FIELDS_ARG \
+                                        $CONCAT_TRUE_ARG \
+                                        $STATS_ARGS
   fi
 
   if [[ "$RUN_LORA" == "true" ]]; then
@@ -293,9 +344,9 @@ if [ "$finetune" == "True" ]; then
     setup_args_and_suffixes
     
     python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                        --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}_seed${SEED}.csv \
-                                        --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}_seed${SEED}_abs.txt \
-                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}_seed${SEED}.log \
+                                        --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}_seed${SEED}.csv \
+                                        --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}_seed${SEED}_abs.txt \
+                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}_seed${SEED}.log \
                                         --db postgres \
                                         --workloads_train "${TRAIN_WLS[@]}" \
                                         --workload_test ${WORKLOAD_TEST} \
@@ -316,6 +367,8 @@ if [ "$finetune" == "True" ]; then
                                         $EMBEDDINGS_ARG \
                                         $VERBOSE_ARG \
                                         $DOWNSTREAM_ARG \
-                                        $REMOVED_FIELDS_ARG
+                                        $REMOVED_FIELDS_ARG \
+                                        $CONCAT_TRUE_ARG \
+                                        $STATS_ARGS
   fi
 fi

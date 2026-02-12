@@ -148,6 +148,28 @@ else
     QUANTIFICATION="4-bit"
 fi
 
+# Get queries_true concatenation option
+echo ""
+echo "=== queries_true Embeddings ==="
+echo "Concatenate queries_true embeddings to LLM embeddings?"
+echo "1. No (default)"
+echo "2. Yes"
+echo "Enter choice (1 or 2):"
+read -r concat_choice
+if [[ "$concat_choice" == "2" ]]; then
+    CONCAT_TRUE_EMBEDDINGS="true"
+    echo "Enter queries_true directory (default: ../queries_true):"
+    read -r queries_true_input
+    if [[ -z "$queries_true_input" ]]; then
+        QUERIES_TRUE_DIR="../queries_true"
+    else
+        QUERIES_TRUE_DIR="$queries_true_input"
+    fi
+else
+    CONCAT_TRUE_EMBEDDINGS="false"
+    QUERIES_TRUE_DIR=""
+fi
+
 # Get seeds
 echo ""
 echo "=== Seeds ==="
@@ -255,6 +277,10 @@ echo "Seeds: ${seeds[*]}"
 echo "Embed Size: $EMBED_SIZE"
 echo "Tasks: $(if [ "$RUN_TIME" = true ]; then echo -n "time "; fi)$(if [ "$RUN_CARD" = true ]; then echo -n "card"; fi)"
 echo "Removed Fields: ${REMOVED_FIELDS:-none}"
+echo "Concat queries_true: $CONCAT_TRUE_EMBEDDINGS"
+if [[ "$CONCAT_TRUE_EMBEDDINGS" == "true" ]]; then
+    echo "queries_true dir: $QUERIES_TRUE_DIR"
+fi
 echo ""
 echo "Starting experiments..."
 
@@ -275,6 +301,10 @@ for SEED in "${seeds[@]}"; do
             export QUANTIFICATION="$QUANTIFICATION"
             export EMBED_SIZE="$EMBED_SIZE"
             export REMOVED_FIELDS="$REMOVED_FIELDS"
+            export CONCAT_TRUE_EMBEDDINGS="$CONCAT_TRUE_EMBEDDINGS"
+            if [[ "$CONCAT_TRUE_EMBEDDINGS" == "true" ]]; then
+                export QUERIES_TRUE_DIR="$QUERIES_TRUE_DIR"
+            fi
             
             # Run time prediction experiment if selected
             if [ "$RUN_TIME" = true ]; then

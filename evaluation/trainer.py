@@ -341,7 +341,7 @@ def evaluate(model, args, loader, norm, device, prints=True, data_sec="unknown",
         if data_sec == "test":
             data_fetch_start = timer()
         
-        for batch_idx, (x, y) in enumerate(loader, start=1):
+        for batch_idx, batch in enumerate(loader, start=1):
             if data_sec == "test":
                 data_load_time = timer() - data_fetch_start
                 args.main_logger.info(f"[Test] Batch {batch_idx} DataLoad — {data_load_time*1000:.2f} ms")
@@ -349,6 +349,11 @@ def evaluate(model, args, loader, norm, device, prints=True, data_sec="unknown",
             if data_sec == "test":
                 batch_start = timer()
             
+            if isinstance(batch, (list, tuple)) and len(batch) == 3:
+                x, stats, y = batch
+            else:
+                x, y = batch
+
             # Move inputs to device if not LLM finetuning
             if args.algo != "llm_finetune":
                 x = x.to(device)
@@ -647,11 +652,15 @@ def train(model, train_loader, val_loader, \
         print(">", end="", flush=True)
         # measure data loading time: time from end of last iteration to when batch is available
         data_fetch_start = timer()
-        for batch_idx, (x, y) in enumerate(train_loader, start=1):
+        for batch_idx, batch in enumerate(train_loader, start=1):
             data_load_time = timer() - data_fetch_start
             args.main_logger.info(f"[Train] Epoch {epoch} Batch {batch_idx} DataLoad — {data_load_time*1000:.2f} ms")
             print(".", end="", flush=True)
             batch_start = timer()
+            if isinstance(batch, (list, tuple)) and len(batch) == 3:
+                x, stats, y = batch
+            else:
+                x, y = batch
             if args.algo=='llm_finetune':
                 y = y.to(device)
                 print(batch_idx, end="", flush=True)
@@ -689,6 +698,20 @@ def train(model, train_loader, val_loader, \
             args.main_logger.info(f"[Train] Epoch {epoch} Batch {batch_idx} — {batch_time*1000:.2f} ms")
             # mark start of next data fetch timing
             data_fetch_start = timer()
+
+            if args.algo == "llm_finetune" and record and (batch_idx % 200 == 0):
+                if not args.card:
+                    print_qerror(
+                        ds_info.cost_norm.unnormalize_labels(predss),
+                        ds_info.cost_norm.unnormalize_labels(labels),
+                        data_sec="train"
+                    )
+                else:
+                    print_qerror(
+                        ds_info.card_norm.unnormalize_labels(predss),
+                        ds_info.card_norm.unnormalize_labels(labels),
+                        data_sec="train"
+                    )
         epoch_time = timer() - epoch_start
         args.main_logger.info(f"[Train] Epoch {epoch} total — {epoch_time*1000:.2f} ms")
         print("")

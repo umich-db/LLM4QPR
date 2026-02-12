@@ -68,10 +68,28 @@ if "llm" in argsP.algo:
     )
     device = LLM.model.device if hasattr(LLM.model, 'device') else torch.device("cuda" if torch.cuda.is_available() else "cpu")
     LLM.to(device)
+    # Configure stats token injection settings (if enabled)
+    LLM.stats_token_dim = int(getattr(argsP, "stats_token_dim", 5))
+    LLM.stats_token_str = getattr(argsP, "stats_token_str", "[STAT]")
     if argsP.algo == "llm" and argsP.llm_pretrained:
-      llm_path = f"finetuned_models/{'-'.join(argsP.workloads_train)}_{argsP.llm_pretrained_task}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_llm.pt"
+      stats_suffix = ""
+      if getattr(argsP, "stats_token_inject", False):
+        stats_mode = getattr(argsP, "stats_token_mode", "per_column")
+        stats_suffix = f"_statTok-{stats_mode}"
+      llm_path = f"finetuned_models/{'-'.join(argsP.workloads_train)}_{argsP.llm_pretrained_task}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}{stats_suffix}_llm.pt"
       state_dict = torch.load(llm_path, map_location=device)
-      LLM.model.load_state_dict(state_dict, strict=False)
+      try:
+        LLM.model.load_state_dict(state_dict, strict=False)
+      except RuntimeError as e:
+        # Common case: stats token added during finetune, tokenizer size mismatch
+        if "size mismatch" in str(e) and "tok_embeddings.weight" in str(e):
+          try:
+            LLM._ensure_stats_token(getattr(argsP, "stats_token_str", "[STAT]"))
+            LLM.model.load_state_dict(state_dict, strict=False)
+          except Exception:
+            raise
+        else:
+          raise
       print(f"✅  Loaded LLM weights from {llm_path}")
   else:
     LLM = None
@@ -86,13 +104,18 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
 def llm_collate(batch):
-    # batch is a list of tuples: [(text1, cost1), (text2, cost2), …]
-    texts, costs = zip(*batch)                      # two tuples of length B
-    # turn costs into a FloatTensor of shape (B,1)
-    costs_tensor = torch.tensor(costs, 
-                                dtype=torch.float32,
-                                device=device).unsqueeze(1)
-    # leave texts as a plain Python list of str
+    # batch is a list of tuples:
+    # - (text, cost) OR (text, stats_vecs, cost)
+    if len(batch[0]) == 3:
+        texts, stats_vecs, costs = zip(*batch)
+        costs_tensor = torch.tensor(
+            costs, dtype=torch.float32, device=device
+        ).unsqueeze(1)
+        return (list(texts), list(stats_vecs)), costs_tensor
+    texts, costs = zip(*batch)
+    costs_tensor = torch.tensor(
+        costs, dtype=torch.float32, device=device
+    ).unsqueeze(1)
     return list(texts), costs_tensor
 
 if "llm" in argsP.algo:
@@ -181,6 +204,14 @@ elif argsP.algo == "llm":
   else:
     MLP = Prediction(input_dim, argsP.hid_units)
     model_comb = MLP
+elif argsP.algo == "llm_stats":
+  # Deprecated: stats fusion is disabled. Behave like plain LLM embeddings.
+  input_dim = argsP.embed_size
+  downstream = getattr(argsP, "llm_downstream", "mlp")
+  if downstream == "autogluon":
+    print("AutoGluon does not support llm_stats; using MLP instead.")
+  MLP = Prediction(input_dim, argsP.hid_units)
+  model_comb = MLP
 elif argsP.algo == "llm_finetune":
   input_dim = argsP.embed_size
   MLP = Prediction(input_dim, argsP.hid_units)
@@ -207,10 +238,14 @@ if argsP.algo == "llm_finetune":
 
     llm_sd = LLM.model.state_dict()
 
+    stats_suffix = ""
+    if getattr(argsP, "stats_token_inject", False):
+        stats_mode = getattr(argsP, "stats_token_mode", "per_column")
+        stats_suffix = f"_statTok-{stats_mode}"
     if argsP.card:
-        llm_out = os.path.join(save_dir, f"{'-'.join(argsP.workloads_train)}_card_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_llm.pt")
+        llm_out = os.path.join(save_dir, f"{'-'.join(argsP.workloads_train)}_card_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}{stats_suffix}_llm.pt")
     else:
-        llm_out = os.path.join(save_dir, f"{'-'.join(argsP.workloads_train)}_time_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_llm.pt")
+        llm_out = os.path.join(save_dir, f"{'-'.join(argsP.workloads_train)}_time_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}{stats_suffix}_llm.pt")
     torch.save(llm_sd, llm_out)
     print(f"🔖  Saved LLM weights to {llm_out}")
 else:

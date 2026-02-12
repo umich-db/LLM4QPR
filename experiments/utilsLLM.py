@@ -57,6 +57,25 @@ class QueryPlanDataset(Dataset):
     def __getitem__(self, idx):
         return self.texts[idx], self.costs[idx]
 
+
+class QueryPlanDatasetWithStatsTokens(Dataset):
+    """Dataset that returns (text, stats_vecs, label).
+
+    stats_vecs: list of numpy arrays (each dim stats_token_dim) corresponding to [STAT] tokens
+    inserted into the text.
+    """
+    def __init__(self, texts, stats_vecs_list, labels):
+        assert len(texts) == len(labels) == len(stats_vecs_list)
+        self.texts = texts
+        self.stats_vecs_list = stats_vecs_list
+        self.labels = labels
+
+    def __len__(self):
+        return len(self.labels)
+
+    def __getitem__(self, idx):
+        return self.texts[idx], self.stats_vecs_list[idx], self.labels[idx]
+
 #########################################
 #    QueryPlanPredictor Model Class
 #########################################
@@ -1120,7 +1139,7 @@ class QueryPlanPredictor(nn.Module):
         
         return torch.empty(0, self.hidden_dim, device=self.model.device)
 
-    def _process_batch_optimized(self, windows: list, max_length: int) -> torch.Tensor:
+    def _process_batch_optimized(self, windows: list, max_length: int, stats_vecs_batch=None) -> torch.Tensor:
         """批量处理函数，直接处理token ids或文本"""
         # Handle DDP models by accessing the underlying model
         model_to_check = self.model.module if hasattr(self.model, 'module') else self.model
@@ -1189,6 +1208,13 @@ class QueryPlanPredictor(nn.Module):
                 target_device = next(self.model.parameters()).device
             inputs = {k: v.to(target_device) for k, v in inputs.items()}
         
+        # If stats token injection is enabled, replace [STAT] token embeddings with projected stats vectors
+        if stats_vecs_batch is not None:
+            try:
+                inputs = self._inject_stats_token_embeddings(inputs, stats_vecs_batch)
+            except Exception as e:
+                print(f"[stats_token_inject] WARNING: injection failed: {e}")
+
         # 批量前向传播
         if is_gpt_oss:
             outputs = self.model(**inputs, output_hidden_states=True)
@@ -1239,10 +1265,74 @@ class QueryPlanPredictor(nn.Module):
             embs = sum_hs / lens
             return embs
 
+    def _ensure_stats_token(self, stats_token_str: str = "[STAT]"):
+        # Add [STAT] to tokenizer/model vocab if needed; create projection layer.
+        if getattr(self, "_stats_token_ready", False):
+            return
+        if stats_token_str not in self.tokenizer.get_vocab():
+            self.tokenizer.add_special_tokens({"additional_special_tokens": [stats_token_str]})
+            try:
+                self.model.resize_token_embeddings(len(self.tokenizer))
+            except Exception:
+                try:
+                    self.model.base_model.resize_token_embeddings(len(self.tokenizer))
+                except Exception:
+                    pass
+        self.stats_token_str = stats_token_str
+        self.stats_token_id = self.tokenizer.convert_tokens_to_ids(stats_token_str)
+        stats_dim = int(getattr(self, "stats_token_dim", 5))
+        self.stats_proj = nn.Linear(stats_dim, self.hidden_dim, bias=False)
+        self.stats_ln = nn.LayerNorm(self.hidden_dim)
+        # keep projection on same device as model embeddings
+        try:
+            self.stats_proj = self.stats_proj.to(self.model.get_input_embeddings().weight.device)
+            self.stats_ln = self.stats_ln.to(self.model.get_input_embeddings().weight.device)
+        except Exception:
+            pass
+        self._stats_token_ready = True
+
+    def _inject_stats_token_embeddings(self, inputs: dict, stats_vecs_batch):
+        # Replace embeddings at [STAT] token positions with projected stats vectors.
+        self._ensure_stats_token(getattr(self, "stats_token_str", "[STAT]"))
+        input_ids = inputs.get("input_ids")
+        attention_mask = inputs.get("attention_mask")
+        emb_layer = self.model.get_input_embeddings()
+        inputs_embeds = emb_layer(input_ids)
+        # Avoid in-place writes on a leaf view with grad
+        inputs_embeds = inputs_embeds.clone()
+        # ensure stats_proj matches the current device (important under CUDA_VISIBLE_DEVICES)
+        try:
+            self.stats_proj = self.stats_proj.to(device=inputs_embeds.device, dtype=inputs_embeds.dtype)
+            self.stats_ln = self.stats_ln.to(device=inputs_embeds.device, dtype=inputs_embeds.dtype)
+        except Exception:
+            pass
+
+        import torch
+        for b in range(input_ids.shape[0]):
+            pos = (input_ids[b] == self.stats_token_id).nonzero(as_tuple=False).flatten()
+            if pos.numel() == 0:
+                continue
+            vecs = stats_vecs_batch[b] if stats_vecs_batch is not None else []
+            if vecs is None:
+                vecs = []
+            k = min(len(vecs), int(pos.numel()))
+            if k <= 0:
+                continue
+            sv = torch.tensor(vecs[:k], dtype=inputs_embeds.dtype, device=inputs_embeds.device)
+            pv = self.stats_proj(sv)
+            pv = self.stats_ln(pv)
+            inputs_embeds[b, pos[:k], :] = pv
+        return {"inputs_embeds": inputs_embeds, "attention_mask": attention_mask}
+
     def forward(self, texts: list[str]):
         """
         Forward pass using optimized implementation from BasePredictor.
         """
+        stats_vecs_batch = None
+        if isinstance(texts, tuple) and len(texts) == 2:
+            texts, stats_vecs_batch = texts
+        self.stats_token_dim = int(getattr(self, "stats_token_dim", 5))
+        self.stats_token_str = getattr(self, "stats_token_str", "[STAT]")
         # 判断模型类型和最大长度
         is_qwen = "qwen" in self.model_name.lower()
         is_gpt_oss = "gpt-oss-20b" in self.model_name.lower() or "openai/gpt-oss-20b" in self.model_name.lower()
@@ -1301,7 +1391,7 @@ class QueryPlanPredictor(nn.Module):
                 return self._process_with_sliding_window_batch(texts, max_length)
         
         # 不需要滑动窗口或禁用滑动窗口，批量处理所有文本
-        return self._process_batch_optimized(texts, max_length)
+        return self._process_batch_optimized(texts, max_length, stats_vecs_batch=stats_vecs_batch)
     
     def to(self, device):
         """
@@ -2036,6 +2126,7 @@ def read_json_and_clean(predictor, ds_info, dat_path, argsP, all=False):
     cards = []
     lengths = []
     templates = []
+    stats_vecs_list = []  # per-plan list of per-[STAT] vectors (only when argsP.stats_token_inject)
     
     # Parse removed_fields for ablation studies
     fields_to_remove = set()
@@ -2047,6 +2138,15 @@ def read_json_and_clean(predictor, ds_info, dat_path, argsP, all=False):
     
     # Check if template column exists (only for tpch and tpcds)
     has_template = 'template' in df.columns
+
+    # Stats-token injection support
+    stats_mem = None
+    token_str = getattr(argsP, "stats_token_str", "[STAT]")
+    inject_stat_tokens_into_cleaned_plan = None
+    if getattr(argsP, "stats_token_inject", False):
+        from stats_features import load_stats_memory_for_args, inject_stat_tokens_into_cleaned_plan as _inject
+        stats_mem = load_stats_memory_for_args(argsP)
+        inject_stat_tokens_into_cleaned_plan = _inject
 
     raw_jsons = df["json"]
     plan_jsons = [json.loads(raw) for raw in raw_jsons]
@@ -2081,6 +2181,18 @@ def read_json_and_clean(predictor, ds_info, dat_path, argsP, all=False):
         costs.append(_find_actual_total_time(orig_root))
         cards.append(_find_actual_rows(orig_root))
         cleaned_root = _clean_node(root, fields_to_remove)
+        if getattr(argsP, "stats_token_inject", False) and stats_mem is not None:
+            token_mode = getattr(argsP, "stats_token_mode", "per_column")
+            cleaned_root, stat_vecs = inject_stat_tokens_into_cleaned_plan(
+                cleaned_root,
+                ds_info,
+                stats_mem,
+                token_str=token_str,
+                token_mode=token_mode,
+            )
+            stats_vecs_list.append(stat_vecs)
+        else:
+            stats_vecs_list.append([])
         txt = json.dumps(cleaned_root)
         
         # Log token count before truncation if needed
@@ -2116,8 +2228,12 @@ def read_json_and_clean(predictor, ds_info, dat_path, argsP, all=False):
         return cleaned_texts, costs, cards, lengths, templates
     else:
         if argsP.card:
+            if getattr(argsP, "stats_token_inject", False):
+                return cleaned_texts, cards, lengths, templates, stats_vecs_list
             return cleaned_texts, cards, lengths, templates
         else:
+            if getattr(argsP, "stats_token_inject", False):
+                return cleaned_texts, costs, lengths, templates, stats_vecs_list
             return cleaned_texts, costs, lengths, templates
 
 
@@ -2211,6 +2327,55 @@ def read_json_and_clean_v2(predictor, ds_info, dat_path, argsP, all=False):
             return txts, costs, lengths, templates
 
 
+def _load_queries_true_embeddings(dat_path: str, argsP):
+    """Load queries_true embeddings and return as FloatTensor [N, D]."""
+    try:
+        from pathlib import Path
+        qt_dir = Path(getattr(argsP, "queries_true_dir", "../queries_true")).resolve()
+        if not qt_dir.exists():
+            print(f"[queries_true] Directory not found: {qt_dir}")
+            return None
+        base = Path(dat_path).name
+        if base.endswith(".csv"):
+            base = base[:-4]
+        if base.startswith("long_raw_postgres_"):
+            base = base[len("long_raw_postgres_"):]
+
+        candidates = []
+        candidates.append(f"{base}_embeddings.csv")
+        if base.startswith("imdb_"):
+            candidates.append(f"{base.replace('imdb_','')}_embeddings.csv")
+        if base.startswith("stats_"):
+            candidates.append(f"{base.replace('stats_','')}_embeddings.csv")
+        if base in ("imdb_job_full", "job_full"):
+            candidates.append("job_full_train_embeddings.csv")
+
+        emb_path = None
+        for name in candidates:
+            p = qt_dir / name
+            if p.exists():
+                emb_path = p
+                break
+        if emb_path is None:
+            print(f"[queries_true] No embedding file found for {dat_path}. Tried: {candidates}")
+            return None
+
+        df = pd.read_csv(emb_path)
+        # Support changed formats: select numeric columns only (drop ids/strings)
+        num_df = df.select_dtypes(include=["number"])
+        if num_df.shape[1] == 0:
+            raise ValueError(f"[queries_true] No numeric columns found in {emb_path}")
+        if num_df.shape[1] != df.shape[1]:
+            dropped = [c for c in df.columns if c not in num_df.columns]
+            print(f"[queries_true] Dropping non-numeric columns: {dropped}")
+        feats = torch.from_numpy(num_df.values).float()
+        print(f"[queries_true] Loaded embeddings from {emb_path} with shape {feats.shape}")
+        return feats
+    except Exception as e:
+        print(f"[queries_true] Failed to load embeddings for {dat_path}: {e}")
+        return None
+
+
 def get_embeddings(predictor, ds_info, dat_path, argsP, batch_size=1, normalize_feats=True, collect_test_info=False):
     # Add target workload info to filename when conditions are met
     target_suffix = ""
@@ -2243,7 +2408,11 @@ def get_embeddings(predictor, ds_info, dat_path, argsP, batch_size=1, normalize_
     if "_rm-" in removed_fields_suffix:
         cache_dir = "embeddings_rm"
     
-    cache_file = f"embeddings_{argsP.model_name}_bucketize-{argsP.bucketize_input}_quant-{argsP.quantification}_pretrained-{argsP.llm_pretrained}_pretrainedTask-{argsP.llm_pretrained_task}{target_suffix}{seed_suffix}{removed_fields_suffix}_{dat_path}".replace("json", "csv") 
+    stats_suffix = ""
+    if getattr(argsP, "stats_token_inject", False):
+        stats_mode = getattr(argsP, "stats_token_mode", "per_column")
+        stats_suffix = f"_statTok-{stats_mode}"
+    cache_file = f"embeddings_{argsP.model_name}_bucketize-{argsP.bucketize_input}_quant-{argsP.quantification}_pretrained-{argsP.llm_pretrained}_pretrainedTask-{argsP.llm_pretrained_task}{target_suffix}{seed_suffix}{removed_fields_suffix}{stats_suffix}_{dat_path}".replace("json", "csv") 
     cache_file = cache_file.replace("/","-")
     cache_path = os.path.join(cache_dir, cache_file)
     
@@ -2352,6 +2521,17 @@ def get_embeddings(predictor, ds_info, dat_path, argsP, batch_size=1, normalize_
         print("[get_embeddings] Non-finite after downsample_block_mean")
         exit(0)
 
+    if getattr(argsP, "concat_true_embeddings", False) and getattr(argsP, "llm_mode", "inference") == "inference":
+        true_emb = _load_queries_true_embeddings(dat_path, argsP)
+        if true_emb is not None:
+            if true_emb.shape[0] != features.shape[0]:
+                raise ValueError(
+                    f"queries_true embeddings rows ({true_emb.shape[0]}) do not match LLM embeddings rows ({features.shape[0]}) "
+                    f"for {dat_path}"
+                )
+            features = torch.cat([features, true_emb.to(features.device)], dim=1)
+            argsP.embed_size = int(features.shape[1])
+    
     if normalize_feats:
         feat_norm = FeatureNormalizer()
         features = feat_norm.fit_transform(features)
@@ -2379,38 +2559,71 @@ def get_llm_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_info, 
     if argsP.algo=="llm_finetune":
         if dat_path_test.endswith("c8220.json"):
             cleaned_texts_test, costs_test, lengths_test, templates_test = read_json_and_clean_v2(predictor, ds_info, dat_path_test, argsP)
+            stats_vecs_test_full = None
+            if getattr(argsP, "stats_token_inject", False):
+                stats_vecs_test_full = [[] for _ in cleaned_texts_test]
         else:
-            cleaned_texts_test, costs_test, lengths_test, templates_test = read_json_and_clean(predictor, ds_info, dat_path_test, argsP)
+            tmp = read_json_and_clean(predictor, ds_info, dat_path_test, argsP)
+            if getattr(argsP, "stats_token_inject", False):
+                cleaned_texts_test, costs_test, lengths_test, templates_test, stats_vecs_test_full = tmp
+            else:
+                cleaned_texts_test, costs_test, lengths_test, templates_test = tmp
+                stats_vecs_test_full = None
         if len(dat_path_train_list)==1 and dat_path_train_list[0]==dat_path_test:
             train_ids, val_ids, test_ids = train_val_test(len(cleaned_texts_test), argsP)
             cleaned_texts_train = [cleaned_texts_test[idx] for idx in train_ids]
             cleaned_texts_val   = [cleaned_texts_test[idx] for idx in val_ids  ]
             cleaned_texts_test  = [cleaned_texts_test[idx] for idx in test_ids ]
             costs_train = [costs_test[idx] for idx in train_ids]
+            if getattr(argsP, "stats_token_inject", False):
+                stats_vecs_train = [stats_vecs_test_full[idx] for idx in train_ids]
+                stats_vecs_val   = [stats_vecs_test_full[idx] for idx in val_ids]
+                stats_vecs_test  = [stats_vecs_test_full[idx] for idx in test_ids]
+            else:
+                stats_vecs_train = stats_vecs_val = stats_vecs_test = None
             costs_val   = [costs_test[idx] for idx in val_ids  ]
             costs_test  = [costs_test[idx] for idx in test_ids ]
             lengths_test  = [lengths_test[idx] for idx in test_ids ]
             templates_test = [templates_test[idx] for idx in test_ids ]
         else:
             cleaned_texts_train, costs_train = [], []
+            stats_vecs_train_list = []
             for dat_path_train in dat_path_train_list:
                 if dat_path_train.endswith("c8220.json"):
                     # for the 100k workload, we use the v2 version
                     cleaned_texts, costs, lengths, templates = read_json_and_clean_v2(predictor, ds_info, dat_path_train, argsP)
                 else:
-                    cleaned_texts, costs, lengths, templates = read_json_and_clean(predictor, ds_info, dat_path_train, argsP)
+                    tmp2 = read_json_and_clean(predictor, ds_info, dat_path_train, argsP)
+                    if getattr(argsP, "stats_token_inject", False):
+                        cleaned_texts, costs, lengths, templates, stats_vecs_part = tmp2
+                    else:
+                        cleaned_texts, costs, lengths, templates = tmp2
                 cleaned_texts_train.extend(cleaned_texts)
                 costs_train.extend(costs)
+                if getattr(argsP, "stats_token_inject", False):
+                    stats_vecs_train_list.extend(stats_vecs_part)
             train_ids, val_ids= train_val(len(cleaned_texts_train), argsP)
             cleaned_texts_val   = [cleaned_texts_train[idx] for idx in val_ids  ]
             cleaned_texts_train = [cleaned_texts_train[idx] for idx in train_ids]
+            if getattr(argsP, "stats_token_inject", False):
+                stats_vecs_val   = [stats_vecs_train_list[idx] for idx in val_ids]
+                stats_vecs_train = [stats_vecs_train_list[idx] for idx in train_ids]
+                stats_vecs_test  = stats_vecs_test_full
+            else:
+                stats_vecs_train = stats_vecs_val = stats_vecs_test = None
             costs_val   = [costs_train[idx] for idx in val_ids  ]
             costs_train = [costs_train[idx] for idx in train_ids]
 
         if hasattr(argsP, 'train_ratio') and 0.0 < argsP.train_ratio < 1.0:
             cleaned_texts_train, costs_train = sample_train(cleaned_texts_train, costs_train, argsP.train_ratio, features_is_list=True)
 
-    elif argsP.algo=="llm":
+        if getattr(argsP, "stats_token_inject", False):
+            from stats_features import normalize_stats_vecs
+            stats_vecs_train, stats_vecs_val, stats_vecs_test = normalize_stats_vecs(
+                stats_vecs_train, stats_vecs_val, stats_vecs_test
+            )
+
+    elif argsP.algo=="llm" or argsP.algo=="llm_stats":
         embeddings_test, costs_test, lengths_test, templates_test = get_embeddings(predictor, ds_info, dat_path_test, argsP, 1, False, collect_test_info=argsP.verbose_info)
         
         if len(dat_path_train_list)==1 and dat_path_train_list[0]==dat_path_test:
@@ -2490,23 +2703,38 @@ def get_llm_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_info, 
     # 3) Finally, create the TensorDataset
     if argsP.algo=="llm_finetune":
         if not argsP.card:
-            ds_train = QueryPlanDataset(cleaned_texts_train, ds_info.cost_norm.normalize_labels(costs_train))
-            ds_val   = QueryPlanDataset(cleaned_texts_val,   ds_info.cost_norm.normalize_labels(costs_val))
-            ds_test  = QueryPlanDataset(cleaned_texts_test,  ds_info.cost_norm.normalize_labels(costs_test))
+            ytr = ds_info.cost_norm.normalize_labels(costs_train)
+            yva = ds_info.cost_norm.normalize_labels(costs_val)
+            yte = ds_info.cost_norm.normalize_labels(costs_test)
         else:
-            ds_train = QueryPlanDataset(cleaned_texts_train, ds_info.card_norm.normalize_labels(costs_train))
-            ds_val   = QueryPlanDataset(cleaned_texts_val,   ds_info.card_norm.normalize_labels(costs_val))
-            ds_test  = QueryPlanDataset(cleaned_texts_test,  ds_info.card_norm.normalize_labels(costs_test))
+            ytr = ds_info.card_norm.normalize_labels(costs_train)
+            yva = ds_info.card_norm.normalize_labels(costs_val)
+            yte = ds_info.card_norm.normalize_labels(costs_test)
+
+        if getattr(argsP, "stats_token_inject", False):
+            ds_train = QueryPlanDatasetWithStatsTokens(cleaned_texts_train, stats_vecs_train, ytr)
+            ds_val   = QueryPlanDatasetWithStatsTokens(cleaned_texts_val,   stats_vecs_val,   yva)
+            ds_test  = QueryPlanDatasetWithStatsTokens(cleaned_texts_test,  stats_vecs_test,  yte)
+        else:
+            ds_train = QueryPlanDataset(cleaned_texts_train, ytr)
+            ds_val   = QueryPlanDataset(cleaned_texts_val,   yva)
+            ds_test  = QueryPlanDataset(cleaned_texts_test,  yte)
         argsP.embed_size = predictor.hidden_dim
         return ds_train, ds_val, ds_test, costs_val, costs_test, lengths_test, templates_test
     else:
+        # Labels
         if not argsP.card:
-            ds_train = TensorDataset(embeddings_train, torch.FloatTensor(ds_info.cost_norm.normalize_labels(costs_train)).view(-1, 1))
-            ds_val   = TensorDataset(embeddings_val,   torch.FloatTensor(ds_info.cost_norm.normalize_labels(costs_val)).view(-1, 1))
-            ds_test  = TensorDataset(embeddings_test,  torch.FloatTensor(ds_info.cost_norm.normalize_labels(costs_test)).view(-1, 1))
+            y_train = torch.FloatTensor(ds_info.cost_norm.normalize_labels(costs_train)).view(-1, 1)
+            y_val   = torch.FloatTensor(ds_info.cost_norm.normalize_labels(costs_val)).view(-1, 1)
+            y_test  = torch.FloatTensor(ds_info.cost_norm.normalize_labels(costs_test)).view(-1, 1)
         else:
-            ds_train = TensorDataset(embeddings_train, torch.FloatTensor(ds_info.card_norm.normalize_labels(costs_train)).view(-1, 1))
-            ds_val   = TensorDataset(embeddings_val,   torch.FloatTensor(ds_info.card_norm.normalize_labels(costs_val)).view(-1, 1))
-            ds_test  = TensorDataset(embeddings_test,  torch.FloatTensor(ds_info.card_norm.normalize_labels(costs_test)).view(-1, 1))
+            y_train = torch.FloatTensor(ds_info.card_norm.normalize_labels(costs_train)).view(-1, 1)
+            y_val   = torch.FloatTensor(ds_info.card_norm.normalize_labels(costs_val)).view(-1, 1)
+            y_test  = torch.FloatTensor(ds_info.card_norm.normalize_labels(costs_test)).view(-1, 1)
+
+        # Dataset (stats fusion disabled)
+        ds_train = TensorDataset(embeddings_train, y_train)
+        ds_val   = TensorDataset(embeddings_val,   y_val)
+        ds_test  = TensorDataset(embeddings_test,  y_test)
         
         return ds_train, ds_val, ds_test, costs_val, costs_test, lengths_test, templates_test

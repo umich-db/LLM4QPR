@@ -44,6 +44,16 @@
 **Experiments**: Both without finetuning and with finetuning
 **Seeds**: 42, 43, 44
 
+### 6. `run_stats_feature_comparison.sh`
+**Purpose**: Compares baseline LLM embeddings vs LLM + stats features (llm vs llm_stats)  
+**Inputs**: Train workloads, test workload, model name, seed, task (time/card/both)  
+**Notes**: Uses `stats_features.py` to build per-query stats vectors; pg_stats paths can be overridden via env vars
+
+### 7. `run_stats_finetune_comparison.sh`
+**Purpose**: Compares finetuned LLMs with/without stats token injection  
+**Inputs**: Train workloads, test workload, model name, seed, task (time/card/both)  
+**Notes**: Passes `STATS_TOKEN_INJECT` to finetune runs and uses distinct finetuned model filenames
+
 ## Core Scripts
 
 The `core_scripts/` directory contains the fundamental execution scripts:
@@ -85,7 +95,9 @@ experiments/
 │   ├── run_model_size_comparison.sh      # Model size experiments
 │   ├── run_training_ratio_analysis.sh    # Training ratio experiments
 │   ├── run_finetuning_experiments.sh     # Finetuning experiments
-│   └── run_cross_workload_experiments.sh # Cross-workload tests
+│   ├── run_cross_workload_experiments.sh # Cross-workload tests
+│   ├── run_stats_feature_comparison.sh   # Compare llm vs llm_stats
+│   └── run_stats_finetune_comparison.sh  # Compare finetune with stats
 ├── train.py                              # Main training script
 └── utils*.py                             # Utility modules
 ```

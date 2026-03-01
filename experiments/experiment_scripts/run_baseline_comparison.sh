@@ -4,6 +4,25 @@
 
 echo "Running Baseline Comparison Experiments..."
 
+# Database engine selection
+echo ""
+echo "=== Database Engine Selection ==="
+echo "1. postgres"
+echo "2. duckdb"
+echo "Enter choice (1 or 2):"
+read -r db_choice
+
+if [[ "$db_choice" == "1" ]]; then
+    export DB_ENGINE="postgres"
+elif [[ "$db_choice" == "2" ]]; then
+    export DB_ENGINE="duckdb"
+else
+    echo "Invalid choice, defaulting to postgres"
+    export DB_ENGINE="postgres"
+fi
+
+echo "Selected database engine: $DB_ENGINE"
+
 # Get verbose output option
 echo ""
 echo "=== Verbose Output Option ==="
@@ -26,42 +45,6 @@ fi
 
 model_name=meta-llama/Llama-3.1-8B
 model_name1="${model_name//\//-}"
-
-## Define available AIME feature masks
-feature_masks=(
-  "11111"  # all features
-  "01111"  # disable cost
-  "10111"  # disable card
-  "11011"  # disable wei_rows
-  "11101"  # disable byte
-  "11110"  # disable wei_costs
-  "01110"  # disable cost and wei_costs
-  "10011"  # disable card and wei_rows
-)
-
-echo "=== AIME Feature Mask Selection ==="
-echo "Choose feature mask(s):"
-for i in "${!feature_masks[@]}"; do
-  echo "$((i+1)). ${feature_masks[i]}"
-done
-echo "Enter numbers separated by spaces (e.g., 1 3 5) or 'all' for all options:"
-read -r mask_selection
-
-selected_masks=()
-if [[ "$mask_selection" == "all" ]]; then
-  selected_masks=("${feature_masks[@]}")
-else
-  for num in $mask_selection; do
-    if [[ "$num" =~ ^[0-9]+$ ]] && [[ "$num" -ge 1 ]] && [[ "$num" -le "${#feature_masks[@]}" ]]; then
-      selected_masks+=("${feature_masks[$((num-1))]}")
-    else
-      echo "Invalid selection: $num"
-      exit 1
-    fi
-  done
-fi
-
-echo "Selected masks: ${selected_masks[*]}"
 
 # Algorithm selection
 algorithms=("aimai" "qf" "bao" "postgres" "e2e_cost")
@@ -169,9 +152,9 @@ echo "Selected seeds: ${seeds[*]}"
 
 echo ""
 echo "=== Configuration Summary ==="
+echo "Database Engine: $DB_ENGINE"
 echo "Algorithms: ${selected_algorithms[*]}"
 echo "Workloads: ${selected_workloads[*]}"
-echo "AIME Feature Masks: ${selected_masks[*]}"
 echo "Seeds: ${seeds[*]}"
 echo "Tasks: $(if [ "$RUN_CARD" = true ]; then echo -n "card "; fi)$(if [ "$RUN_TIME" = true ]; then echo -n "time"; fi)"
 echo "Verbose Output: $VERBOSE_INFO"
@@ -183,31 +166,15 @@ for SEED in "${seeds[@]}"; do
     for ALGO in "${selected_algorithms[@]}"; do
       # Run card task if selected
       if [ "$RUN_CARD" = true ]; then
-        if [[ "$ALGO" == "aimai" ]]; then
-          # For aimai, iterate through feature masks
-          for AIME_FEATURES in "${selected_masks[@]}"; do
-            bash experiment_scripts/core_scripts/run_baseline.sh $WORKLOAD $WORKLOAD 1.0 $SEED $AIME_FEATURES $ALGO "card"
-          done
-        else
-          # For other algorithms, use default feature mask (ignored)
-          bash experiment_scripts/core_scripts/run_baseline.sh $WORKLOAD $WORKLOAD 1.0 $SEED 11111 $ALGO "card"
-        fi
+        bash experiment_scripts/core_scripts/run_baseline.sh $WORKLOAD $WORKLOAD 1.0 $SEED $ALGO "card"
       fi
-      
+
       # Run time task if selected
       if [ "$RUN_TIME" = true ]; then
-        if [[ "$ALGO" == "aimai" ]]; then
-          # For aimai, iterate through feature masks
-          for AIME_FEATURES in "${selected_masks[@]}"; do
-            bash experiment_scripts/core_scripts/run_baseline.sh $WORKLOAD $WORKLOAD 1.0 $SEED $AIME_FEATURES $ALGO "time"
-          done
-        else
-          # For other algorithms, use default feature mask (ignored)
-          bash experiment_scripts/core_scripts/run_baseline.sh $WORKLOAD $WORKLOAD 1.0 $SEED 11111 $ALGO "time"
-        fi
+        bash experiment_scripts/core_scripts/run_baseline.sh $WORKLOAD $WORKLOAD 1.0 $SEED $ALGO "time"
       fi
     done
   done
 done
 
-echo "Baseline Comparison Experiments completed!" 
+echo "Baseline Comparison Experiments completed!"

@@ -3,28 +3,28 @@ IFS=' ' read -r -a TRAIN_WLS <<< "$1"
 WORKLOAD_TEST=$2
 train_ratio=$3
 SEED=$4
-# optional: feature mask for aimeetsai (default all on)
-AIME_FEATURES=${5:-11111}
 # optional: algorithm (default aimai)
-ALGO=${6:-aimai}
+ALGO=${5:-aimai}
 # optional: task (default card)
-TASK=${7:-card}
+TASK=${6:-card}
+# optional: database engine (default postgres, can be set via DB_ENGINE env var)
+DB_ENGINE=${DB_ENGINE:-postgres}
 
 # 2) build the parallel array of dat_paths:
 DAT_PATHS=()
 for wl in "${TRAIN_WLS[@]}"; do
   if [[ "$wl" == "syn" || "$wl" == "job" || "$wl" == "job_full" ]]; then
-    DAT_PATHS+=( "../queryPlans/imdb/postgres/" )
+    DAT_PATHS+=( "../queryPlans/imdb/${DB_ENGINE}/" )
   else
-    DAT_PATHS+=( "../queryPlans/$wl/postgres/" )
+    DAT_PATHS+=( "../queryPlans/$wl/${DB_ENGINE}/" )
   fi
 done
 
 # one test path
 if [[ "$WORKLOAD_TEST" == "syn" || "$WORKLOAD_TEST" == "job" || "$WORKLOAD_TEST" == "job_full" ]]; then
-  DAT_PATH_TEST="../queryPlans/imdb/postgres/"
+  DAT_PATH_TEST="../queryPlans/imdb/${DB_ENGINE}/"
 else
-  DAT_PATH_TEST="../queryPlans/$WORKLOAD_TEST/postgres/"
+  DAT_PATH_TEST="../queryPlans/$WORKLOAD_TEST/${DB_ENGINE}/"
 fi
 
 
@@ -62,7 +62,7 @@ case $ALGO in
 esac
 
 # Run experiments based on algorithm and task
-echo "${ALGO} ${TASK}"
+echo "${ALGO} ${TASK} (db=${DB_ENGINE})"
 
 # Check workload constraints for card task
 if [[ "$TASK" == "card" ]] && [[ "$WORKLOAD_TEST" != "job" && "$WORKLOAD_TEST" != "syn" && "$WORKLOAD_TEST" != "stats" ]]; then
@@ -76,42 +76,43 @@ if [[ "$VERBOSE_INFO" == "true" || "$VERBOSE_INFO" == "True" ]]; then
   VERBOSE_ARG="--verbose_info"
 fi
 
+# Output directories namespaced by database engine (matches run_llm_time.sh)
+RESULTS_DIR="results/${DB_ENGINE}"
+LOGS_DIR="logs/${DB_ENGINE}"
+
 # Set up file names
-base_name="${TASK}_${ALGO}_${train_ratio}_cdf_postgres_${lr}_b${batch_size}_h${hid_units}_seed${SEED}"
-if [[ "$ALGO" == "aimai" ]]; then
-    base_name="${base_name}_f${AIME_FEATURES}"
-fi
+base_name="${TASK}_${ALGO}_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_seed${SEED}"
 
 # Call train.py with appropriate arguments
 if [[ "$TASK" == "card" ]]; then
     python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                    --output_dir_qerror results/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/${base_name}.csv \
-                                    --output_dir_abs results/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/${base_name}_abs.txt \
-                                    --log_file logs/logs_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/${base_name}.log \
-                                    --db postgres \
+                                    --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/${base_name}.csv \
+                                    --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/${base_name}_abs.txt \
+                                    --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/${base_name}.log \
+                                    --db ${DB_ENGINE} \
                                     --workloads_train "${TRAIN_WLS[@]}" \
                                     --workload_test ${WORKLOAD_TEST} \
                                     --algo ${ALGO} \
+                                    --num_epoch 100 \
                                     --learning_rate $lr \
                                     --batch_size $batch_size \
                                     --train_ratio $train_ratio \
                                     --card \
                                     --seed $SEED \
-                                    --aime_features ${AIME_FEATURES} \
                                     $VERBOSE_ARG
 else
     python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                    --output_dir_qerror results/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/${base_name}.csv \
-                                    --output_dir_abs results/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/${base_name}_abs.txt \
-                                    --log_file logs/logs_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/${base_name}.log \
-                                    --db postgres \
+                                    --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/${base_name}.csv \
+                                    --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/${base_name}_abs.txt \
+                                    --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/${base_name}.log \
+                                    --db ${DB_ENGINE} \
                                     --workloads_train "${TRAIN_WLS[@]}" \
                                     --workload_test ${WORKLOAD_TEST} \
                                     --algo ${ALGO} \
+                                    --num_epoch 100 \
                                     --learning_rate $lr \
                                     --batch_size $batch_size \
                                     --train_ratio $train_ratio \
                                     --seed $SEED \
-                                    --aime_features ${AIME_FEATURES} \
                                     $VERBOSE_ARG
 fi

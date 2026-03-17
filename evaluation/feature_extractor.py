@@ -550,3 +550,206 @@ def flattenConds(rep):
                 dfss(r)
     dfss(rep)
     return ress
+
+
+###############################################################################
+# DuckDB plan traversal
+###############################################################################
+
+DUCKDB_TO_PG_NODE_TYPE = {
+    'SEQ_SCAN': 'Seq Scan',
+    'INDEX_SCAN': 'Index Scan',
+    'HASH_JOIN': 'Hash Join',
+    'NESTED_LOOP_JOIN': 'Nested Loop',
+    'MERGE_JOIN': 'Merge Join',
+    'FILTER': 'Filter',
+    'PROJECTION': 'Projection',
+    'HASH_GROUP_BY': 'HashAggregate',
+    'PERFECT_HASH_GROUP_BY': 'HashAggregate',
+    'ORDER_BY': 'Sort',
+    'UNGROUPED_AGGREGATE': 'Aggregate',
+    'TOP_N': 'Limit',
+    'CROSS_PRODUCT': 'Nested Loop',
+    'PIECEWISE_MERGE_JOIN': 'Merge Join',
+    'BLOCKWISE_NL_JOIN': 'Nested Loop',
+}
+
+_DUCKDB_COND_RE = re.compile(
+    r'([\w.]+)\s*(!=|<>|<=|>=|=|<|>)\s*(.+)'
+)
+
+_DUCKDB_BETWEEN_RE = re.compile(
+    r'([\w.]+)\s+BETWEEN\s+(\S+)\s+AND\s+(\S+)', re.IGNORECASE
+)
+
+
+def _parse_duckdb_predicate(pred_str, table):
+    """Parse a single DuckDB predicate string into filters / join."""
+    pred_str = pred_str.strip()
+    filters = []
+    join = None
+
+    # Handle BETWEEN
+    m_between = _DUCKDB_BETWEEN_RE.match(pred_str)
+    if m_between:
+        col, lo, hi = m_between.group(1), m_between.group(2), m_between.group(3)
+        if '.' not in col and table:
+            col = f"{table}.{col}"
+        if is_number(lo):
+            filters.append([col, '>=', float(lo)])
+        if is_number(hi):
+            filters.append([col, '<=', float(hi)])
+        return {'join': None, 'filters': filters}
+
+    m = _DUCKDB_COND_RE.match(pred_str)
+    if not m:
+        return {'join': None, 'filters': []}
+
+    lhs, op, rhs = m.group(1).strip(), m.group(2).strip(), m.group(3).strip()
+
+    # Determine if this is a join (rhs looks like a column name) or a filter
+    rhs_is_col = (re.match(r'^[\w.]+$', rhs) is not None) and not is_number(rhs)
+
+    if rhs_is_col:
+        # Join predicate
+        left = lhs if '.' in lhs else (f"{table}.{lhs}" if table else lhs)
+        right = rhs if '.' in rhs else (f"{table}.{rhs}" if table else rhs)
+        join = ' = '.join(sorted([left, right]))
+    else:
+        col = lhs if '.' in lhs else (f"{table}.{lhs}" if table else lhs)
+        if is_number(rhs):
+            filters.append([col, op, float(rhs)])
+        else:
+            # String value – strip quotes
+            val = rhs.strip("'\"")
+            filters.append([col, op, val])
+
+    return {'join': join, 'filters': filters}
+
+
+def _split_duckdb_predicates(raw):
+    """Normalise a DuckDB predicate value (str or list) into a flat list of strings."""
+    if isinstance(raw, list):
+        parts = []
+        for item in raw:
+            parts.extend(_split_duckdb_predicates(item))
+        return parts
+    if isinstance(raw, str) and raw:
+        return [p.strip() for p in raw.split(' AND ') if p.strip()]
+    return []
+
+
+def get_conditions_duckdb(extra_info, table):
+    """Extract join and filter conditions from DuckDB extra_info dict."""
+    joins = []
+    filters = []
+
+    # Parse Filters (scan predicates) – may be str or list
+    for part in _split_duckdb_predicates(extra_info.get('Filters', '')):
+        res = _parse_duckdb_predicate(part, table)
+        if res['join']:
+            joins.append(res['join'])
+        filters.extend(res['filters'])
+
+    # Parse Conditions (join predicates) – may be str or list
+    for part in _split_duckdb_predicates(extra_info.get('Conditions', '')):
+        res = _parse_duckdb_predicate(part, table)
+        if res['join']:
+            joins.append(res['join'])
+        filters.extend(res['filters'])
+
+    # Parse Expression (used by FILTER nodes)
+    raw_expr = extra_info.get('Expression', '')
+    if raw_expr and isinstance(raw_expr, str):
+        expr = raw_expr.strip()
+        if expr.startswith('(') and expr.endswith(')'):
+            expr = expr[1:-1]
+        for part in _split_duckdb_predicates(expr):
+            res = _parse_duckdb_predicate(part, table)
+            if res['join']:
+                joins.append(res['join'])
+            filters.extend(res['filters'])
+
+    join_str = joins[0] if joins else 'NA'
+    return {'join': join_str, 'filters': filters}
+
+
+def extractNodeDuckDB(node):
+    """Convert a DuckDB plan node dict into a TreeNode-compatible dict."""
+    raw_name = node.get('operator_name', 'Unknown').strip()
+    pg_name = DUCKDB_TO_PG_NODE_TYPE.get(raw_name, raw_name)
+
+    extra = node.get('extra_info', {})
+    card_est_str = extra.get('Estimated Cardinality', '0')
+    try:
+        card_est = float(card_est_str)
+    except (ValueError, TypeError):
+        card_est = 0.0
+
+    table = extra.get('Table', None)
+    alias = table  # DuckDB doesn't have a separate alias
+
+    conds = get_conditions_duckdb(extra, table)
+
+    # operator_timing is in seconds – convert to ms
+    op_timing = node.get('operator_timing', 0) or 0
+    cost_ms = float(op_timing) * 1000.0
+
+    d = {
+        'nodeType': pg_name,
+        'card': node.get('operator_cardinality', 0),
+        'card_est': card_est,
+        'nodeParallel': pg_name + '_False',
+        'width': 0,
+        'alias': alias,
+        'filters': conds['filters'],
+        'join': conds['join'],
+        'cost': cost_ms,
+        'cost_est': 0,
+        'startup_cost': 0,
+        'table': table,
+    }
+
+    if table is not None:
+        d['index'] = None
+
+    # Join type from extra_info
+    jt = extra.get('Join Type', None)
+    if jt:
+        d['join_type'] = jt.lower()
+
+    return d
+
+
+def traversePlanDuckDB(root, level=0):
+    """Traverse a DuckDB profiling JSON and build a TreeNode tree.
+
+    The root of a DuckDB profile has metadata fields (latency, rows_returned, …)
+    plus a ``children`` list containing the actual operator tree.  The first call
+    peels off this wrapper automatically.
+    """
+    # The top-level JSON object is a metadata wrapper.
+    # The actual operator tree starts in root['children'].
+    if 'operator_name' not in root and 'children' in root:
+        children = root.get('children', [])
+        if len(children) == 1:
+            return traversePlanDuckDB(children[0], level)
+        # Multiple top-level children – create a synthetic root
+        synthetic = {
+            'operator_name': 'RESULT',
+            'operator_cardinality': root.get('rows_returned', 0),
+            'operator_timing': 0,
+            'extra_info': {},
+            'children': children,
+        }
+        return traversePlanDuckDB(synthetic, level)
+
+    root_node = TreeNode(extractNodeDuckDB(root))
+    root_node.level = level
+
+    for child in root.get('children', []):
+        child_node = traversePlanDuckDB(child, level + 1)
+        child_node.parent = root_node
+        root_node.children.append(child_node)
+
+    return root_node

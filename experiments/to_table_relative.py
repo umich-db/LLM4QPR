@@ -4,29 +4,26 @@ import os
 import argparse
 import re
 from collections import defaultdict
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-import seaborn as sns
 import numpy as np
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--dir", type=str)
-parser.add_argument("--task", type=str)
+parser.add_argument("--dirs", type=str, nargs="+", required=True,
+                    help="Result directories (datasets), e.g. results/duckdb/results_Train_job_Test_job_ours results/duckdb/results_Train_stats_Test_stats_ours")
+parser.add_argument("--task", type=str, default="time")
 args = parser.parse_args()
+
 
 def strip_seed(filename):
     """Removes seed information to group files with same prefix"""
     return re.sub(r'_seed\d+', '', filename)
 
+
 def extract_display_name(col_name):
     """Extract display name from column name"""
-    # For LLM: extract model name
     if 'llm' in col_name:
-        # Extract model name between h{number}_ and _emb or _quant
         match = re.search(r'h\d+_(.+?)(?:_emb|_quant)', col_name)
         if match:
             model = match.group(1)
-            # Shorten common model names
             if 'sentence-transformers' in model:
                 if 'paraphrase' in model:
                     model = 'sentBert-para'
@@ -34,33 +31,29 @@ def extract_display_name(col_name):
                     model = 'sentBert-all'
                 else:
                     model = 'sentBert'
-            # Also extract quantization
             quant_match = re.search(r'quant-([^_]+)', col_name)
             if quant_match:
                 display_name = f"{model}_quant-{quant_match.group(1)}"
             else:
                 display_name = model
 
-            # Extract removed fields suffix if present
             rm_match = re.search(r'(_rm-[a-z\-]+)', col_name)
             if rm_match:
                 display_name += rm_match.group(1)
 
-            # Extract PRICE mode if this is an llm_price result
             if 'llm_price' in col_name:
-                price_mode_match = re.search(r'(priceNoFT|priceLLMOnly|pricePRICEOnly|priceBothSep|priceFTwithLLM|priceFTthenJoint|priceGatedJoint)', col_name)
+                price_mode_match = re.search(
+                    r'(priceNoFT|priceLLMOnly|pricePRICEOnly|priceBothSep|priceFTwithLLM|priceFTthenJoint|priceGatedJoint)',
+                    col_name)
                 if price_mode_match:
                     display_name = f"[{price_mode_match.group(1)}] {display_name}"
                 else:
-                    # Existing JointPrice (no explicit mode suffix)
                     display_name = f"[JointPrice] {display_name}"
 
-            # Extract PRICE variant suffix (priceM or priceS)
             price_variant_match = re.search(r'_(priceM|priceS)', col_name)
             if price_variant_match:
                 display_name += f"_{price_variant_match.group(1)}"
 
-            # Extract pretrained status
             pretrained_match = re.search(r'pretrained-(\w+)', col_name)
             if pretrained_match:
                 pt_status = pretrained_match.group(1)
@@ -78,55 +71,43 @@ def extract_display_name(col_name):
 
             return display_name
         return 'LLM'
-    # For non-LLM: extract algorithm name
     else:
-        # Extract algo name (e.g., aimai, qf, e2e_cost, bao)
         match = re.search(r'_(aimai|qf|e2e_cost|bao|postgres)_', col_name)
         if match:
             algo = match.group(1)
-            # For aimai, also extract feature config if present
             feat_match = re.search(r'_f(\d+)', col_name)
             if feat_match and algo == 'aimai':
                 return f"{algo}_f{feat_match.group(1)}"
             return algo
         return col_name
 
-def is_llm_method(col_name):
-    """Check if a method is LLM-based"""
-    return 'llm' in col_name.lower()
 
-def build_quantile_table(csv_folder, quantiles=[50, 75, 90, 99]):
+def build_quantile_table(csv_folder, task, quantiles=[50, 90, 95]):
     """
     Aggregates quantiles across seed files by averaging values with the same prefix.
+    Returns a DataFrame with index=[50, 90, 95, 'max'] and columns=method prefixes.
     """
-    # 1. Find all CSV files
-    csv_paths = glob.glob(os.path.join(csv_folder, f'{args.task}*cdf*seed*.csv'))
-    
-    # Filter out files with "_rm-" and "downstream" (ablation studies and downstream tasks)
+    csv_paths = glob.glob(os.path.join(csv_folder, f'{task}*cdf*seed*.csv'))
+
+    # Filter out ablation / downstream / trueEmb files
     filtered_paths = []
     for path in csv_paths:
         filename = os.path.basename(path)
-        if "_rm-" in filename:
-            continue
-        if "downstream" in filename:
-            continue
-        if "trueEmb" in filename:
+        if "_rm-" in filename or "downstream" in filename or "trueEmb" in filename:
             continue
         filtered_paths.append(path)
     csv_paths = filtered_paths
 
-    # 2. Group files by prefix
+    # Group files by prefix (strip seed)
     grouped_paths = defaultdict(list)
     for path in csv_paths:
         base = os.path.splitext(os.path.basename(path))[0]
         prefix = strip_seed(base)
         grouped_paths[prefix].append(path)
 
-    # 3. Initialize table
     idx = quantiles + ['max']
-    table = pd.DataFrame(index=idx, columns=grouped_paths.keys(), dtype=float)
+    table = pd.DataFrame(index=idx, columns=list(grouped_paths.keys()), dtype=float)
 
-    # 4. Compute average quantiles per group
     for prefix, paths in grouped_paths.items():
         quant_accumulator = {q: [] for q in quantiles}
         max_accumulator = []
@@ -146,43 +127,173 @@ def build_quantile_table(csv_folder, quantiles=[50, 75, 90, 99]):
 
     return table
 
-def create_heatmap_with_comparison(table, output_path):
+
+def compute_relative_qerror(tables_by_dataset):
     """
-    Create a heatmap comparing LLM and non-LLM algorithms with special color coding:
+    Given {dataset_name: quantile_table}, compute relative Q-error:
+    For each dataset, divide ALL values by a single scalar — the minimum
+    value in the median (p50) row. Using one divisor per dataset preserves
+    monotonicity across percentiles (p50 <= p90 <= p95 <= max).
+
+    Returns {dataset_name: relative_table} with same structure.
+    """
+    relative_tables = {}
+    for ds_name, table in tables_by_dataset.items():
+        # Use the best method's median Q-error as the single reference scalar
+        median_row = table.index[0]  # first row is the lowest quantile (p50)
+        ref_scalar = table.loc[median_row].min()
+        if ref_scalar > 0:
+            rel = table / ref_scalar
+        else:
+            rel = table.copy()
+        relative_tables[ds_name] = rel
+    return relative_tables
+
+
+# --- Main ---
+
+quantiles = [50, 90, 95]
+percentile_idx = quantiles + ['max']
+
+# 1. Build per-dataset quantile tables, mapping display_name -> raw prefix
+tables_by_dataset = {}
+display_name_map = {}  # prefix -> display_name (consistent across datasets)
+
+for csv_folder in args.dirs:
+    ds_name = os.path.basename(csv_folder.rstrip('/'))
+    table = build_quantile_table(csv_folder, args.task, quantiles)
+    if table.empty:
+        print(f"Warning: no CDF files found in {csv_folder}, skipping.")
+        continue
+    tables_by_dataset[ds_name] = table
+    for col in table.columns:
+        if col not in display_name_map:
+            display_name_map[col] = extract_display_name(col)
+
+if not tables_by_dataset:
+    print("No data found. Check --dirs and --task arguments.")
+    exit(1)
+
+# 2. Rename columns to display names (resolve collisions by keeping prefix)
+#    First check for display name collisions
+dn_to_prefixes = defaultdict(list)
+for prefix, dn in display_name_map.items():
+    dn_to_prefixes[dn].append(prefix)
+
+# If collision, keep prefix as display name
+final_name_map = {}
+for prefix, dn in display_name_map.items():
+    if len(dn_to_prefixes[dn]) > 1:
+        final_name_map[prefix] = prefix  # keep full prefix
+    else:
+        final_name_map[prefix] = dn
+
+# Track which display names are LLM methods (check original prefix before rename)
+llm_display_names = set()
+for prefix, display_name in final_name_map.items():
+    if 'llm' in prefix:
+        llm_display_names.add(display_name)
+
+# Rename columns in all tables
+for ds_name in tables_by_dataset:
+    table = tables_by_dataset[ds_name]
+    new_cols = {col: final_name_map.get(col, col) for col in table.columns}
+    tables_by_dataset[ds_name] = table.rename(columns=new_cols)
+
+# 3. Find methods present in ALL datasets
+all_methods_sets = [set(t.columns) for t in tables_by_dataset.values()]
+common_methods = set.intersection(*all_methods_sets)
+
+removed_methods = set()
+for methods in all_methods_sets:
+    removed_methods |= methods - common_methods
+
+if removed_methods:
+    print(f"Removed (not in all datasets): {sorted(removed_methods)}")
+    print()
+
+if not common_methods:
+    print("No methods common to all datasets.")
+    exit(1)
+
+# Filter to common methods, sorted
+common_methods = sorted(common_methods)
+for ds_name in tables_by_dataset:
+    tables_by_dataset[ds_name] = tables_by_dataset[ds_name][common_methods]
+
+# 4. Compute relative Q-error per dataset
+relative_tables = compute_relative_qerror(tables_by_dataset)
+
+# 5. Average relative Q-error across datasets
+avg_relative = pd.DataFrame(0.0, index=percentile_idx, columns=common_methods)
+for ds_name, rel_table in relative_tables.items():
+    avg_relative += rel_table
+avg_relative /= len(relative_tables)
+
+# 6. Print per-dataset tables, then the averaged relative table
+for ds_name in sorted(tables_by_dataset.keys()):
+    print(f"\n{'='*60}")
+    print(f"  {ds_name} — Raw Q-Error")
+    print(f"{'='*60}")
+    raw = tables_by_dataset[ds_name]
+    print(raw.to_markdown())
+
+    print(f"\n  {ds_name} — Relative Q-Error")
+    rel = relative_tables[ds_name]
+    print(rel.round(3).to_markdown())
+
+print(f"\n{'='*60}")
+print(f"  AVERAGED Relative Q-Error across {len(tables_by_dataset)} datasets")
+ds_list = sorted(tables_by_dataset.keys())
+print(f"  Datasets: {', '.join(ds_list)}")
+print(f"{'='*60}")
+print(avg_relative.round(3).to_markdown())
+
+# 7. Save to CSV
+out_dir = os.path.dirname(args.dirs[0].rstrip('/')) or '.'
+out_path = os.path.join(out_dir, f'relative_qerror_{args.task}.csv')
+avg_relative.to_csv(out_path)
+print(f"\nSaved averaged relative Q-error to: {out_path}")
+
+# 8. Save heatmap
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+
+
+def create_relative_heatmap(table, output_path, task, llm_methods):
+    """
+    Create a heatmap for relative Q-error with LLM vs non-LLM color coding:
     - Non-LLM: Dark orange for lowest, light orange for second lowest (per column)
-    - LLM: Different shades of green based on ranking (per column)
-    - Bold LLM names that beat lowest non-LLM in ≥2 columns
-    - Add *** prefix for LLM names that beat second lowest non-LLM in ≥2 columns
+    - LLM: Shades of green based on ranking (per column)
+    - Bold LLM names that beat lowest non-LLM in >=2 columns
+    - *** prefix for LLM names that beat second lowest non-LLM in >=2 columns
+
+    llm_methods: set of display names that are LLM-based
     """
-    # Separate LLM and non-LLM columns
-    llm_cols = [col for col in table.columns if is_llm_method(col)]
-    non_llm_cols = [col for col in table.columns if not is_llm_method(col)]
-    
-    # Reorder: non-LLM first, then LLM
+    llm_cols = [col for col in table.columns if col in llm_methods]
+    non_llm_cols = [col for col in table.columns if col not in llm_methods]
+
     ordered_cols = non_llm_cols + llm_cols
     table = table[ordered_cols]
-    
-    # Create display names for y-axis
-    display_names = {col: extract_display_name(col) for col in table.columns}
-    
-    # Transpose for visualization (methods as rows, percentiles as columns)
+
+    # Transpose: methods as rows, percentiles as columns
     table_T = table.T
-    
-    # Calculate statistics for each percentile (column)
+
+    # Find lowest / second-lowest non-LLM per percentile
     lowest_non_llm = {}
     second_lowest_non_llm = {}
-    
     for col in table_T.columns:
         non_llm_values = table_T.loc[non_llm_cols, col].sort_values()
         if len(non_llm_values) >= 1:
             lowest_non_llm[col] = non_llm_values.iloc[0]
         if len(non_llm_values) >= 2:
             second_lowest_non_llm[col] = non_llm_values.iloc[1]
-    
+
     # Check LLM performance against non-LLM baselines
     llm_beats_lowest = {llm: 0 for llm in llm_cols}
     llm_beats_second = {llm: 0 for llm in llm_cols}
-    
     for col in table_T.columns:
         for llm in llm_cols:
             llm_value = table_T.loc[llm, col]
@@ -190,141 +301,100 @@ def create_heatmap_with_comparison(table, output_path):
                 llm_beats_lowest[llm] += 1
             if col in second_lowest_non_llm and llm_value < second_lowest_non_llm[col]:
                 llm_beats_second[llm] += 1
-    
-    # Create custom y-axis labels with formatting
+
+    # Build y-axis labels with formatting
     y_labels = []
     for method in table_T.index:
-        label = display_names[method]
+        label = method
         if method in llm_cols:
-            # Bold if beats lowest in ≥2 columns
             if llm_beats_lowest[method] >= 2:
-                # Escape underscores for LaTeX math mode
                 label_escaped = label.replace('_', '\\_')
                 label = f"$\\mathbf{{{label_escaped}}}$"
-            # Add *** prefix if beats second lowest in ≥2 columns
             if llm_beats_second[method] >= 2:
                 label = f"***{label}"
         y_labels.append(label)
-    
-    # Create figure with adjusted width for longer LLM names
-    # Calculate max label length to adjust left margin
-    max_label_length = max(len(str(label)) for label in y_labels)
-    # Base width + extra for longer labels
+
+    max_label_length = max(len(str(l)) for l in y_labels)
     fig_width = max(12, len(table_T.columns) * 1.5 + max_label_length * 0.1)
     fig_height = max(8, len(table_T.index) * 0.5)
-    
+
     fig, ax = plt.subplots(figsize=(fig_width, fig_height))
-    
-    # Create a custom colormap array
+
     n_rows, n_cols = table_T.shape
-    colors = np.zeros((n_rows, n_cols, 4))  # RGBA
-    
-    # Color each cell based on rules
+    colors = np.zeros((n_rows, n_cols, 4))
+
     for i, method in enumerate(table_T.index):
         for j, percentile in enumerate(table_T.columns):
             value = table_T.iloc[i, j]
-            
+
             if method in non_llm_cols:
-                # Non-LLM: mark lowest and second lowest
                 non_llm_values = table_T.loc[non_llm_cols, percentile].sort_values()
                 if len(non_llm_values) >= 1 and value == non_llm_values.iloc[0]:
-                    # Dark orange for lowest
                     colors[i, j] = [1.0, 0.5, 0.0, 1.0]  # Dark orange
                 elif len(non_llm_values) >= 2 and value == non_llm_values.iloc[1]:
-                    # Light orange for second lowest
                     colors[i, j] = [1.0, 0.8, 0.4, 1.0]  # Light orange
                 else:
-                    # White for others
                     colors[i, j] = [1.0, 1.0, 1.0, 1.0]
             else:
-                # LLM: shade of green based on ranking among LLM methods only
-                # Smaller values (better performance) → darker green
                 llm_values = table_T.loc[llm_cols, percentile].sort_values()
-                # Find rank: 0 for smallest (best), n-1 for largest (worst)
                 rank = list(llm_values.values).index(value)
-                
                 if len(llm_values) > 1:
-                    # Map rank to intensity
-                    # Rank 0 (best/smallest) → intensity = 0.3 (darkest)
-                    # Rank n-1 (worst/largest) → intensity = 1.0 (brightest)
                     intensity = 0.3 + (rank / (len(llm_values) - 1)) * 0.7
                 else:
-                    # Single LLM method
                     intensity = 0.65
-                
                 colors[i, j] = [0.0, intensity, 0.0, 1.0]
-    
-    # Create the heatmap without color mapping (we'll use custom colors)
-    im = ax.imshow(colors, aspect='auto')
-    
-    # Set ticks and labels
+
+    ax.imshow(colors, aspect='auto')
+
     ax.set_xticks(np.arange(n_cols))
     ax.set_yticks(np.arange(n_rows))
     ax.set_xticklabels(table_T.columns, fontsize=12)
     ax.set_yticklabels(y_labels, fontsize=10)
-    
-    # Rotate x-axis labels
     plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
-    
-    # Add text annotations with values
+
     for i in range(n_rows):
         for j in range(n_cols):
             value = table_T.iloc[i, j]
-            # Use scientific notation for values >= 1000
             if value >= 1000:
                 text_str = f'{value:.2e}'
             else:
                 text_str = f'{value:.2f}'
-            text = ax.text(j, i, text_str,
-                          ha="center", va="center", color="black", fontsize=8)
-    
-    # Add legend
+            ax.text(j, i, text_str, ha="center", va="center", color="black", fontsize=8)
+
     legend_elements = [
         mpatches.Patch(facecolor=[1.0, 0.5, 0.0, 1.0], label='Non-LLM: Lowest'),
         mpatches.Patch(facecolor=[1.0, 0.8, 0.4, 1.0], label='Non-LLM: 2nd Lowest'),
-        mpatches.Patch(facecolor=[0.0, 0.3, 0.0, 1.0], label='LLM: Best (Smallest)'),
+        mpatches.Patch(facecolor=[0.0, 0.3, 0.0, 1.0], label='LLM: Best'),
         mpatches.Patch(facecolor=[0.0, 0.65, 0.0, 1.0], label='LLM: Middle'),
-        mpatches.Patch(facecolor=[0.0, 1.0, 0.0, 1.0], label='LLM: Worst (Largest)')
+        mpatches.Patch(facecolor=[0.0, 1.0, 0.0, 1.0], label='LLM: Worst'),
     ]
     ax.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(1.05, 1), fontsize=10)
-    
-    # Add separator line between non-LLM and LLM
+
     if len(non_llm_cols) > 0 and len(llm_cols) > 0:
         separator_y = len(non_llm_cols) - 0.5
         ax.axhline(y=separator_y, color='black', linewidth=2, linestyle='--')
-    
-    # Labels
+
     ax.set_xlabel('Percentile', fontsize=14, fontweight='bold')
     ax.set_ylabel('Method', fontsize=14, fontweight='bold')
-    ax.set_title(f'Q-Error Comparison: LLM vs Non-LLM Algorithms\n(Bold: beats best non-LLM in ≥2 cols, ***: beats 2nd-best in ≥2 cols)', 
+    ax.set_title(f'Averaged Relative Q-Error ({task})\n(Bold: beats best non-LLM in ≥2 cols, ***: beats 2nd-best in ≥2 cols)',
                  fontsize=14, fontweight='bold', pad=20)
-    
+
     plt.tight_layout()
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
-    
+
     print(f"Heatmap saved to: {output_path}")
-    
+
     # Print summary
     print("\n" + "="*80)
-    print("LLM PERFORMANCE SUMMARY")
+    print("LLM PERFORMANCE SUMMARY (Relative Q-Error)")
     print("="*80)
     for llm in llm_cols:
-        print(f"{display_names[llm]}:")
+        print(f"{llm}:")
         print(f"  Beats best non-LLM: {llm_beats_lowest[llm]}/{len(table_T.columns)} columns")
         print(f"  Beats 2nd-best non-LLM: {llm_beats_second[llm]}/{len(table_T.columns)} columns")
     print("="*80)
 
-csv_folder = args.dir
-quant_table = build_quantile_table(csv_folder, [50, 90, 95])
-quant_table = quant_table.reindex(sorted(quant_table.columns), axis=1)
 
-# Save CSV
-csv_path = csv_folder + f'/quantile_table_{args.dir.replace("/", "_")}_{args.task}.csv'
-quant_table.to_csv(csv_path)
-
-# Create heatmap
-heatmap_path = csv_folder + f'/quantile_table_{args.dir.replace("/", "_")}_{args.task}_heatmap.png'
-create_heatmap_with_comparison(quant_table, heatmap_path)
-
-print(csv_folder, "\n", quant_table.to_markdown())
+heatmap_path = os.path.join(out_dir, f'relative_qerror_{args.task}_heatmap.png')
+create_relative_heatmap(avg_relative, heatmap_path, args.task, llm_display_names)

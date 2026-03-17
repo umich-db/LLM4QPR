@@ -25,7 +25,7 @@ from algorithms.aimeetsai import *
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--db', type=str, choices=['mysql', 'postgres'], required=True, help='Target database type')
+    parser.add_argument('--db', type=str, choices=['mysql', 'postgres', 'duckdb', 'spark'], required=True, help='Target database type')
     parser.add_argument("--workload", type=str)
     parser.add_argument("--algo", type=str)
     parser.add_argument("--dat_path", type=str)
@@ -56,6 +56,9 @@ def parse_args():
     parser.add_argument("--dat_path_test", type=str, default=None,
                         help="If set, override test dat_path (otherwise use --dat_path)")
     parser.add_argument("--train_ratio", type=float, default=-1)
+    parser.add_argument("--max_queries", type=int, default=-1,
+                        help="Limit total queries loaded from CSV (default: -1 = no limit). "
+                             "Truncates BEFORE embedding generation, speeding up model selection.")
     parser.add_argument("--llm_mode", type=str, default="inference")
     parser.add_argument("--llm_downstream", type=str, choices=['mlp', 'autogluon'], default='mlp',
                         help="Downstream learner for LLM embeddings (default: mlp)")
@@ -100,18 +103,100 @@ def parse_args():
                         help="Concatenate queries_true embeddings to LLM embeddings (in inference mode)")
     parser.add_argument("--queries_true_dir", type=str, default="../queries_true",
                         help="Directory containing queries_true embedding CSVs")
-    # aimeetsai feature mask (5 dims): 1 to enable, 0 to disable; order: [cost, card, wei_rows, byte, wei_costs]
-    parser.add_argument("--aime_features", type=str, default="11111",
-                        help="Binary mask of length 5 to enable/disable aimeetsai features")
-    
+    # Joint LLM+PRICE finetuning arguments
+    parser.add_argument("--price_model_path", type=str, default="/root/PRICE/results/model_params.pth",
+                        help="Path to pretrained PRICE model weights")
+    parser.add_argument("--price_bin_size", type=int, default=40,
+                        help="PRICE histogram bin size (default 40)")
+    parser.add_argument("--price_statistics_dir", type=str, default=None,
+                        help="Path to PRICE statistics directory (default: auto-detect)")
+    parser.add_argument("--price_pretrained", action="store_true", default=False,
+                        help="(Deprecated) Load finetuned PRICE weights for inference. Use --price_weights_source instead.")
+    parser.add_argument("--price_weights_source", type=str, choices=["pretrained", "separate", "joint", "frozen_joint", "joint_frozen_init", "gated_joint", "cross_attn_joint"],
+                        default="pretrained",
+                        help="Source of PRICE weights: pretrained (original), separate (finetuned on card), joint (jointly finetuned), frozen_joint (finetuned with frozen LLM), joint_frozen_init (jointly finetuned from frozen-joint init), gated_joint (jointly finetuned with learned gate), cross_attn_joint (jointly finetuned with cross-attention)")
+    parser.add_argument("--price_lr", type=float, default=None,
+                        help="Learning rate for PRICE model parameters (default: 1e-3 with --price_random_init, else 2.85e-5)")
+    parser.add_argument("--freeze_llm", action="store_true", default=False,
+                        help="Freeze LLM parameters during llm_price_finetune (only train PRICE + MLP)")
+    parser.add_argument("--price_init_frozen_joint", action="store_true", default=False,
+                        help="Initialize PRICE from frozen-joint weights instead of pretrained (for PriceFTthenJoint mode)")
+    parser.add_argument("--use_price_gate", action="store_true", default=False,
+                        help="Use learned gate on PRICE embeddings (GatedJointPrice mode)")
+    parser.add_argument("--price_m", action="store_true", default=False,
+                        help="Use PRICE_M encoding (61-dim filters with IN/LIKE support via multi-value SpaceSaving)")
+    parser.add_argument("--price_s", action="store_true", default=False,
+                        help="Use PRICE_S encoding (43-dim, IN/LIKE via bounding-box range)")
+    parser.add_argument("--price_random_init", action="store_true", default=False,
+                        help="Initialize PRICE with random weights instead of pretrained")
+    parser.add_argument("--price_n_layers", type=int, default=6,
+                        help="Number of transformer blocks per PRICE encoder (default 6, pretrained uses 6)")
+    parser.add_argument("--freeze_all_price", action="store_true", default=False,
+                        help="Freeze ALL PRICE parameters during joint finetuning (LLMOnly control)")
+    parser.add_argument("--freeze_price_encoder", action="store_true", default=False,
+                        help="Freeze PRICE encoder blocks during joint finetuning (only train len_net, linear, elu)")
+    parser.add_argument("--unfreeze_last_n_blocks", type=int, default=0,
+                        help="When freeze_price_encoder is set, unfreeze the last N encoder blocks (0=freeze all encoder blocks)")
+    parser.add_argument("--checkpoint_interval", type=int, default=0,
+                        help="Save checkpoint every N epochs during finetuning (0=no checkpoints)")
+    parser.add_argument("--resume_checkpoint", type=str, default="",
+                        help="Path to checkpoint file to resume finetuning from")
+    parser.add_argument("--lr_schedule", type=str, default="step", choices=["step", "cosine", "warmup_cosine"],
+                        help="Learning rate schedule: step (StepLR), cosine (CosineAnnealingLR), or warmup_cosine (linear warmup + cosine)")
+    parser.add_argument("--warmup_epochs", type=int, default=3,
+                        help="Number of warmup epochs for warmup_cosine schedule (default 3)")
+    parser.add_argument("--price_lr_schedule", type=str, default=None, choices=["step", "cosine", "warmup_cosine"],
+                        help="Separate LR schedule for PRICE optimizer (default: same as --lr_schedule)")
+    parser.add_argument("--ft_batch_size", type=int, default=16,
+                        help="Batch size used during finetuning (for locating weight files during inference)")
+    parser.add_argument("--ft_num_epoch", type=int, default=0,
+                        help="Finetuning epoch count (used by inference to locate weight files)")
     # Field removal arguments for query plan ablation studies
     parser.add_argument("--removed_fields", type=str, default=None,
                         help="Comma-separated list of field categories to remove from query plans. "
                              "Valid options: operator_structure_and_config, cost, cardinality, "
                              "conditions_and_filters, metadata_and_config. "
                              "Note: 'runtime' fields are ALWAYS removed automatically.")
+    parser.add_argument("--grad_accum_steps", type=int, default=1,
+                        help="Gradient accumulation steps. Effective batch = batch_size * grad_accum_steps. "
+                             "Reduces GPU memory by processing smaller micro-batches (default: 1 = no accumulation)")
+    # Cross-attention fusion arguments (Mode 11)
+    parser.add_argument("--use_cross_attention", action="store_true", default=False,
+                        help="Use cross-attention fusion: PRICE tokens attend to LLM hidden states")
+    parser.add_argument("--n_cross_layers", type=int, default=2,
+                        help="Number of cross-attention layers (default 2)")
     
-    return parser.parse_args()
+    args = parser.parse_args()
+
+    # Backward compat: --price_pretrained maps to price_weights_source="joint"
+    if args.price_pretrained and args.price_weights_source == "pretrained":
+        args.price_weights_source = "joint"
+
+    # Validation: price_finetune requires --card
+    if args.algo == "price_finetune" and not args.card:
+        parser.error("--algo price_finetune requires --card")
+
+    # Canonical workload prefix for shared model files.
+    # IMDB-based workloads (syn, job_full, jobm) share the same training data
+    # as 'job', so finetuned models are identical and should use the same name.
+    _CANONICAL_MAP = {'syn': 'job', 'job_full': 'job', 'jobm': 'job'}
+    canonical_wls = []
+    seen = set()
+    for wl in args.workloads_train:
+        cwl = _CANONICAL_MAP.get(wl, wl)
+        if cwl not in seen:
+            seen.add(cwl)
+            canonical_wls.append(cwl)
+    wl_joined = '-'.join(canonical_wls)
+    # Truncate long workload strings to avoid exceeding filesystem filename limits (255 chars)
+    if len(wl_joined) > 80:
+        import hashlib
+        wl_hash = hashlib.md5(wl_joined.encode()).hexdigest()[:8]
+        test_tag = f"_test-{args.workload_test}" if args.workload_test else ""
+        wl_joined = f"{len(canonical_wls)}dbs_{wl_hash}{test_tag}"
+    args.canonical_wl_prefix = wl_joined
+
+    return args
 
 
 def setup_loggers(main_log_path, inf_log_path=None):
@@ -148,7 +233,7 @@ def prepare_paths(argsP):
     dat_paths_train_list = []
     for wl_train, dp_train in zip(wl_train_list, dp_train_list):
         is_json = False
-        if wl_train == "syn" or wl_train == "job" or wl_train == "job_full":
+        if wl_train == "syn" or wl_train == "job" or wl_train == "job_full" or wl_train == "jobm":
             dat_path_train = f"{dp_train}long_raw_{argsP.db}_imdb.csv"
         elif wl_train == "stats":
             dat_path_train = f"{dp_train}long_raw_{argsP.db}_{wl_train}.csv"
@@ -171,7 +256,7 @@ def prepare_paths(argsP):
 
     # skipped below
     if not argsP.card:
-        if wl_test == "syn" or wl_test == "job" or wl_test == "job_full":
+        if wl_test == "syn" or wl_test == "job" or wl_test == "job_full" or wl_test == "jobm":
             dat_path_test = f"{dp_test}long_raw_{argsP.db}_imdb_{wl_test}.csv"
         elif wl_test == "stats":
             dat_path_test = f"{dp_test}long_raw_{argsP.db}_{wl_test}_statsCEB.csv"
@@ -195,7 +280,7 @@ def prepare_paths(argsP):
             print("Only syn/job/stats workloads are supported for card")
             exit(1)
     # skipped above
-    if "llm" in argsP.algo:
+    if "llm" in argsP.algo or argsP.algo == "price_finetune":
         dat_dict = {"ds_info": DatasetInfo({}), "train_js_nodes": None, "train_roots": None, "train_costs": None, "val_js_nodes": None, "val_roots": None, "val_costs": None, "test_js_nodes": None, "test_roots": None, "test_costs": None, "test_ids": None, "val_ids": None, "train_ids": None}
     else:
         print("running get_new")
@@ -299,8 +384,8 @@ def prepare_non_llm_verbose_embeddings(argsP, trained_model, device, ds_info, da
             
             # Get roots and costs for this training file
             from evaluation.dataset_utils import df2nodes, get_costs
-            train_roots, train_js_nodes, train_idxs = df2nodes(df_train)
-            train_costs = get_costs(train_js_nodes, argsP.card)
+            train_roots, train_js_nodes, train_idxs = df2nodes(df_train, db=argsP.db)
+            train_costs = get_costs(train_js_nodes, argsP.card, db=argsP.db)
             
             # Generate embedding file path for this training file
             removed_fields = getattr(argsP, 'removed_fields', None)
@@ -337,8 +422,8 @@ def prepare_non_llm_verbose_embeddings(argsP, trained_model, device, ds_info, da
             df_test = pd.read_csv(dat_path_test)
         
         from evaluation.dataset_utils import df2nodes, get_costs
-        test_roots, test_js_nodes, test_idxs = df2nodes(df_test)
-        test_costs = get_costs(test_js_nodes, argsP.card)
+        test_roots, test_js_nodes, test_idxs = df2nodes(df_test, db=argsP.db)
+        test_costs = get_costs(test_js_nodes, argsP.card, db=argsP.db)
         
         # Generate embedding file path for test file
         removed_fields = getattr(argsP, 'removed_fields', None)
@@ -390,10 +475,12 @@ def create_dataset_for_algo(algo, ds_info, roots, costs, argsP, dat_path, query_
         encoding = Encoding(ds_info)
         data_path = Path(dat_path)
         data_dir = data_path.parent if data_path.suffix == ".csv" else data_path
-        hist_file = get_hist_file(str(data_dir / 'histogram_string.csv'))
-        table_sample = get_job_table_sample(str(data_dir / 'long_df'))
+        # Metadata lives one level above the engine directory (shared by postgres/ and duckdb/)
+        metadata_dir = data_dir.parent
+        hist_file = get_hist_file(str(metadata_dir / 'histogram_string.csv'))
+        table_sample = get_job_table_sample(str(metadata_dir / 'long_df'))
         
-        if argsP.workload_test in ["syn", "job", "job_full", "tpch", "stats"]:
+        if argsP.workload_test in ["syn", "job", "job_full", "jobm", "tpch", "stats"]:
             max_node = 35
         elif argsP.workload_test == "tpcds":
             max_node = 120
@@ -418,7 +505,7 @@ def create_dataset_for_algo(algo, ds_info, roots, costs, argsP, dat_path, query_
         if not hasattr(ds_info, 'constants'):
             ds_info.constants = Constants(ds_info)
         
-        if argsP.workload_test in ["syn", "job", "job_full", "tpch", "stats"]:
+        if argsP.workload_test in ["syn", "job", "job_full", "jobm", "tpch", "stats"]:
             max_node = 35
         elif argsP.workload_test == "tpcds":
             max_node = 120
@@ -502,13 +589,13 @@ def load_data(argsP, dat_path, dat_paths_train_list, dat_path_test, dat_dict, pr
                                 # batch_size = argsP.batch_size,
                                 collate_fn=collator,
                                 shuffle=False)
-    elif argsP.algo == "aimai" or argsP.algo == "llm" or argsP.algo == "llm_stats":
+    elif argsP.algo in ("aimai", "llm", "llm_stats", "llm_price"):
         if argsP.algo == "aimai":
             # Use helper function to create datasets
             ds = create_dataset_for_algo('aimai', ds_info, train_roots, train_costs, argsP, dat_path)
             val_ds = create_dataset_for_algo('aimai', ds_info, val_roots, val_costs, argsP, dat_path)
             test_ds = create_dataset_for_algo('aimai', ds_info, test_roots, test_costs, argsP, dat_path)
-        elif argsP.algo == "llm" or argsP.algo == "llm_stats":
+        elif argsP.algo in ("llm", "llm_stats", "llm_price"):
             from utilsLLM import QueryPlanDataset, QueryPlanPredictor, get_llm_ds_from_csv
             ds, val_ds, test_ds, val_costs, test_costs, test_lengths, test_templates = get_llm_ds_from_csv(predictor, dat_paths_train_list, dat_path_test, ds_info, argsP)
             if not argsP.embeddings_exist:
@@ -528,6 +615,22 @@ def load_data(argsP, dat_path, dat_paths_train_list, dat_path_test, dat_dict, pr
     elif argsP.algo == "llm_finetune":
         from utilsLLM import QueryPlanDataset, QueryPlanPredictor, get_llm_ds_from_csv
         ds, val_ds, test_ds, val_costs, test_costs, test_lengths, test_templates = get_llm_ds_from_csv(predictor, dat_paths_train_list, dat_path_test, ds_info, argsP)
+        train_loader = DataLoader(dataset=ds,
+                                batch_size = argsP.batch_size,
+                                shuffle=True,
+                                collate_fn=llm_collate,
+                                generator=torch.Generator().manual_seed(argsP.seed if hasattr(argsP, 'seed') else 42))
+        val_loader = DataLoader(dataset=val_ds,
+                                batch_size = argsP.batch_size,
+                                shuffle=False,
+                                collate_fn=llm_collate)
+        test_loader = DataLoader(dataset=test_ds,
+                                batch_size = 1,
+                                shuffle=False,
+                                collate_fn=llm_collate)
+    elif argsP.algo == "llm_price_finetune":
+        from utilsLLM import get_llm_price_ds_from_csv
+        ds, val_ds, test_ds, val_costs, test_costs, test_lengths, test_templates = get_llm_price_ds_from_csv(predictor, dat_paths_train_list, dat_path_test, ds_info, argsP)
         train_loader = DataLoader(dataset=ds,
                                 batch_size = argsP.batch_size,
                                 shuffle=True,

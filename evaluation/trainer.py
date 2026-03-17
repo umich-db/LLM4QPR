@@ -354,8 +354,8 @@ def evaluate(model, args, loader, norm, device, prints=True, data_sec="unknown",
             else:
                 x, y = batch
 
-            # Move inputs to device if not LLM finetuning
-            if args.algo != "llm_finetune":
+            # Move inputs to device if not LLM/PRICE finetuning (collate already puts x on device)
+            if args.algo not in ("llm_finetune", "llm_price_finetune", "price_finetune"):
                 x = x.to(device)
             
             # Store embeddings if requested (and not already provided)
@@ -605,7 +605,7 @@ def Logging(args, epoch, qscores, absscores, time, filename = None, save_model =
     return res['model']  
 
 def train(model, train_loader, val_loader, \
-    ds_info, args, crit=None, optimizer=None, scheduler=None, prints=True, record=True):
+    ds_info, args, crit=None, optimizer=None, scheduler=None, prints=True, record=True, start_epoch=0):
 
     # Non-PyTorch model branch (e.g., AutoGluon)
     if not isinstance(model, nn.Module):
@@ -627,9 +627,79 @@ def train(model, train_loader, val_loader, \
     lr = args.learning_rate
 
     if not optimizer:
-        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+        if args.algo == "llm_price_finetune":
+            # Separate parameter groups with different LRs
+            _raw_price_lr = getattr(args, 'price_lr', None)
+            price_lr = _raw_price_lr if _raw_price_lr is not None else (1e-3 if getattr(args, 'price_random_init', False) else 2.85e-5)
+            param_groups = [
+                {'params': [p for p in model.llm.parameters() if p.requires_grad], 'lr': lr},
+                {'params': [p for p in model.price.parameters() if p.requires_grad], 'lr': price_lr},
+                {'params': [p for p in model.mlp.parameters() if p.requires_grad], 'lr': lr},
+            ]
+            if hasattr(model, 'gate'):
+                param_groups.append({'params': model.gate.parameters(), 'lr': lr})
+            optimizer = torch.optim.Adam(param_groups)
+        else:
+            optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     if not scheduler:
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 20, 0.9)
+        lr_schedule = getattr(args, 'lr_schedule', 'step')
+        price_lr_schedule = getattr(args, 'price_lr_schedule', None) or lr_schedule
+        warmup_epochs = getattr(args, 'warmup_epochs', 3)
+
+        def make_lambda(schedule_type):
+            """Create a lr_lambda function for a given schedule type."""
+            if schedule_type == 'cosine':
+                import math
+                def fn(epoch):
+                    return max(1e-7, 0.5 * (1 + math.cos(math.pi * epoch / epochs)))
+                return fn
+            elif schedule_type == 'warmup_cosine':
+                import math
+                def fn(epoch):
+                    if epoch < warmup_epochs:
+                        return (epoch + 1) / warmup_epochs
+                    progress = (epoch - warmup_epochs) / max(1, epochs - warmup_epochs)
+                    return max(1e-7, 0.5 * (1 + math.cos(math.pi * progress)))
+                return fn
+            else:  # step
+                def fn(epoch):
+                    return 0.9 ** (epoch // 20)
+                return fn
+
+        if args.algo == "llm_price_finetune" and getattr(args, 'price_random_init', False):
+            # Random init: PRICE group uses 1e-3 base lr, drops to 2e-5 in last 10 epochs
+            # Other groups (LLM, MLP, gate) use their regular schedule
+            _raw_price_lr = getattr(args, 'price_lr', None)
+            _price_lr_eff = _raw_price_lr if _raw_price_lr is not None else 1e-3
+            _finetune_lr = 2e-5
+            def _price_random_fn(epoch, _plr=_price_lr_eff, _flr=_finetune_lr, _total=epochs):
+                if epoch < 10:
+                    return 1.0
+                else:
+                    return _flr / _plr
+            regular_fn = make_lambda(lr_schedule)
+            n_groups = len(optimizer.param_groups)
+            # group 0=LLM, group 1=PRICE, group 2=MLP [, group 3=gate]
+            lambdas = [regular_fn, _price_random_fn] + [regular_fn] * (n_groups - 2)
+            scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambdas)
+            print(f"[Scheduler] Random init: PRICE lr={_price_lr_eff} for first 10 epochs, then {_finetune_lr}, others={lr_schedule}")
+        elif args.algo == "llm_price_finetune" and price_lr_schedule != lr_schedule:
+            # Separate schedules: group 0=LLM, group 1=PRICE, group 2=MLP [, group 3=gate]
+            llm_fn = make_lambda(lr_schedule)
+            price_fn = make_lambda(price_lr_schedule)
+            n_groups = len(optimizer.param_groups)
+            lambdas = [llm_fn, price_fn] + [llm_fn] * (n_groups - 2)
+            scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambdas)
+            print(f"[Scheduler] Separate: LLM={lr_schedule}, PRICE={price_lr_schedule}, warmup={warmup_epochs if 'warmup' in lr_schedule or 'warmup' in price_lr_schedule else 'N/A'}")
+        elif lr_schedule == 'cosine':
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-6)
+            print(f"[Scheduler] CosineAnnealingLR: T_max={epochs}, eta_min=1e-6")
+        elif lr_schedule == 'warmup_cosine':
+            fn = make_lambda('warmup_cosine')
+            scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, fn)
+            print(f"[Scheduler] WarmupCosine: warmup={warmup_epochs}, T_max={epochs}")
+        else:
+            scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 20, 0.9)
     if not crit:
         crit = torch.nn.MSELoss()
 
@@ -642,7 +712,15 @@ def train(model, train_loader, val_loader, \
     # Check if model is Sequential for embedding extraction
     is_sequential = isinstance(model, nn.Sequential)
     
-    for epoch in range(epochs):
+    if start_epoch > 0:
+        print(f"[Resume] Skipping to epoch {start_epoch} (of {epochs})")
+    # Gradient accumulation setup
+    grad_accum_steps = getattr(args, 'grad_accum_steps', 1)
+    if grad_accum_steps > 1:
+        print(f"[GradAccum] Accumulating gradients over {grad_accum_steps} micro-batches "
+              f"(effective batch = {bs} * {grad_accum_steps} = {bs * grad_accum_steps})")
+
+    for epoch in range(start_epoch, epochs):
         epoch_start = timer()
         model.train()
         losses = 0
@@ -652,21 +730,27 @@ def train(model, train_loader, val_loader, \
         print(">", end="", flush=True)
         # measure data loading time: time from end of last iteration to when batch is available
         data_fetch_start = timer()
+        n_batches = len(train_loader)
+        log_interval = max(1, n_batches // 10)  # print ~10 times per epoch
         for batch_idx, batch in enumerate(train_loader, start=1):
             data_load_time = timer() - data_fetch_start
             args.main_logger.info(f"[Train] Epoch {epoch} Batch {batch_idx} DataLoad — {data_load_time*1000:.2f} ms")
-            print(".", end="", flush=True)
             batch_start = timer()
             if isinstance(batch, (list, tuple)) and len(batch) == 3:
                 x, stats, y = batch
             else:
                 x, y = batch
-            if args.algo=='llm_finetune':
+            if args.algo in ('llm_finetune', 'llm_price_finetune', 'price_finetune'):
                 y = y.to(device)
-                print(batch_idx, end="", flush=True)
+                if batch_idx % log_interval == 0 or batch_idx == n_batches:
+                    print(f" {batch_idx}/{n_batches}", end="", flush=True)
             else:
                 x, y = x.to(device), y.to(device)
-            optimizer.zero_grad()
+                print(".", end="", flush=True)
+
+            # Only zero gradients at the start of an accumulation cycle
+            if (batch_idx - 1) % grad_accum_steps == 0:
+                optimizer.zero_grad()
 
             # Forward pass (handle Sequential models)
             if is_sequential:
@@ -678,20 +762,27 @@ def train(model, train_loader, val_loader, \
                 preds = model[1](embedding)
             else:
                 preds = model(x)
-            
+
             loss = crit(preds, y)
 
+            # Scale loss by accumulation steps so that the averaged gradient
+            # matches what a single large batch would produce
+            if grad_accum_steps > 1:
+                loss = loss / grad_accum_steps
+
             loss.backward()
-            # loss.backward(retain_graph=True)
 
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
+            # Step optimizer only at the end of an accumulation cycle (or last batch)
+            if batch_idx % grad_accum_steps == 0 or batch_idx == n_batches:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
+                optimizer.step()
 
-            optimizer.step()
-            losses += loss.item()
+            # Track unscaled loss for logging
+            losses += loss.item() * (grad_accum_steps if grad_accum_steps > 1 else 1)
             predss = np.append(predss, preds.detach().cpu().numpy())
 
             labels = np.append(labels, y.detach().cpu().numpy())
-            
+
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
             batch_time = timer() - batch_start
@@ -699,7 +790,7 @@ def train(model, train_loader, val_loader, \
             # mark start of next data fetch timing
             data_fetch_start = timer()
 
-            if args.algo == "llm_finetune" and record and (batch_idx % 200 == 0):
+            if args.algo in ("llm_finetune", "llm_price_finetune", "price_finetune") and record and (batch_idx % 200 == 0):
                 if not args.card:
                     print_qerror(
                         ds_info.cost_norm.unnormalize_labels(predss),
@@ -731,7 +822,23 @@ def train(model, train_loader, val_loader, \
                     _, _, _, _ = evaluate(model, args, val_loader, ds_info.card_norm, device, prints=True,data_sec = "val")
 
         ##############
-        scheduler.step()   
+        scheduler.step()
+
+        # Save checkpoint if requested
+        ckpt_interval = getattr(args, 'checkpoint_interval', 0)
+        if ckpt_interval > 0 and (epoch + 1) % ckpt_interval == 0:
+            ckpt_dir = f"finetuned_models/{getattr(args, 'db', 'postgres')}/checkpoints"
+            os.makedirs(ckpt_dir, exist_ok=True)
+            ckpt_prefix = getattr(args, 'checkpoint_prefix', 'ckpt')
+            ckpt_path = os.path.join(ckpt_dir, f"{ckpt_prefix}_epoch{epoch+1}.pt")
+            ckpt = {
+                'epoch': epoch + 1,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict(),
+            }
+            torch.save(ckpt, ckpt_path)
+            print(f"[Checkpoint] Saved epoch {epoch+1} to {ckpt_path}")
 
     return model
 
@@ -811,11 +918,31 @@ def train_and_test_bao(train_roots, train_costs, test_roots, test_costs, args, d
     import time
 
     bao = BaoRegression(have_cache_data=True, verbose=True)
+    # Check for cached BAO model
+    task_str = "card" if args.card else "time"
+    _prefix = f"long_raw_{args.db}_"
+    _data_names = []
+    for _p in sorted(set(dat_paths_train_list)):
+        _stem = os.path.splitext(os.path.basename(_p))[0]
+        _data_names.append(_stem[len(_prefix):] if _stem.startswith(_prefix) else _stem)
+    data_str = '-'.join(_data_names)
+    cache_dir = f"finetuned_models/{args.db}/"
+    cache_name = f"{data_str}_{task_str}_bao_{args.train_ratio}_b{args.batch_size}_h{args.hid_units}_seed{args.seed}_model"
+    cache_path = os.path.join(cache_dir, cache_name)
     # Training
-    training_start = time.time()
-    bao.fit(train_roots, train_costs, args)
-    training_time = time.time() - training_start
-    args.main_logger.info(f"[Train] Training took {training_time*1000:.2f} ms")
+    if os.path.exists(cache_path):
+        bao.load(cache_path)
+        training_time = 0.0
+        print(f"Loaded cached BAO model from {cache_path}")
+        args.main_logger.info(f"[Train] Skipped training (loaded from cache)")
+    else:
+        training_start = time.time()
+        bao.fit(train_roots, train_costs, args)
+        training_time = time.time() - training_start
+        args.main_logger.info(f"[Train] Training took {training_time*1000:.2f} ms")
+        os.makedirs(cache_dir, exist_ok=True)
+        bao.save(cache_path)
+        print(f"Saved BAO model to {cache_path}")
 
     # Generate embeddings for verbose output if requested
     train_embeddings_for_knn = None
@@ -1021,12 +1148,13 @@ def train_and_test_bao(train_roots, train_costs, test_roots, test_costs, args, d
     }
 
 
-def train_and_test_postgres(train_roots, train_costs, test_roots, test_costs, args):
+def train_and_test_postgres(train_roots, train_costs, test_roots, test_costs, args, dat_paths_train_list=None):
     """
     Train and test the PostgresEstimator model. Returns metrics and predictions.
     """
     from algorithms.postgres import PostgresEstimator
     import time
+    import joblib
 
     pg = PostgresEstimator()
     if args.card:
@@ -1034,7 +1162,25 @@ def train_and_test_postgres(train_roots, train_costs, test_roots, test_costs, ar
         true_vals = test_costs
         label_name = "cardinality"
     else:
-        pg.fit(train_roots, train_costs)
+        # Check for cached postgres model
+        task_str = "time"
+        _prefix = f"long_raw_{args.db}_"
+        _data_names = []
+        for _p in sorted(set(dat_paths_train_list)) if dat_paths_train_list else []:
+            _stem = os.path.splitext(os.path.basename(_p))[0]
+            _data_names.append(_stem[len(_prefix):] if _stem.startswith(_prefix) else _stem)
+        data_str = '-'.join(_data_names) if _data_names else '-'.join(args.workloads_train)
+        cache_dir = f"finetuned_models/{args.db}/"
+        cache_name = f"{data_str}_{task_str}_postgres_{args.train_ratio}_seed{args.seed}_model.joblib"
+        cache_path = os.path.join(cache_dir, cache_name)
+        if os.path.exists(cache_path):
+            pg._time_model = joblib.load(cache_path)
+            print(f"Loaded cached postgres model from {cache_path}")
+        else:
+            pg.fit(train_roots, train_costs)
+            os.makedirs(cache_dir, exist_ok=True)
+            joblib.dump(pg._time_model, cache_path)
+            print(f"Saved postgres model to {cache_path}")
         preds = pg.predict_time(test_roots)
         true_vals = test_costs
         label_name = "time"

@@ -25,6 +25,24 @@ sys.path.append('../evaluation/')
 from dataset_utils import *
 from utils import Normalizer
 from field_categories import FIELD_CATEGORIES, get_fields_to_remove
+from field_categories_duckdb import (
+    FIELD_CATEGORIES as DUCKDB_FIELD_CATEGORIES,
+    get_fields_to_remove as duckdb_get_fields_to_remove,
+)
+
+
+def _get_field_categories(db):
+    """Return the appropriate FIELD_CATEGORIES dict for the given database."""
+    if db == 'duckdb':
+        return DUCKDB_FIELD_CATEGORIES
+    return FIELD_CATEGORIES
+
+
+def _get_fields_to_remove_fn(db):
+    """Return the appropriate get_fields_to_remove function for the given database."""
+    if db == 'duckdb':
+        return duckdb_get_fields_to_remove
+    return get_fields_to_remove
 #########################################
 #       Custom Dataset Class
 #########################################
@@ -217,6 +235,12 @@ class QueryPlanPredictor(nn.Module):
             return self._load_qwen_model(model_name, quantification, offload_folder,
                                        use_lora, lora_r, lora_alpha, lora_dropout, target_modules)
         elif "sentence-transformers" in model_name or "all-MiniLM-L6-v2" in model_name:
+            return self._load_sentence_transformers_model(model_name, quantification, enable_checkpointing, offload_folder,
+                                                        use_lora, lora_r, lora_alpha, lora_dropout, target_modules, mode)
+        elif "intfloat" in model_name.lower() or "e5-" in model_name.lower():
+            return self._load_sentence_transformers_model(model_name, quantification, enable_checkpointing, offload_folder,
+                                                        use_lora, lora_r, lora_alpha, lora_dropout, target_modules, mode)
+        elif "nomic" in model_name.lower():
             return self._load_sentence_transformers_model(model_name, quantification, enable_checkpointing, offload_folder,
                                                         use_lora, lora_r, lora_alpha, lora_dropout, target_modules, mode)
         elif "google/" in model_name.lower() or "gemma" in model_name.lower():
@@ -452,24 +476,34 @@ class QueryPlanPredictor(nn.Module):
         print(f"Loading ModernBERT model: {model_name}")
         print(f"Tokenizer max length: {self.tokenizer.model_max_length}")
         
-        # Report max input length
+        # Report max input length and fix absurd tokenizer defaults
         try:
             from transformers import AutoConfig
             config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
             max_position_embeddings = getattr(config, 'max_position_embeddings', None)
             max_seq_length = getattr(config, 'max_seq_length', None)
-            
+
             print(f"=== ModernBERT Model Max Input Length ===")
             if max_position_embeddings:
                 print(f"Max position embeddings: {max_position_embeddings}")
             if max_seq_length:
                 print(f"Max sequence length: {max_seq_length}")
+
+            # Some ModernBERT tokenizers report model_max_length as ~1e30;
+            # cap it to max_position_embeddings to avoid integer overflow.
+            if self.tokenizer.model_max_length > 1_000_000 and max_position_embeddings:
+                self.tokenizer.model_max_length = max_position_embeddings
+                print(f"Capped tokenizer.model_max_length to {max_position_embeddings}")
+
             print(f"Effective max input length: {self.tokenizer.model_max_length}")
         except Exception as e:
             print(f"Could not load model config: {e}")
+            if self.tokenizer.model_max_length > 1_000_000:
+                self.tokenizer.model_max_length = 8192
+                print(f"Capped tokenizer.model_max_length to 8192 (fallback)")
             print(f"Using tokenizer max length: {self.tokenizer.model_max_length}")
-        
-        
+
+
         # Determine device map based on available GPUs
         if torch.cuda.device_count() > 1 and hasattr(self, 'use_model_parallelism') and self.use_model_parallelism:
             # Use auto device map for multi-GPU
@@ -553,6 +587,10 @@ class QueryPlanPredictor(nn.Module):
                 print(f"Max position embeddings: {max_position_embeddings}")
             if max_seq_length:
                 print(f"Max sequence length: {max_seq_length}")
+            # Cap absurd tokenizer.model_max_length (some models report ~1e30)
+            if self.tokenizer.model_max_length > 1_000_000 and max_position_embeddings:
+                self.tokenizer.model_max_length = max_position_embeddings
+                print(f"Capped tokenizer.model_max_length to {max_position_embeddings}")
             print(f"Effective max input length: {self.tokenizer.model_max_length}")
         except Exception as e:
             print(f"Could not load model config: {e}")
@@ -852,6 +890,10 @@ class QueryPlanPredictor(nn.Module):
                 print(f"Max position embeddings: {max_position_embeddings}")
             if max_seq_length:
                 print(f"Max sequence length: {max_seq_length}")
+            # Cap absurd tokenizer.model_max_length (some models report ~1e30)
+            if self.tokenizer.model_max_length > 1_000_000 and max_position_embeddings:
+                self.tokenizer.model_max_length = max_position_embeddings
+                print(f"Capped tokenizer.model_max_length to {max_position_embeddings}")
             print(f"Effective max input length: {self.tokenizer.model_max_length}")
         except Exception as e:
             print(f"Could not load model config: {e}")
@@ -898,22 +940,41 @@ class QueryPlanPredictor(nn.Module):
         if enable_checkpointing and mode != "inference":
             self.model.gradient_checkpointing_enable()
             print("Gradient checkpointing enabled")
-        if mode == "lora":
-            # Only prepare for kbit training if quantization is used
-            if quantification != "None":
-                self.model = prepare_model_for_kbit_training(self.model)
-            # LoRA configuration for sentence-transformers models (typically BERT-based)
-            lora_config = LoraConfig(
-                r=lora_r,
-                lora_alpha=lora_alpha,
-                target_modules=target_modules or ["query", "value"],
-                lora_dropout=lora_dropout,
-                bias="none",
-                task_type=TaskType.FEATURE_EXTRACTION,
-            )
-            self.model = get_peft_model(self.model, lora_config)
+        # Always apply LoRA (even in inference mode) so that state_dict keys match
+        # when loading finetuned weights saved from a PeftModel
+        if quantification != "None":
+            self.model = prepare_model_for_kbit_training(self.model)
+        # LoRA configuration for sentence-transformers models (typically BERT-based)
+        # Nomic models use fused Wqkv instead of separate query/value layers
+        if target_modules:
+            default_targets = target_modules
+        elif "nomic" in model_name.lower():
+            default_targets = ["Wqkv", "out_proj"]
+        else:
+            default_targets = ["query", "value"]
+        lora_config = LoraConfig(
+            r=lora_r,
+            lora_alpha=lora_alpha,
+            target_modules=default_targets,
+            lora_dropout=lora_dropout,
+            bias="none",
+            task_type=TaskType.FEATURE_EXTRACTION,
+        )
+        self.model = get_peft_model(self.model, lora_config)
+
+        # NomicBertModel.forward() does not accept output_attentions/output_hidden_states
+        # but PEFT injects them. Patch the underlying forward to strip unsupported kwargs.
+        if "nomic" in model_name.lower() and not "modernbert" in model_name.lower():
+            base_model = self.model.base_model.model
+            _original_nomic_forward = base_model.forward
+            def _patched_nomic_forward(*args, **kwargs):
+                kwargs.pop('output_attentions', None)
+                kwargs.pop('output_hidden_states', None)
+                return _original_nomic_forward(*args, **kwargs)
+            base_model.forward = _patched_nomic_forward
+
         return self.model
-    
+
     def _load_google_model(self, model_name, quantification, offload_folder,
                            use_lora, lora_r, lora_alpha, lora_dropout, target_modules):
         """Load Google Gemma model."""
@@ -1048,26 +1109,23 @@ class QueryPlanPredictor(nn.Module):
                 offload_folder=offload_folder
             )
         
-        # Only apply LoRA if requested and not in inference mode
-        if use_lora and self.mode != "inference":
-            # Only prepare for kbit training if quantization is used
-            if quantification != "None":
-                model = prepare_model_for_kbit_training(model)
-            
-            # Use Gemma-specific target modules
-            gemma_target_modules = target_modules or ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
-            
-            lora_config = LoraConfig(
-                r=lora_r,
-                lora_alpha=lora_alpha,
-                target_modules=gemma_target_modules,
-                lora_dropout=lora_dropout,
-                bias="none",
-                task_type=TaskType.CAUSAL_LM,  # Use CAUSAL_LM for Gemma models
-            )
-            return get_peft_model(model, lora_config)
-        else:
-            return model
+        # Always apply LoRA (even in inference mode) so that state_dict keys match
+        # when loading finetuned weights saved from a PeftModel
+        if quantification != "None":
+            model = prepare_model_for_kbit_training(model)
+
+        # Use Gemma-specific target modules
+        gemma_target_modules = target_modules or ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+
+        lora_config = LoraConfig(
+            r=lora_r,
+            lora_alpha=lora_alpha,
+            target_modules=gemma_target_modules,
+            lora_dropout=lora_dropout,
+            bias="none",
+            task_type=TaskType.CAUSAL_LM,  # Use CAUSAL_LM for Gemma models
+        )
+        return get_peft_model(model, lora_config)
     
     def last_token_pool(self, last_hidden_states: torch.Tensor, 
                         attention_mask: torch.Tensor) -> torch.Tensor:
@@ -1139,13 +1197,14 @@ class QueryPlanPredictor(nn.Module):
         
         return torch.empty(0, self.hidden_dim, device=self.model.device)
 
-    def _process_batch_optimized(self, windows: list, max_length: int, stats_vecs_batch=None) -> torch.Tensor:
+    def _process_batch_optimized(self, windows: list, max_length: int, stats_vecs_batch=None, return_hidden_states=False) -> torch.Tensor:
         """批量处理函数，直接处理token ids或文本"""
         # Handle DDP models by accessing the underlying model
         model_to_check = self.model.module if hasattr(self.model, 'module') else self.model
         
         is_qwen = "qwen" in model_to_check.config.model_type.lower() if hasattr(model_to_check.config, 'model_type') else False
-        is_bert = "bert" in model_to_check.config.model_type.lower() if hasattr(model_to_check.config, 'model_type') else False
+        is_nomic = "nomic_bert" == getattr(getattr(model_to_check, 'config', None), 'model_type', '').lower()
+        is_bert = ("bert" in model_to_check.config.model_type.lower() and not is_nomic) if hasattr(model_to_check.config, 'model_type') else False
         is_gpt_oss = "gpt-oss-20b" in str(model_to_check.config).lower()
         is_google = "gemma" in model_to_check.config.model_type.lower() if hasattr(model_to_check.config, 'model_type') else False
         
@@ -1219,35 +1278,43 @@ class QueryPlanPredictor(nn.Module):
         if is_gpt_oss:
             outputs = self.model(**inputs, output_hidden_states=True)
             hs = outputs.hidden_states[-1]
+        elif is_nomic:
+            # NomicBertModel.forward() does not accept output_hidden_states/output_attentions
+            outputs = self.model(**inputs)
+            hs = outputs.last_hidden_state
         elif is_qwen:
             outputs = self.model(**inputs)
         elif is_google:
             with torch.amp.autocast('cuda', enabled=True, dtype=torch.float16):
-                outputs = self.model(**inputs, output_hidden_states=True)
-                hs = outputs.hidden_states[-1]
-                # f = open("log.txt", "a")
-                # print(f"hs: {hs}", file=f)
-                # f.close()
+                outputs = self.model(**inputs)
+                hs = outputs.last_hidden_state
         else:
             with torch.amp.autocast('cuda', enabled=True):
-                outputs = self.model(**inputs, output_hidden_states=True)
-                if (is_qwen or is_bert) and hasattr(outputs, 'last_hidden_state'):
+                outputs = self.model(**inputs)
+                if hasattr(outputs, 'last_hidden_state'):
                     hs = outputs.last_hidden_state
                 else:
+                    # Fallback for models without last_hidden_state
+                    outputs = self.model(**inputs, output_hidden_states=True)
                     hs = outputs.hidden_states[-1]
         
         # 批量池化
         if is_qwen:
             embs = self.last_token_pool(outputs.last_hidden_state, inputs['attention_mask'])
             embs = torch.nn.functional.normalize(embs, p=2, dim=1)
+            if return_hidden_states:
+                return embs, outputs.last_hidden_state, inputs['attention_mask']
             return embs
-        elif is_bert:
+        elif is_bert or is_nomic:
             embs = []
             for i in range(hs.shape[0]):
                 emb = self.get_cls_token(hs[i:i+1])
                 emb = torch.nn.functional.normalize(emb, p=2, dim=1)
                 embs.append(emb.squeeze(0))
-            return torch.stack(embs, dim=0)
+            pooled = torch.stack(embs, dim=0)
+            if return_hidden_states:
+                return pooled, hs, inputs['attention_mask']
+            return pooled
         elif is_google:
             # For Google Gemma models, use mean pooling similar to other transformer models
             mask = inputs["attention_mask"].unsqueeze(-1)
@@ -1255,6 +1322,8 @@ class QueryPlanPredictor(nn.Module):
             sum_hs = hs_masked.sum(dim=1)
             lens = mask.sum(dim=1).clamp(min=1)
             embs = sum_hs / lens
+            if return_hidden_states:
+                return embs, hs, inputs['attention_mask']
             return embs
         else:
             # 批量mean pooling
@@ -1263,6 +1332,8 @@ class QueryPlanPredictor(nn.Module):
             sum_hs = hs_masked.sum(dim=1)
             lens = mask.sum(dim=1).clamp(min=1)
             embs = sum_hs / lens
+            if return_hidden_states:
+                return embs, hs, inputs['attention_mask']
             return embs
 
     def _ensure_stats_token(self, stats_token_str: str = "[STAT]"):
@@ -1365,8 +1436,8 @@ class QueryPlanPredictor(nn.Module):
                 # For models without direct device attribute, get from first parameter
                 target_device = next(self.model.parameters()).device
             inputs = {k: v.to(target_device) for k, v in inputs.items()}
-            generated = self.model(**inputs, output_hidden_states=True)
-            hs = generated.hidden_states[-1]
+            generated = self.model(**inputs)
+            hs = generated.last_hidden_state if hasattr(generated, 'last_hidden_state') else self.model(**inputs, output_hidden_states=True).hidden_states[-1]
             mask = inputs["attention_mask"].unsqueeze(-1)
             hs_masked = hs * mask
             sum_hs = hs_masked.sum(dim=1)
@@ -1393,6 +1464,19 @@ class QueryPlanPredictor(nn.Module):
         # 不需要滑动窗口或禁用滑动窗口，批量处理所有文本
         return self._process_batch_optimized(texts, max_length, stats_vecs_batch=stats_vecs_batch)
     
+    def forward_with_sequence(self, texts: list[str]):
+        """
+        Like forward(), but also returns hidden states and attention mask
+        for cross-attention fusion. Truncates to max_length (no sliding windows).
+
+        Returns:
+            pooled_emb:     [B, D_llm]
+            hidden_states:  [B, T, D_llm]
+            attention_mask: [B, T]
+        """
+        max_length = self.tokenizer.model_max_length
+        return self._process_batch_optimized(texts, max_length, return_hidden_states=True)
+
     def to(self, device):
         """
         Move the model to the specified device.
@@ -1610,13 +1694,25 @@ def _extract_root(plan_json):
         # raise ValueError("no 'Plan' key at top level")
         return plan_obj
 
-def _find_actual_total_time(root_node):
+def _find_actual_total_time(root_node, db='postgres'):
+    if db == 'duckdb':
+        # DuckDB: latency in seconds at root level
+        if "latency" not in root_node:
+            raise KeyError("'latency' not found in root (DuckDB)")
+        return float(root_node["latency"])
+    # Postgres: Actual Total Time in milliseconds
     if "Actual Total Time" not in root_node:
         raise KeyError("'Actual Total Time' not found in root")
     return float(root_node["Actual Total Time"])
 
 
-def _find_actual_rows(root_node):
+def _find_actual_rows(root_node, db='postgres'):
+    if db == 'duckdb':
+        # DuckDB: rows_returned at root level
+        if "rows_returned" not in root_node:
+            raise KeyError("'rows_returned' not found in root (DuckDB)")
+        return float(root_node["rows_returned"])
+    # Postgres: Actual Rows
     if "Actual Rows" not in root_node:
         raise KeyError("'Actual Rows' not found in root")
     return float(root_node["Actual Rows"])
@@ -1672,29 +1768,32 @@ def _should_truncate_for_llama70b_tpcds(predictor, argsP):
     return is_llama70b and is_tpcds
 
 
-def _clean_node(obj, fields_to_remove=None):
+def _clean_node(obj, fields_to_remove=None, field_categories=None):
     """
     Recursively clean a query plan node by removing runtime fields and optionally
     removing fields from specified categories.
-    
+
     Note: We extract "Actual Total Time" and "Actual Rows" BEFORE calling this function
     for use as training labels. Runtime fields (from the 'runtime' category) are ALWAYS
     removed automatically. The fields_to_remove parameter controls removal of the other
     5 categories for ablation studies.
-    
+
     Args:
         obj: The object to clean (dict, list, or primitive)
         fields_to_remove: Optional set of field names to remove (for ablation studies)
                          Should only contain fields from non-runtime categories
-    
+        field_categories: Optional dict of field categories (defaults to postgres FIELD_CATEGORIES)
+
     Returns:
         Cleaned object
     """
     if fields_to_remove is None:
         fields_to_remove = set()
-    
+    if field_categories is None:
+        field_categories = FIELD_CATEGORIES
+
     # Always remove runtime category fields
-    runtime_fields = FIELD_CATEGORIES['runtime']
+    runtime_fields = field_categories['runtime']
     all_fields_to_remove = fields_to_remove | runtime_fields
     
     if isinstance(obj, dict):
@@ -1704,10 +1803,10 @@ def _clean_node(obj, fields_to_remove=None):
             if k in all_fields_to_remove:
                 continue
             # Recursively clean the value
-            cleaned[k] = _clean_node(v, fields_to_remove)
+            cleaned[k] = _clean_node(v, fields_to_remove, field_categories)
         return cleaned
     elif isinstance(obj, list):
-        return [_clean_node(item, fields_to_remove) for item in obj]
+        return [_clean_node(item, fields_to_remove, field_categories) for item in obj]
     else:
         return obj
 
@@ -1999,7 +2098,7 @@ def _collect_column_ids(node):
 
     return used_cols
 
-def _collect_column_ids_and_replace(node, stats, replace_type="all"):
+def _collect_column_ids_and_replace(node, stats, replace_type="name"):
     """
     Recursively traverse `node` (a dict representing one plan‐node), collect all integer
     column‐IDs into a set, and ALSO replace each occurrence of a column‐ID i with stats[i].
@@ -2121,21 +2220,31 @@ def read_json_and_clean(predictor, ds_info, dat_path, argsP, all=False):
     """
     print(f"Reading {dat_path}")
     df = pd.read_csv(dat_path)
+    # Limit total queries if --max_queries is set (speeds up model selection)
+    max_q = getattr(argsP, 'max_queries', -1)
+    if max_q > 0 and len(df) > max_q:
+        print(f"  Limiting to {max_q} queries (out of {len(df)})")
+        df = df.head(max_q)
     cleaned_texts = []
     costs = []
     cards = []
     lengths = []
     templates = []
     stats_vecs_list = []  # per-plan list of per-[STAT] vectors (only when argsP.stats_token_inject)
-    
+
+    # Select field categories based on database type
+    db = getattr(argsP, 'db', 'postgres')
+    field_cats = _get_field_categories(db)
+    _get_fields_fn = _get_fields_to_remove_fn(db)
+
     # Parse removed_fields for ablation studies
     fields_to_remove = set()
     if hasattr(argsP, 'removed_fields') and argsP.removed_fields:
         removed_categories = [cat.strip() for cat in argsP.removed_fields.split(',')]
-        fields_to_remove = get_fields_to_remove(removed_categories)
+        fields_to_remove = _get_fields_fn(removed_categories)
         if fields_to_remove:
             print(f"  Removing {len(fields_to_remove)} fields from categories: {removed_categories}")
-    
+
     # Check if template column exists (only for tpch and tpcds)
     has_template = 'template' in df.columns
 
@@ -2178,9 +2287,9 @@ def read_json_and_clean(predictor, ds_info, dat_path, argsP, all=False):
         root = _extract_root(plan_json)
         # Use pre-bucketized root for costs/cards
         orig_root = original_roots[idx]
-        costs.append(_find_actual_total_time(orig_root))
-        cards.append(_find_actual_rows(orig_root))
-        cleaned_root = _clean_node(root, fields_to_remove)
+        costs.append(_find_actual_total_time(orig_root, db))
+        cards.append(_find_actual_rows(orig_root, db))
+        cleaned_root = _clean_node(root, fields_to_remove, field_cats)
         if getattr(argsP, "stats_token_inject", False) and stats_mem is not None:
             token_mode = getattr(argsP, "stats_token_mode", "per_column")
             cleaned_root, stat_vecs = inject_stat_tokens_into_cleaned_plan(
@@ -2250,10 +2359,16 @@ def read_json_and_clean_v2(predictor, ds_info, dat_path, argsP, all=False):
     with open(dat_path, 'r') as f:
         original_data = json.load(f)
 
+    # Limit total queries if --max_queries is set (speeds up model selection)
+    max_q = getattr(argsP, 'max_queries', -1)
+    if max_q > 0 and len(original_data["parsed_plans"]) > max_q:
+        print(f"  Limiting to {max_q} queries (out of {len(original_data['parsed_plans'])})")
+        original_data["parsed_plans"] = original_data["parsed_plans"][:max_q]
+
     costs = []
     cards = []
     templates = []
-    
+
     # Parse removed_fields for ablation studies
     fields_to_remove = set()
     if hasattr(argsP, 'removed_fields') and argsP.removed_fields:
@@ -2286,7 +2401,7 @@ def read_json_and_clean_v2(predictor, ds_info, dat_path, argsP, all=False):
         template = orig_plan.get("template", None)
         templates.append(template)
 
-        used_column_ids = _collect_column_ids_and_replace(cleaned_plan, original_data["database_stats"]["column_stats"])
+        # used_column_ids = _collect_column_ids_and_replace(cleaned_plan, original_data["database_stats"]["column_stats"])
         # stats = [
         #     original_data["database_stats"]["column_stats"][cid]
         #     for cid in used_column_ids
@@ -2340,6 +2455,12 @@ def _load_queries_true_embeddings(dat_path: str, argsP):
             base = base[:-4]
         if base.startswith("long_raw_postgres_"):
             base = base[len("long_raw_postgres_"):]
+        elif base.startswith("long_raw_duckdb_"):
+            base = base[len("long_raw_duckdb_"):]
+        elif base.startswith("long_raw_mysql_"):
+            base = base[len("long_raw_mysql_"):]
+        elif base.startswith("long_raw_spark_"):
+            base = base[len("long_raw_spark_"):]
 
         candidates = []
         candidates.append(f"{base}_embeddings.csv")
@@ -2404,15 +2525,24 @@ def get_embeddings(predictor, ds_info, dat_path, argsP, batch_size=1, normalize_
             removed_fields_suffix = f"_rm-{'-'.join(abbrevs)}"
     
     # Determine cache directory based on whether _rm- is in the filename
-    cache_dir = "embeddings"
+    db = getattr(argsP, 'db', 'postgres')
+    cache_dir = f"embeddings/{db}"
     if "_rm-" in removed_fields_suffix:
-        cache_dir = "embeddings_rm"
+        cache_dir = f"embeddings_rm/{db}"
     
     stats_suffix = ""
     if getattr(argsP, "stats_token_inject", False):
         stats_mode = getattr(argsP, "stats_token_mode", "per_column")
         stats_suffix = f"_statTok-{stats_mode}"
-    cache_file = f"embeddings_{argsP.model_name}_bucketize-{argsP.bucketize_input}_quant-{argsP.quantification}_pretrained-{argsP.llm_pretrained}_pretrainedTask-{argsP.llm_pretrained_task}{target_suffix}{seed_suffix}{removed_fields_suffix}{stats_suffix}_{dat_path}".replace("json", "csv") 
+    # Include algo in cache filename to distinguish embeddings from different finetune sources
+    # (e.g. llm_price uses JointPrice-finetuned LLM weights, different from llm's weights)
+    algo_suffix = f"_algo-{argsP.algo}" if argsP.algo not in ("llm", "llm_stats") else ""
+    # Include max_queries in cache filename to avoid conflicts between subset and full embeddings
+    maxq_suffix = ""
+    max_q = getattr(argsP, 'max_queries', -1)
+    if max_q > 0:
+        maxq_suffix = f"_maxq-{max_q}"
+    cache_file = f"embeddings_{argsP.model_name}_bucketize-{argsP.bucketize_input}_quant-{argsP.quantification}_pretrained-{argsP.llm_pretrained}_pretrainedTask-{argsP.llm_pretrained_task}{algo_suffix}{target_suffix}{seed_suffix}{removed_fields_suffix}{stats_suffix}{maxq_suffix}_{dat_path}".replace("json", "csv")
     cache_file = cache_file.replace("/","-")
     cache_path = os.path.join(cache_dir, cache_file)
     
@@ -2543,6 +2673,173 @@ def get_embeddings(predictor, ds_info, dat_path, argsP, batch_size=1, normalize_
         return features, costs, lengths, templates
 
 
+def generate_price_embeddings(price_embedder, workload, sql_list, db_name, bin_size, device, batch_size=64):
+    """
+    Generate PRICE embeddings for a list of SQL queries.
+
+    Args:
+        price_embedder: PRICEEmbedder instance (already on device)
+        workload: workload name (e.g. 'job', 'tpcds')
+        sql_list: list of raw SQL strings
+        db_name: PRICE database name
+        bin_size: histogram bin size
+        device: torch device
+        batch_size: batch size for inference
+
+    Returns:
+        embeddings: [N, 512] tensor of PRICE embeddings
+    """
+    import price_data_utils as pdu
+
+    # Generate raw features
+    data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols = pdu.generate_price_features(
+        workload, sql_list, db_name, bin_size,
+        price_m=getattr(argsP, 'price_m', False),
+        price_s=getattr(argsP, 'price_s', False)
+    )
+
+    # Pad features
+    padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc = pdu.pad_and_cache_features(
+        data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols,
+        bin_size=bin_size,
+        price_m=getattr(argsP, 'price_m', False),
+    )
+
+    # Run through PRICEEmbedder in batches with no_grad
+    price_embedder.eval()
+    all_embs = []
+    with torch.no_grad():
+        for i in range(0, len(padded_features), batch_size):
+            pf_batch = torch.stack([f if isinstance(f, torch.Tensor) else torch.tensor(f, dtype=torch.float32)
+                                    for f in padded_features[i:i+batch_size]]).float().to(device)
+            pm_batch = torch.stack([m if isinstance(m, torch.Tensor) else torch.tensor(m)
+                                    for m in padding_masks[i:i+batch_size]]).float().to(device)
+            njc_batch = torch.tensor(n_join_cols[i:i+batch_size], dtype=torch.float32, device=device).unsqueeze(1)
+            nfo_batch = torch.tensor(n_fanouts[i:i+batch_size], dtype=torch.float32, device=device).unsqueeze(1)
+            ntb_batch = torch.tensor(n_tables[i:i+batch_size], dtype=torch.float32, device=device).unsqueeze(1)
+            nfc_batch = torch.tensor(n_filter_cols[i:i+batch_size], dtype=torch.float32, device=device).unsqueeze(1)
+
+            emb = price_embedder(pf_batch, pm_batch, njc_batch, nfo_batch, ntb_batch, nfc_batch)
+            all_embs.append(emb.cpu())
+
+    return torch.cat(all_embs, dim=0)  # [N, 512]
+
+
+def _load_price_embedder(argsP, max_njc, max_nfo, max_ntb, max_nfc, device):
+    """
+    Build a PRICEEmbedder and load weights based on argsP.price_weights_source.
+
+    Args:
+        argsP: parsed arguments (needs price_weights_source, price_bin_size,
+               price_model_path, workloads_train, card, llm_pretrained, model_name)
+        max_njc, max_nfo, max_ntb, max_nfc: PRICE model dimensions
+        device: torch device
+
+    Returns:
+        price_embedder: PRICEEmbedder with loaded weights, on device
+    """
+    import sys as _sys
+    if "/root/PRICE" not in _sys.path:
+        _sys.path.insert(0, "/root/PRICE")
+    from model.encoder import RegressionModel
+    from models.llm_price_model import PRICEEmbedder
+
+    bin_size = getattr(argsP, 'price_bin_size', 40)
+    table_dim = 4
+    filter_dim = (bin_size + 21) if getattr(argsP, 'price_m', False) else (bin_size + 3)
+
+    price_model = RegressionModel(
+        n_join_col=max_njc, n_fanout=max_nfo, n_table=max_ntb, n_filter_col=max_nfc,
+        hist_dim=bin_size, table_dim=table_dim, filter_dim=filter_dim,
+        query_hidden_dim=512, final_hidden_dim=1024, output_dim=1,
+        n_embd=256, n_layers=getattr(argsP, 'price_n_layers', 6), n_heads=8, dropout_rate=0.1
+    )
+    price_embedder = PRICEEmbedder(price_model)
+
+    source = getattr(argsP, 'price_weights_source', 'pretrained')
+    ft_bs = getattr(argsP, 'ft_batch_size', 16)
+    price_m_suffix = "_priceM" if getattr(argsP, 'price_m', False) else ""
+    price_s_suffix = "_priceS" if getattr(argsP, 'price_s', False) else ""
+    rand_init_suffix = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
+    n_layers_suffix = f"_pL{argsP.price_n_layers}" if getattr(argsP, 'price_n_layers', 6) != 6 else ""
+    ft_epochs = getattr(argsP, 'ft_num_epoch', 0)
+    epoch_suffix = f"_e{ft_epochs}" if ft_epochs > 0 else ""
+    # Helper: load checkpoint into model with partial init for size-mismatched weights.
+    # For PRICE_M, filter_embeddings.weight changes from [n_embd,43] to [n_embd,61];
+    # copies the overlapping columns (histogram bins) and leaves the rest randomly initialized.
+    def _partial_init_load(target, ckpt_sd, label=""):
+        tsd = target.state_dict()
+        for k, v in ckpt_sd.items():
+            if k not in tsd:
+                continue
+            if tsd[k].shape == v.shape:
+                tsd[k] = v
+            elif tsd[k].dim() == v.dim():
+                slices = tuple(slice(0, min(ms, vs)) for ms, vs in zip(tsd[k].shape, v.shape))
+                tsd[k][slices] = v[slices]
+                print(f"  Partial init {k}: copied {[s.stop for s in slices]} of {list(tsd[k].shape)} from checkpoint {list(v.shape)}")
+        target.load_state_dict(tsd)
+        if label:
+            print(label)
+
+    if source == "pretrained":
+        # Load original pretrained PRICE weights
+        price_sd = torch.load(argsP.price_model_path, map_location=device)
+        price_sd = {k.replace('module.', ''): v for k, v in price_sd.items()}
+        _partial_init_load(price_embedder, price_sd, f"Loaded pretrained PRICE weights from {argsP.price_model_path}")
+    elif source == "separate":
+        # Load PRICE weights finetuned separately on cardinality
+        price_weight_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_card_b{ft_bs}{price_m_suffix}{price_s_suffix}{rand_init_suffix}{n_layers_suffix}{epoch_suffix}_price_separate.pt"
+        price_sd = torch.load(price_weight_path, map_location=device)
+        _partial_init_load(price_embedder, price_sd, f"Loaded separately finetuned PRICE weights from {price_weight_path}")
+    elif source == "joint":
+        # Load PRICE weights from joint LLM+PRICE finetuning
+        task_str = "card" if argsP.card else "time"
+        price_weight_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_m_suffix}{price_s_suffix}_llm_price{rand_init_suffix}{n_layers_suffix}{epoch_suffix}_price.pt"
+        price_sd = torch.load(price_weight_path, map_location=device)
+        _partial_init_load(price_embedder, price_sd, f"Loaded jointly finetuned PRICE weights from {price_weight_path}")
+    elif source == "frozen_joint":
+        # Load PRICE weights finetuned with frozen LLM (llm_mode=inference)
+        task_str = "card" if argsP.card else "time"
+        price_weight_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_inference_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_m_suffix}{price_s_suffix}_llm_price{rand_init_suffix}{n_layers_suffix}{epoch_suffix}_price.pt"
+        price_sd = torch.load(price_weight_path, map_location=device)
+        _partial_init_load(price_embedder, price_sd, f"Loaded frozen-joint finetuned PRICE weights from {price_weight_path}")
+    elif source == "joint_frozen_init":
+        # Load PRICE weights from joint finetuning that started from frozen-joint init
+        task_str = "card" if argsP.card else "time"
+        price_weight_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_m_suffix}{price_s_suffix}_llm_price_frozenInit{rand_init_suffix}{n_layers_suffix}{epoch_suffix}_price.pt"
+        price_sd = torch.load(price_weight_path, map_location=device)
+        _partial_init_load(price_embedder, price_sd, f"Loaded frozen-init jointly finetuned PRICE weights from {price_weight_path}")
+    elif source == "gated_joint":
+        # Load PRICE weights from gated joint finetuning
+        task_str = "card" if argsP.card else "time"
+        price_weight_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_m_suffix}{price_s_suffix}_llm_price_gated{rand_init_suffix}{n_layers_suffix}{epoch_suffix}_price.pt"
+        price_sd = torch.load(price_weight_path, map_location=device)
+        _partial_init_load(price_embedder, price_sd, f"Loaded gated jointly finetuned PRICE weights from {price_weight_path}")
+    elif source == "cross_attn_joint":
+        # Load PRICE weights from cross-attention joint finetuning
+        # These are CrossAttentionPRICEEmbedder weights (includes llm_proj + cross_attn_blocks)
+        task_str = "card" if argsP.card else "time"
+        cross_attn_suffix = "_crossAttn"
+        n_cross_suffix = f"_cx{argsP.n_cross_layers}" if getattr(argsP, 'n_cross_layers', 2) != 2 else ""
+        price_weight_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_m_suffix}{price_s_suffix}_llm_price{cross_attn_suffix}{rand_init_suffix}{n_layers_suffix}{n_cross_suffix}{epoch_suffix}_price.pt"
+        price_sd = torch.load(price_weight_path, map_location=device)
+        # Build a CrossAttentionPRICEEmbedder instead of plain PRICEEmbedder
+        from models.llm_price_model import CrossAttentionPRICEEmbedder
+        n_cross = getattr(argsP, 'n_cross_layers', 2)
+        llm_hidden_dim = getattr(argsP, 'embed_size', 256)
+        price_embedder = CrossAttentionPRICEEmbedder(
+            price_model, llm_hidden_dim, n_cross_layers=n_cross,
+            n_embd=256, n_heads=8, dropout_rate=0.1
+        )
+        _partial_init_load(price_embedder, price_sd, f"Loaded cross-attn jointly finetuned PRICE weights from {price_weight_path}")
+    else:
+        raise ValueError(f"Unknown price_weights_source: {source}")
+
+    price_embedder.to(device)
+    return price_embedder
+
+
 def get_llm_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_info, argsP):
     """
     1) Reads a CSV with columns ['id','json'] where 'json' is
@@ -2624,7 +2921,7 @@ def get_llm_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_info, 
             )
 
     elif argsP.algo=="llm" or argsP.algo=="llm_stats":
-        embeddings_test, costs_test, lengths_test, templates_test = get_embeddings(predictor, ds_info, dat_path_test, argsP, 1, False, collect_test_info=argsP.verbose_info)
+        embeddings_test, costs_test, lengths_test, templates_test = get_embeddings(predictor, ds_info, dat_path_test, argsP, 16, False, collect_test_info=argsP.verbose_info)
         
         if len(dat_path_train_list)==1 and dat_path_train_list[0]==dat_path_test:
             # Debug: Check embeddings before normalization
@@ -2665,7 +2962,7 @@ def get_llm_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_info, 
         else:
             embeddings_train_list, costs_train = [], []
             for dat_path_train in dat_path_train_list:
-                embeddings, costs, lengths, templates = get_embeddings(predictor, ds_info, dat_path_train, argsP, 1, False, collect_test_info=False)
+                embeddings, costs, lengths, templates = get_embeddings(predictor, ds_info, dat_path_train, argsP, 16, False, collect_test_info=False)
                 embeddings_train_list.append(embeddings)
                 costs_train.extend(costs)
             embeddings_train = torch.cat(embeddings_train_list, dim=0)
@@ -2698,6 +2995,245 @@ def get_llm_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_info, 
 
         if hasattr(argsP, 'train_ratio') and 0.0 < argsP.train_ratio < 1.0:
             embeddings_train, costs_train = sample_train(embeddings_train, costs_train, argsP.train_ratio, features_is_list=False)
+
+    elif argsP.algo == "llm_price":
+        # ---- Phase 1: Get LLM embeddings (cached, uses torch.no_grad()) ----
+        embeddings_test, costs_test, lengths_test, templates_test = get_embeddings(
+            predictor, ds_info, dat_path_test, argsP, 16, False, collect_test_info=argsP.verbose_info
+        )
+
+        # ---- Phase 2: Build PRICEEmbedder and generate PRICE embeddings ----
+        import price_data_utils as pdu
+
+        workload = argsP.workload_test
+        db_name = pdu.get_db_name_for_workload(workload)
+        bin_size = getattr(argsP, 'price_bin_size', 40)
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        # Get SQL for test workload
+        is_cross_wl_test = dat_path_test.endswith("c8220.json")
+        if is_cross_wl_test:
+            test_db = pdu.get_db_name_from_json_path(dat_path_test)
+            sql_list_test = pdu.get_sql_for_cross_workload_plans(dat_path_test, test_db)
+            sql_list_test = [s if s is not None else "select count(*) from _dummy" for s in sql_list_test]
+            db_name = test_db
+        else:
+            sql_file = pdu.get_sql_file_for_workload(workload, card=argsP.card)
+            sql_list_test = pdu.extract_raw_sql_from_queries_true(sql_file)
+        # Align SQL and embeddings count
+        min_len = min(len(sql_list_test), embeddings_test.size(0))
+        sql_list_test = sql_list_test[:min_len]
+        embeddings_test = embeddings_test[:min_len]
+        costs_test = costs_test[:min_len]
+        lengths_test = lengths_test[:min_len]
+        templates_test = templates_test[:min_len]
+
+        if len(dat_path_train_list) == 1 and dat_path_train_list[0] == dat_path_test:
+            # Same file — generate PRICE embeddings for all, then split
+            # First generate raw features to determine dims for model construction
+            data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols = pdu.generate_price_features(
+                workload, sql_list_test, db_name, bin_size,
+                price_m=getattr(argsP, 'price_m', False),
+                price_s=getattr(argsP, 'price_s', False),
+                already_price_format=is_cross_wl_test,
+            )
+            padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc = pdu.pad_and_cache_features(
+                data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols, bin_size=bin_size,
+                price_m=getattr(argsP, 'price_m', False),
+            )
+
+            # Build PRICE model and load weights based on price_weights_source
+            price_embedder = _load_price_embedder(argsP, max_njc, max_nfo, max_ntb, max_nfc, device)
+
+            # Generate PRICE embeddings in batches
+            price_embedder.eval()
+            price_embs = []
+            with torch.no_grad():
+                for i in range(0, len(padded_features), 64):
+                    pf_batch = torch.stack([f if isinstance(f, torch.Tensor) else torch.tensor(f, dtype=torch.float32) for f in padded_features[i:i+64]]).float().to(device)
+                    pm_batch = torch.stack([m if isinstance(m, torch.Tensor) else torch.tensor(m) for m in padding_masks[i:i+64]]).float().to(device)
+                    njc_batch = torch.tensor(n_join_cols[i:i+64], dtype=torch.float32, device=device).unsqueeze(1)
+                    nfo_batch = torch.tensor(n_fanouts[i:i+64], dtype=torch.float32, device=device).unsqueeze(1)
+                    ntb_batch = torch.tensor(n_tables[i:i+64], dtype=torch.float32, device=device).unsqueeze(1)
+                    nfc_batch = torch.tensor(n_filter_cols[i:i+64], dtype=torch.float32, device=device).unsqueeze(1)
+                    emb = price_embedder(pf_batch, pm_batch, njc_batch, nfo_batch, ntb_batch, nfc_batch)
+                    price_embs.append(emb.cpu())
+            price_embeddings = torch.cat(price_embs, dim=0)  # [N, 512]
+            price_embedder.to("cpu")
+            torch.cuda.empty_cache()
+            print(f"Generated PRICE embeddings: {price_embeddings.shape}")
+
+            # Apply learned gate if gated_joint
+            if getattr(argsP, 'price_weights_source', 'pretrained') == "gated_joint":
+                task_str = "card" if argsP.card else "time"
+                ft_bs_gate = getattr(argsP, 'ft_batch_size', 16)
+                price_m_suffix = "_priceM" if getattr(argsP, 'price_m', False) else ""
+                price_s_suffix = "_priceS" if getattr(argsP, 'price_s', False) else ""
+                rand_init_suffix_gate = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
+                ft_epochs_gate = getattr(argsP, 'ft_num_epoch', 0)
+                epoch_suffix_gate = f"_e{ft_epochs_gate}" if ft_epochs_gate > 0 else ""
+                gate_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs_gate}{price_m_suffix}{price_s_suffix}_llm_price_gated{rand_init_suffix_gate}{epoch_suffix_gate}_gate.pt"
+                gate_module = nn.Sequential(nn.Linear(embeddings_test.shape[1], 512), nn.Sigmoid())
+                gate_module.load_state_dict(torch.load(gate_path, map_location="cpu"))
+                gate_module.eval()
+                with torch.no_grad():
+                    gate_values = gate_module(embeddings_test)
+                price_embeddings = gate_values * price_embeddings
+                print(f"Applied learned gate from {gate_path}")
+
+            # Concatenate LLM + PRICE embeddings
+            combined = torch.cat([embeddings_test, price_embeddings], dim=1)  # [N, D_llm + 512]
+
+            # Normalize combined embeddings
+            feat_norm = FeatureNormalizer()
+            feat_norm.fit(combined)
+            combined = feat_norm.transform(combined)
+            if torch.isnan(combined).any():
+                print("[llm_price] NaNs after FeatureNormalizer on combined embeddings")
+                exit(0)
+
+            train_ids, val_ids, test_ids = train_val_test(len(combined), argsP)
+            embeddings_train = combined[train_ids]
+            embeddings_val = combined[val_ids]
+            embeddings_test = combined[test_ids]
+            costs_train = [costs_test[idx] for idx in train_ids]
+            costs_val = [costs_test[idx] for idx in val_ids]
+            costs_test = [costs_test[idx] for idx in test_ids]
+            lengths_test = [lengths_test[idx] for idx in test_ids]
+            templates_test = [templates_test[idx] for idx in test_ids]
+        else:
+            # Separate train/test files
+            embeddings_train_list, costs_train = [], []
+            price_train_list = []
+            for idx_dp, dat_path_train in enumerate(dat_path_train_list):
+                embs, costs, lengths, templates = get_embeddings(
+                    predictor, ds_info, dat_path_train, argsP, 16, False, collect_test_info=False
+                )
+                embeddings_train_list.append(embs)
+                costs_train.extend(costs)
+
+                # Get SQL and PRICE embeddings for training workload
+                is_cross_wl_train = dat_path_train.endswith("c8220.json")
+                if is_cross_wl_train:
+                    train_db = pdu.get_db_name_from_json_path(dat_path_train)
+                    train_wl = train_db
+                    train_sqls = pdu.get_sql_for_cross_workload_plans(dat_path_train, train_db)
+                    train_sqls = [s if s is not None else "select count(*) from _dummy" for s in train_sqls]
+                else:
+                    train_wl = argsP.workloads_train[idx_dp] if idx_dp < len(argsP.workloads_train) else workload
+                    train_db = pdu.get_db_name_for_workload(train_wl)
+                    train_sql_file = pdu.get_sql_file_for_workload(train_wl, card=argsP.card, for_training=True)
+                    train_sqls = pdu.extract_raw_sql_from_queries_true(train_sql_file)
+                min_tr = min(len(train_sqls), embs.size(0))
+                train_sqls = train_sqls[:min_tr]
+
+                # Generate raw features for this train split
+                df_tr, njc_tr, nfo_tr, ntb_tr, nfc_tr = pdu.generate_price_features(train_wl, train_sqls, train_db, bin_size, price_m=getattr(argsP, 'price_m', False), price_s=getattr(argsP, 'price_s', False), already_price_format=is_cross_wl_train)
+                price_train_list.append((df_tr[:min_tr], njc_tr[:min_tr], nfo_tr[:min_tr], ntb_tr[:min_tr], nfc_tr[:min_tr]))
+
+            embeddings_train_llm = torch.cat(embeddings_train_list, dim=0)
+
+            # Collect all raw PRICE features for unified padding
+            all_raw_feats, all_njc, all_nfo, all_ntb, all_nfc = [], [], [], [], []
+            for df_tr, njc_tr, nfo_tr, ntb_tr, nfc_tr in price_train_list:
+                all_raw_feats.extend(df_tr)
+                all_njc.extend(njc_tr)
+                all_nfo.extend(nfo_tr)
+                all_ntb.extend(ntb_tr)
+                all_nfc.extend(nfc_tr)
+
+            # Test PRICE features
+            data_features_test, njc_test, nfo_test, ntb_test, nfc_test = pdu.generate_price_features(
+                workload, sql_list_test, db_name, bin_size,
+                price_m=getattr(argsP, 'price_m', False),
+                price_s=getattr(argsP, 'price_s', False),
+                already_price_format=is_cross_wl_test,
+            )
+            n_train_price = len(all_raw_feats)
+            all_raw_feats.extend(data_features_test)
+            all_njc.extend(njc_test)
+            all_nfo.extend(nfo_test)
+            all_ntb.extend(ntb_test)
+            all_nfc.extend(nfc_test)
+
+            # Unified padding
+            all_padded, all_masks, max_njc, max_nfo, max_ntb, max_nfc = pdu.pad_and_cache_features(
+                all_raw_feats, all_njc, all_nfo, all_ntb, all_nfc, bin_size=bin_size,
+                price_m=getattr(argsP, 'price_m', False),
+            )
+
+            # Build PRICE model and load weights based on price_weights_source
+            price_embedder = _load_price_embedder(argsP, max_njc, max_nfo, max_ntb, max_nfc, device)
+
+            # Generate ALL PRICE embeddings (train + test) in batches
+            price_embedder.eval()
+            price_embs_all = []
+            with torch.no_grad():
+                for i in range(0, len(all_padded), 64):
+                    pf_batch = torch.stack([f if isinstance(f, torch.Tensor) else torch.tensor(f, dtype=torch.float32) for f in all_padded[i:i+64]]).float().to(device)
+                    pm_batch = torch.stack([m if isinstance(m, torch.Tensor) else torch.tensor(m) for m in all_masks[i:i+64]]).float().to(device)
+                    njc_batch = torch.tensor(all_njc[i:i+64], dtype=torch.float32, device=device).unsqueeze(1)
+                    nfo_batch = torch.tensor(all_nfo[i:i+64], dtype=torch.float32, device=device).unsqueeze(1)
+                    ntb_batch = torch.tensor(all_ntb[i:i+64], dtype=torch.float32, device=device).unsqueeze(1)
+                    nfc_batch = torch.tensor(all_nfc[i:i+64], dtype=torch.float32, device=device).unsqueeze(1)
+                    emb = price_embedder(pf_batch, pm_batch, njc_batch, nfo_batch, ntb_batch, nfc_batch)
+                    price_embs_all.append(emb.cpu())
+            price_embeddings_all = torch.cat(price_embs_all, dim=0)
+            price_embedder.to("cpu")
+            torch.cuda.empty_cache()
+
+            price_embeddings_train = price_embeddings_all[:n_train_price]
+            price_embeddings_test = price_embeddings_all[n_train_price:]
+            print(f"Generated PRICE embeddings: train={price_embeddings_train.shape}, test={price_embeddings_test.shape}")
+
+            # Apply learned gate if gated_joint
+            if getattr(argsP, 'price_weights_source', 'pretrained') == "gated_joint":
+                task_str = "card" if argsP.card else "time"
+                ft_bs_gate = getattr(argsP, 'ft_batch_size', 16)
+                price_m_suffix = "_priceM" if getattr(argsP, 'price_m', False) else ""
+                price_s_suffix = "_priceS" if getattr(argsP, 'price_s', False) else ""
+                rand_init_suffix_gate = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
+                ft_epochs_gate = getattr(argsP, 'ft_num_epoch', 0)
+                epoch_suffix_gate = f"_e{ft_epochs_gate}" if ft_epochs_gate > 0 else ""
+                gate_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs_gate}{price_m_suffix}{price_s_suffix}_llm_price_gated{rand_init_suffix_gate}{epoch_suffix_gate}_gate.pt"
+                gate_module = nn.Sequential(nn.Linear(embeddings_train_llm.shape[1], 512), nn.Sigmoid())
+                gate_module.load_state_dict(torch.load(gate_path, map_location="cpu"))
+                gate_module.eval()
+                with torch.no_grad():
+                    gate_values_train = gate_module(embeddings_train_llm)
+                    gate_values_test = gate_module(embeddings_test)
+                price_embeddings_train = gate_values_train * price_embeddings_train
+                price_embeddings_test = gate_values_test * price_embeddings_test
+                print(f"Applied learned gate from {gate_path}")
+
+            # Concatenate LLM + PRICE
+            combined_train = torch.cat([embeddings_train_llm, price_embeddings_train], dim=1)
+            combined_test = torch.cat([embeddings_test, price_embeddings_test], dim=1)
+            all_combined = torch.cat([combined_train, combined_test], dim=0)
+
+            # Normalize
+            feat_norm = FeatureNormalizer()
+            all_combined = feat_norm.fit_transform(all_combined)
+            if torch.isnan(all_combined).any():
+                print("[llm_price] NaNs after FeatureNormalizer on combined train+test")
+                exit(0)
+
+            Ntr = combined_train.size(0)
+            combined_train = all_combined[:Ntr]
+            combined_test = all_combined[Ntr:]
+
+            train_ids, val_ids = train_val(Ntr, argsP)
+            embeddings_val = combined_train[val_ids]
+            embeddings_train = combined_train[train_ids]
+            embeddings_test = combined_test
+            costs_val = [costs_train[idx] for idx in val_ids]
+            costs_train = [costs_train[idx] for idx in train_ids]
+
+        if hasattr(argsP, 'train_ratio') and 0.0 < argsP.train_ratio < 1.0:
+            embeddings_train, costs_train = sample_train(embeddings_train, costs_train, argsP.train_ratio, features_is_list=False)
+
+        argsP.embed_size = embeddings_train.size(1)
+        print(f"[llm_price] Combined embed_size = {argsP.embed_size}")
 
     prepare_ds_info_norm(ds_info)
     # 3) Finally, create the TensorDataset
@@ -2736,5 +3272,875 @@ def get_llm_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_info, 
         ds_train = TensorDataset(embeddings_train, y_train)
         ds_val   = TensorDataset(embeddings_val,   y_val)
         ds_test  = TensorDataset(embeddings_test,  y_test)
-        
+
         return ds_train, ds_val, ds_test, costs_val, costs_test, lengths_test, templates_test
+
+
+#########################################
+#  Joint LLM+PRICE Dataset & Loading
+#########################################
+
+class LLMPriceDataset(Dataset):
+    """
+    Dataset for joint LLM+PRICE finetuning.
+    Each item returns (text, price_feat_tensor, padding_mask,
+                       n_join_col, n_fanout, n_table, n_filter_col, label).
+    """
+    def __init__(self, texts, price_features, padding_masks,
+                 n_join_cols, n_fanouts, n_tables, n_filter_cols, labels):
+        assert len(texts) == len(labels)
+        self.texts = texts
+        self.price_features = price_features
+        self.padding_masks = padding_masks
+        self.n_join_cols = n_join_cols
+        self.n_fanouts = n_fanouts
+        self.n_tables = n_tables
+        self.n_filter_cols = n_filter_cols
+        self.labels = labels
+
+    def __len__(self):
+        return len(self.labels)
+
+    def __getitem__(self, idx):
+        return (self.texts[idx],
+                self.price_features[idx],
+                self.padding_masks[idx],
+                self.n_join_cols[idx],
+                self.n_fanouts[idx],
+                self.n_tables[idx],
+                self.n_filter_cols[idx],
+                self.labels[idx])
+
+
+class FrozenLLMPriceDataset(Dataset):
+    """
+    Dataset for PRICE+MLP finetuning with pre-computed (frozen) LLM embeddings.
+    Each item returns (llm_embedding, price_feat_tensor, padding_mask,
+                       n_join_col, n_fanout, n_table, n_filter_col, label).
+    Unlike LLMPriceDataset, stores LLM embeddings as tensors instead of text.
+    """
+    def __init__(self, llm_embeddings, price_features, padding_masks,
+                 n_join_cols, n_fanouts, n_tables, n_filter_cols, labels):
+        assert len(llm_embeddings) == len(labels)
+        self.llm_embeddings = llm_embeddings
+        self.price_features = price_features
+        self.padding_masks = padding_masks
+        self.n_join_cols = n_join_cols
+        self.n_fanouts = n_fanouts
+        self.n_tables = n_tables
+        self.n_filter_cols = n_filter_cols
+        self.labels = labels
+
+    def __len__(self):
+        return len(self.labels)
+
+    def __getitem__(self, idx):
+        return (self.llm_embeddings[idx],
+                self.price_features[idx],
+                self.padding_masks[idx],
+                self.n_join_cols[idx],
+                self.n_fanouts[idx],
+                self.n_tables[idx],
+                self.n_filter_cols[idx],
+                self.labels[idx])
+
+
+class PriceOnlyDataset(Dataset):
+    """
+    Dataset for standalone PRICE finetuning on cardinality estimation.
+    Each item returns (price_feat, pg_est_card, pad_mask, njc, nfo, ntb, nfc, label).
+    """
+    def __init__(self, price_features, pg_est_cards, padding_masks,
+                 n_join_cols, n_fanouts, n_tables, n_filter_cols, labels):
+        assert len(price_features) == len(labels)
+        self.price_features = price_features
+        self.pg_est_cards = pg_est_cards
+        self.padding_masks = padding_masks
+        self.n_join_cols = n_join_cols
+        self.n_fanouts = n_fanouts
+        self.n_tables = n_tables
+        self.n_filter_cols = n_filter_cols
+        self.labels = labels
+
+    def __len__(self):
+        return len(self.labels)
+
+    def __getitem__(self, idx):
+        return (self.price_features[idx],
+                self.pg_est_cards[idx],
+                self.padding_masks[idx],
+                self.n_join_cols[idx],
+                self.n_fanouts[idx],
+                self.n_tables[idx],
+                self.n_filter_cols[idx],
+                self.labels[idx])
+
+
+def get_price_only_ds_from_csv(dat_path_train_list, dat_path_test, ds_info, argsP):
+    """
+    Build datasets for standalone PRICE finetuning on cardinality estimation.
+
+    1) Read _sub.csv cardinality data
+    2) Parse SQL from queries_true_sql for PRICE features
+    3) Generate/load cached PRICE features
+    4) Extract pg_est_card from plan JSONs
+    5) Split train/val/test
+    6) Normalize with log(card+1)+1 and return PriceOnlyDataset instances
+
+    Returns: ds_train, ds_val, ds_test, costs_val, costs_test
+    """
+    import price_data_utils as pdu
+
+    workload = argsP.workload_test
+    db_name = pdu.get_db_name_for_workload(workload)
+    bin_size = getattr(argsP, 'price_bin_size', 40)
+
+    # ---- Step 1: Read cardinality data ----
+    print(f"[PRICE finetune] Step 1: Reading cardinality data from {dat_path_test}...", flush=True)
+    df_test = pd.read_csv(dat_path_test)
+    # Extract true cardinalities from the CSV
+    costs_all = []
+    for raw_json in df_test["json"]:
+        try:
+            plan = json.loads(raw_json) if isinstance(raw_json, str) else raw_json
+            if isinstance(plan, list):
+                plan = plan[0]
+            root = plan.get("Plan", plan)
+            card = root.get("Actual Rows", root.get("Plan Rows", 1.0))
+            costs_all.append(float(card))
+        except Exception:
+            costs_all.append(1.0)
+
+    # ---- Step 2: Parse SQL for PRICE ----
+    sql_file = pdu.get_sql_file_for_workload(workload, card=True)
+    print(f"[PRICE finetune] Step 2: Loading SQL from {sql_file}", flush=True)
+    sql_list = pdu.extract_raw_sql_from_queries_true(sql_file)
+
+    # Align
+    min_len = min(len(sql_list), len(costs_all))
+    sql_list = sql_list[:min_len]
+    costs_all = costs_all[:min_len]
+
+    # ---- Step 3: Generate PRICE features ----
+    print(f"[PRICE finetune] Step 3: Generating PRICE features for {len(sql_list)} queries...", flush=True)
+    data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols = pdu.generate_price_features(
+        workload, sql_list, db_name, bin_size,
+        price_m=getattr(argsP, 'price_m', False),
+        price_s=getattr(argsP, 'price_s', False)
+    )
+
+    # ---- Step 4: Extract pg_est_card ----
+    print(f"[PRICE finetune] Step 4: Extracting pg_est_card from plan JSONs...", flush=True)
+    pg_est_cards = []
+    for raw_json in df_test["json"][:min_len]:
+        try:
+            pg_est_cards.append(pdu.extract_pg_est_card_from_plan(raw_json))
+        except Exception:
+            pg_est_cards.append(1.0)
+
+    # ---- Step 5: Pad features and split ----
+    print(f"[PRICE finetune] Step 5: Padding features and splitting...", flush=True)
+    if len(dat_path_train_list) == 1 and dat_path_train_list[0] == dat_path_test:
+        # Same file — pad all, then split
+        padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc = pdu.pad_and_cache_features(
+            data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols, bin_size=bin_size,
+            price_m=getattr(argsP, 'price_m', False),
+        )
+        train_ids, val_ids, test_ids = train_val_test(len(costs_all), argsP)
+
+        def _subset(lst, ids):
+            return [lst[i] for i in ids]
+
+        pf_train = _subset(padded_features, train_ids)
+        pf_val = _subset(padded_features, val_ids)
+        pf_test = _subset(padded_features, test_ids)
+        pm_train = _subset(padding_masks, train_ids)
+        pm_val = _subset(padding_masks, val_ids)
+        pm_test = _subset(padding_masks, test_ids)
+        njc_train = _subset(n_join_cols, train_ids)
+        njc_val = _subset(n_join_cols, val_ids)
+        njc_test = _subset(n_join_cols, test_ids)
+        nfo_train = _subset(n_fanouts, train_ids)
+        nfo_val = _subset(n_fanouts, val_ids)
+        nfo_test = _subset(n_fanouts, test_ids)
+        ntb_train = _subset(n_tables, train_ids)
+        ntb_val = _subset(n_tables, val_ids)
+        ntb_test = _subset(n_tables, test_ids)
+        nfc_train = _subset(n_filter_cols, train_ids)
+        nfc_val = _subset(n_filter_cols, val_ids)
+        nfc_test = _subset(n_filter_cols, test_ids)
+        pgc_train = _subset(pg_est_cards, train_ids)
+        pgc_val = _subset(pg_est_cards, val_ids)
+        pgc_test = _subset(pg_est_cards, test_ids)
+        costs_train = _subset(costs_all, train_ids)
+        costs_val = _subset(costs_all, val_ids)
+        costs_test = _subset(costs_all, test_ids)
+    else:
+        # Separate train/test files — collect all features, pad together
+        raw_feats_train, njc_train_all, nfo_train_all, ntb_train_all, nfc_train_all = [], [], [], [], []
+        pgc_train_all, costs_train_all = [], []
+
+        for idx_dp, dat_path_train in enumerate(dat_path_train_list):
+            train_wl = argsP.workloads_train[idx_dp] if idx_dp < len(argsP.workloads_train) else workload
+            train_db = pdu.get_db_name_for_workload(train_wl)
+            train_sql_file = pdu.get_sql_file_for_workload(train_wl, card=True, for_training=True)
+            train_sqls = pdu.extract_raw_sql_from_queries_true(train_sql_file)
+
+            df_train = pd.read_csv(dat_path_train)
+            min_tr = min(len(train_sqls), len(df_train))
+            train_sqls = train_sqls[:min_tr]
+
+            df_feats, njc, nfo, ntb, nfc = pdu.generate_price_features(train_wl, train_sqls, train_db, bin_size, price_m=getattr(argsP, 'price_m', False), price_s=getattr(argsP, 'price_s', False))
+            raw_feats_train.extend(df_feats[:min_tr])
+            njc_train_all.extend(njc[:min_tr])
+            nfo_train_all.extend(nfo[:min_tr])
+            ntb_train_all.extend(ntb[:min_tr])
+            nfc_train_all.extend(nfc[:min_tr])
+
+            for raw_json in df_train["json"][:min_tr]:
+                try:
+                    pgc_train_all.append(pdu.extract_pg_est_card_from_plan(raw_json))
+                except Exception:
+                    pgc_train_all.append(1.0)
+
+            for raw_json in df_train["json"][:min_tr]:
+                try:
+                    plan = json.loads(raw_json) if isinstance(raw_json, str) else raw_json
+                    if isinstance(plan, list):
+                        plan = plan[0]
+                    root = plan.get("Plan", plan)
+                    costs_train_all.append(float(root.get("Actual Rows", root.get("Plan Rows", 1.0))))
+                except Exception:
+                    costs_train_all.append(1.0)
+
+        # Unified padding across train + test
+        all_raw_feats = raw_feats_train + list(data_features)
+        all_njc = njc_train_all + n_join_cols
+        all_nfo = nfo_train_all + n_fanouts
+        all_ntb = ntb_train_all + n_tables
+        all_nfc = nfc_train_all + n_filter_cols
+
+        all_padded, all_masks, max_njc, max_nfo, max_ntb, max_nfc = pdu.pad_and_cache_features(
+            all_raw_feats, all_njc, all_nfo, all_ntb, all_nfc, bin_size=bin_size,
+            price_m=getattr(argsP, 'price_m', False),
+        )
+
+        n_train = len(raw_feats_train)
+        pf_train_all = all_padded[:n_train]
+        pm_train_all = all_masks[:n_train]
+        padded_features = all_padded[n_train:]
+        padding_masks = all_masks[n_train:]
+
+        train_ids, val_ids = train_val(n_train, argsP)
+
+        def _subset(lst, ids):
+            return [lst[i] for i in ids]
+
+        pf_train = _subset(pf_train_all, train_ids)
+        pf_val = _subset(pf_train_all, val_ids)
+        pf_test = padded_features
+        pm_train = _subset(pm_train_all, train_ids)
+        pm_val = _subset(pm_train_all, val_ids)
+        pm_test = padding_masks
+        njc_train = _subset(njc_train_all, train_ids)
+        njc_val = _subset(njc_train_all, val_ids)
+        njc_test = n_join_cols
+        nfo_train = _subset(nfo_train_all, train_ids)
+        nfo_val = _subset(nfo_train_all, val_ids)
+        nfo_test = n_fanouts
+        ntb_train = _subset(ntb_train_all, train_ids)
+        ntb_val = _subset(ntb_train_all, val_ids)
+        ntb_test = n_tables
+        nfc_train = _subset(nfc_train_all, train_ids)
+        nfc_val = _subset(nfc_train_all, val_ids)
+        nfc_test = n_filter_cols
+        pgc_train = _subset(pgc_train_all, train_ids)
+        pgc_val = _subset(pgc_train_all, val_ids)
+        pgc_test = pg_est_cards
+        costs_train = _subset(costs_train_all, train_ids)
+        costs_val = _subset(costs_train_all, val_ids)
+        costs_test = costs_all
+
+    # Store max dims on argsP for model construction
+    argsP.price_max_n_join_col = max_njc
+    argsP.price_max_n_fanout = max_nfo
+    argsP.price_max_n_table = max_ntb
+    argsP.price_max_n_filter_col = max_nfc
+
+    # ---- Step 6: Normalize labels with log(card+1)+1 and create datasets ----
+    print(f"[PRICE finetune] Step 6: Normalizing and creating datasets (train={len(costs_train)}, val={len(costs_val)}, test={len(costs_test)})...", flush=True)
+
+    # Update ds_info normalizer
+    all_costs = costs_train + costs_val + costs_test
+    update_ds_info_minmax(ds_info, all_costs, all_costs)
+    prepare_ds_info_norm(ds_info)
+
+    ytr = ds_info.card_norm.normalize_labels(costs_train)
+    yva = ds_info.card_norm.normalize_labels(costs_val)
+    yte = ds_info.card_norm.normalize_labels(costs_test)
+
+    ds_train = PriceOnlyDataset(pf_train, pgc_train, pm_train,
+                                njc_train, nfo_train, ntb_train, nfc_train, ytr)
+    ds_val = PriceOnlyDataset(pf_val, pgc_val, pm_val,
+                              njc_val, nfo_val, ntb_val, nfc_val, yva)
+    ds_test = PriceOnlyDataset(pf_test, pgc_test, pm_test,
+                               njc_test, nfo_test, ntb_test, nfc_test, yte)
+
+    return ds_train, ds_val, ds_test, costs_val, costs_test
+
+
+def get_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_info, argsP):
+    """
+    Build datasets for joint LLM+PRICE finetuning.
+
+    1) Read query plans via read_json_and_clean() for LLM text + labels
+    2) Parse SQL from queries_true_sql for PRICE features
+    3) Generate/load cached PRICE features
+    4) Extract pg_est_card from plan JSONs
+    5) Split train/val/test
+    6) Return LLMPriceDataset instances
+
+    Returns same signature as get_llm_ds_from_csv:
+        ds_train, ds_val, ds_test, costs_val, costs_test, lengths_test, templates_test
+    """
+    import price_data_utils as pdu
+
+    argsP.inference_logger.info(f"Getting LLM+PRICE dataset from {dat_path_train_list} and {dat_path_test}")
+
+    workload = argsP.workload_test
+    db_name = pdu.get_db_name_for_workload(workload)
+    bin_size = getattr(argsP, 'price_bin_size', 40)
+
+    # ---- Step 1: Read query plans (texts + labels) ----
+    print(f"[LLM+PRICE] Step 1/6: Reading test query plans from {dat_path_test}...", flush=True)
+    is_cross_wl_test = dat_path_test.endswith("c8220.json")
+    if is_cross_wl_test:
+        cleaned_texts_test, costs_test, lengths_test, templates_test = read_json_and_clean_v2(
+            predictor, ds_info, dat_path_test, argsP
+        )
+    else:
+        cleaned_texts_test, costs_test, lengths_test, templates_test = read_json_and_clean(
+            predictor, ds_info, dat_path_test, argsP
+        )
+    print(f"[LLM+PRICE] Step 1/6 done: {len(cleaned_texts_test)} test plans read.", flush=True)
+
+    # ---- Step 2: Parse SQL for PRICE ----
+    if is_cross_wl_test:
+        # Cross-workload: reconstruct SQL from plan trees
+        test_db = pdu.get_db_name_from_json_path(dat_path_test)
+        print(f"[LLM+PRICE] Step 2/6: Reconstructing SQL from {dat_path_test} (db={test_db})", flush=True)
+        sql_list_test = pdu.get_sql_for_cross_workload_plans(dat_path_test, test_db)
+        # Replace None entries with empty queries (will get zero-fill in feature generation)
+        sql_list_test = [s if s is not None else "select count(*) from _dummy" for s in sql_list_test]
+        # Override db_name to use per-database stats
+        db_name = test_db
+    else:
+        sql_file = pdu.get_sql_file_for_workload(workload, card=argsP.card)
+        print(f"[LLM+PRICE] Step 2/6: Loading SQL from {sql_file}", flush=True)
+        sql_list_test = pdu.extract_raw_sql_from_queries_true(sql_file)
+
+    # Verify alignment
+    if len(sql_list_test) != len(cleaned_texts_test):
+        print(f"[LLM+PRICE] Warning: SQL count ({len(sql_list_test)}) != plan count ({len(cleaned_texts_test)}). Using min.")
+        min_len = min(len(sql_list_test), len(cleaned_texts_test))
+        sql_list_test = sql_list_test[:min_len]
+        cleaned_texts_test = cleaned_texts_test[:min_len]
+        costs_test = costs_test[:min_len]
+        lengths_test = lengths_test[:min_len]
+        templates_test = templates_test[:min_len]
+
+    # ---- Step 3: Generate raw PRICE features (unpadded) ----
+    print(f"[LLM+PRICE] Step 3/6: Generating PRICE features for {len(sql_list_test)} test queries...", flush=True)
+    db = getattr(argsP, 'db', 'postgres')
+    cache_dir = os.path.join(os.path.dirname(__file__), "price_feature_cache", db)
+    task_str = "card" if argsP.card else "time"
+
+    data_features_test, n_join_cols_test, n_fanouts_test, n_tables_test, n_filter_cols_test = pdu.generate_price_features(
+        workload, sql_list_test, db_name, bin_size,
+        price_m=getattr(argsP, 'price_m', False),
+        price_s=getattr(argsP, 'price_s', False),
+        already_price_format=is_cross_wl_test,
+    )
+
+    # ---- Step 4: Extract pg_est_card (only for CSV-format data) ----
+    if not is_cross_wl_test:
+        print(f"[LLM+PRICE] Step 4/6: Extracting pg_est_card from plan JSONs...", flush=True)
+        df_test = pd.read_csv(dat_path_test)
+        pg_est_cards = []
+        for raw_json in df_test["json"]:
+            try:
+                pg_est_cards.append(pdu.extract_pg_est_card_from_plan(raw_json))
+            except Exception:
+                pg_est_cards.append(1.0)
+    else:
+        print(f"[LLM+PRICE] Step 4/6: Skipping pg_est_card (cross-workload JSON)...", flush=True)
+
+    # ---- Step 5: Split train/val/test and pad with unified max dims ----
+    print(f"[LLM+PRICE] Step 5/6: Splitting train/val/test...", flush=True)
+    if len(dat_path_train_list) == 1 and dat_path_train_list[0] == dat_path_test:
+        # Same file for train/test — pad all together
+        padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc = pdu.pad_and_cache_features(
+            data_features_test, n_join_cols_test, n_fanouts_test, n_tables_test, n_filter_cols_test,
+            bin_size=bin_size,
+            price_m=getattr(argsP, 'price_m', False),
+        )
+        n_join_cols = n_join_cols_test
+        n_fanouts = n_fanouts_test
+        n_tables = n_tables_test
+        n_filter_cols = n_filter_cols_test
+
+        train_ids, val_ids, test_ids = train_val_test(len(cleaned_texts_test), argsP)
+
+        def _subset(lst, ids):
+            return [lst[i] for i in ids]
+
+        texts_train = _subset(cleaned_texts_test, train_ids)
+        texts_val = _subset(cleaned_texts_test, val_ids)
+        texts_test_split = _subset(cleaned_texts_test, test_ids)
+
+        costs_train = _subset(costs_test, train_ids)
+        costs_val = _subset(costs_test, val_ids)
+        costs_test_split = _subset(costs_test, test_ids)
+
+        lengths_test = _subset(lengths_test, test_ids)
+        templates_test = _subset(templates_test, test_ids)
+
+        pf_train = _subset(padded_features, train_ids)
+        pf_val = _subset(padded_features, val_ids)
+        pf_test = _subset(padded_features, test_ids)
+
+        pm_train = _subset(padding_masks, train_ids)
+        pm_val = _subset(padding_masks, val_ids)
+        pm_test = _subset(padding_masks, test_ids)
+
+        njc_train = _subset(n_join_cols, train_ids)
+        njc_val = _subset(n_join_cols, val_ids)
+        njc_test = _subset(n_join_cols, test_ids)
+
+        nfo_train = _subset(n_fanouts, train_ids)
+        nfo_val = _subset(n_fanouts, val_ids)
+        nfo_test = _subset(n_fanouts, test_ids)
+
+        ntb_train = _subset(n_tables, train_ids)
+        ntb_val = _subset(n_tables, val_ids)
+        ntb_test = _subset(n_tables, test_ids)
+
+        nfc_train = _subset(n_filter_cols, train_ids)
+        nfc_val = _subset(n_filter_cols, val_ids)
+        nfc_test = _subset(n_filter_cols, test_ids)
+
+        costs_test = costs_test_split
+        cleaned_texts_test = texts_test_split
+    else:
+        # Separate train / test files — collect all raw features first, then pad together
+        cleaned_texts_train_all, costs_train_all = [], []
+        raw_feats_train_all = []
+        njc_train_all, nfo_train_all, ntb_train_all, nfc_train_all = [], [], [], []
+
+        for idx_dp, dat_path_train in enumerate(dat_path_train_list):
+            print(f"[LLM+PRICE] Step 5/6: Reading training plans from {dat_path_train}...", flush=True)
+            is_cross_wl_train = dat_path_train.endswith("c8220.json")
+            if is_cross_wl_train:
+                ct, co, ln, tp = read_json_and_clean_v2(predictor, ds_info, dat_path_train, argsP)
+            else:
+                ct, co, ln, tp = read_json_and_clean(predictor, ds_info, dat_path_train, argsP)
+            cleaned_texts_train_all.extend(ct)
+            costs_train_all.extend(co)
+            print(f"[LLM+PRICE] Step 5/6: {len(ct)} training plans read.", flush=True)
+
+            # Get SQL for this training workload
+            if is_cross_wl_train:
+                # Cross-workload: reconstruct SQL from plan trees
+                train_db = pdu.get_db_name_from_json_path(dat_path_train)
+                train_wl = train_db
+                print(f"[LLM+PRICE] Step 5/6: Reconstructing SQL from {dat_path_train} (db={train_db})", flush=True)
+                train_sqls = pdu.get_sql_for_cross_workload_plans(dat_path_train, train_db)
+                train_sqls = [s if s is not None else "select count(*) from _dummy" for s in train_sqls]
+            else:
+                train_wl = argsP.workloads_train[idx_dp] if idx_dp < len(argsP.workloads_train) else workload
+                train_db = pdu.get_db_name_for_workload(train_wl)
+                train_sql_file = pdu.get_sql_file_for_workload(train_wl, card=argsP.card, for_training=True)
+                train_sqls = pdu.extract_raw_sql_from_queries_true(train_sql_file)
+
+            min_len = min(len(train_sqls), len(ct))
+            train_sqls = train_sqls[:min_len]
+
+            print(f"[LLM+PRICE] Step 5/6: Generating PRICE features for {min_len} training queries...", flush=True)
+            df_feats, njc, nfo, ntb, nfc = pdu.generate_price_features(train_wl, train_sqls, train_db, bin_size, price_m=getattr(argsP, 'price_m', False), price_s=getattr(argsP, 'price_s', False), already_price_format=is_cross_wl_train)
+            raw_feats_train_all.extend(df_feats[:min_len])
+            njc_train_all.extend(njc[:min_len])
+            nfo_train_all.extend(nfo[:min_len])
+            ntb_train_all.extend(ntb[:min_len])
+            nfc_train_all.extend(nfc[:min_len])
+
+        # Compute unified max dims across train AND test
+        all_njc = njc_train_all + n_join_cols_test
+        all_nfo = nfo_train_all + n_fanouts_test
+        all_ntb = ntb_train_all + n_tables_test
+        all_nfc = nfc_train_all + n_filter_cols_test
+        max_njc = max(all_njc)
+        max_nfo = max(all_nfo)
+        max_ntb = max(all_ntb)
+        max_nfc = max(all_nfc)
+        print(f"[LLM+PRICE] Unified max dims: n_join_col={max_njc}, n_fanout={max_nfo}, n_table={max_ntb}, n_filter_col={max_nfc}", flush=True)
+
+        # Pad ALL features (train + test) with the unified max dims
+        all_raw_feats = raw_feats_train_all + list(data_features_test)
+        all_njc_list = njc_train_all + n_join_cols_test
+        all_nfo_list = nfo_train_all + n_fanouts_test
+        all_ntb_list = ntb_train_all + n_tables_test
+        all_nfc_list = nfc_train_all + n_filter_cols_test
+
+        print(f"[LLM+PRICE] Step 5/6: Padding {len(all_raw_feats)} features with unified dims...", flush=True)
+        all_padded, all_masks, _, _, _, _ = pdu.pad_and_cache_features(
+            all_raw_feats, all_njc_list, all_nfo_list, all_ntb_list, all_nfc_list,
+            bin_size=bin_size,
+            price_m=getattr(argsP, 'price_m', False),
+            # Pass max dims explicitly to ensure consistency
+        )
+
+        # Split back into train and test portions
+        n_train = len(raw_feats_train_all)
+        pf_train_all = all_padded[:n_train]
+        pm_train_all = all_masks[:n_train]
+        padded_features = all_padded[n_train:]
+        padding_masks = all_masks[n_train:]
+        n_join_cols = n_join_cols_test
+        n_fanouts = n_fanouts_test
+        n_tables = n_tables_test
+        n_filter_cols = n_filter_cols_test
+
+        train_ids, val_ids = train_val(len(cleaned_texts_train_all), argsP)
+
+        def _subset(lst, ids):
+            return [lst[i] for i in ids]
+
+        texts_val = _subset(cleaned_texts_train_all, val_ids)
+        texts_train = _subset(cleaned_texts_train_all, train_ids)
+
+        costs_val = _subset(costs_train_all, val_ids)
+        costs_train = _subset(costs_train_all, train_ids)
+
+        pf_val = _subset(pf_train_all, val_ids)
+        pf_train = _subset(pf_train_all, train_ids)
+
+        pm_val = _subset(pm_train_all, val_ids)
+        pm_train = _subset(pm_train_all, train_ids)
+
+        njc_val = _subset(njc_train_all, val_ids)
+        njc_train = _subset(njc_train_all, train_ids)
+
+        nfo_val = _subset(nfo_train_all, val_ids)
+        nfo_train = _subset(nfo_train_all, train_ids)
+
+        ntb_val = _subset(ntb_train_all, val_ids)
+        ntb_train = _subset(ntb_train_all, train_ids)
+
+        nfc_val = _subset(nfc_train_all, val_ids)
+        nfc_train = _subset(nfc_train_all, train_ids)
+
+        # Apply train_ratio subsampling (consistent with llm_finetune path)
+        if hasattr(argsP, 'train_ratio') and 0.0 < argsP.train_ratio < 1.0:
+            n_before = len(texts_train)
+            sample_ids, _ = train_test_split(
+                list(range(n_before)), train_size=argsP.train_ratio, random_state=42
+            )
+            texts_train = [texts_train[i] for i in sample_ids]
+            costs_train = [costs_train[i] for i in sample_ids]
+            pf_train = [pf_train[i] for i in sample_ids]
+            pm_train = [pm_train[i] for i in sample_ids]
+            njc_train = [njc_train[i] for i in sample_ids]
+            nfo_train = [nfo_train[i] for i in sample_ids]
+            ntb_train = [ntb_train[i] for i in sample_ids]
+            nfc_train = [nfc_train[i] for i in sample_ids]
+            print(f"[LLM+PRICE] Subsampled training set: {n_before} -> {len(texts_train)} (train_ratio={argsP.train_ratio})", flush=True)
+
+        texts_test_split = cleaned_texts_test
+        pf_test = padded_features
+        pm_test = padding_masks
+        njc_test = n_join_cols
+        nfo_test = n_fanouts
+        ntb_test = n_tables
+        nfc_test = n_filter_cols
+
+    # Store max dims on argsP for model construction
+    argsP.price_max_n_join_col = max_njc
+    argsP.price_max_n_fanout = max_nfo
+    argsP.price_max_n_table = max_ntb
+    argsP.price_max_n_filter_col = max_nfc
+    print(f"[LLM+PRICE] Model dims: n_join_col={max_njc}, n_fanout={max_nfo}, n_table={max_ntb}, n_filter_col={max_nfc}", flush=True)
+
+    # ---- Step 6: Normalize labels and create datasets ----
+    print(f"[LLM+PRICE] Step 6/6: Creating datasets (train={len(texts_train)}, val={len(texts_val)}, test={len(texts_test_split)})...", flush=True)
+    update_ds_info_minmax(ds_info, costs_train + costs_val + costs_test,
+                          costs_train + costs_val + costs_test)
+    prepare_ds_info_norm(ds_info)
+
+    if not argsP.card:
+        ytr = ds_info.cost_norm.normalize_labels(costs_train)
+        yva = ds_info.cost_norm.normalize_labels(costs_val)
+        yte = ds_info.cost_norm.normalize_labels(costs_test)
+    else:
+        ytr = ds_info.card_norm.normalize_labels(costs_train)
+        yva = ds_info.card_norm.normalize_labels(costs_val)
+        yte = ds_info.card_norm.normalize_labels(costs_test)
+
+    ds_train = LLMPriceDataset(texts_train, pf_train, pm_train,
+                               njc_train, nfo_train, ntb_train, nfc_train, ytr)
+    ds_val = LLMPriceDataset(texts_val, pf_val, pm_val,
+                             njc_val, nfo_val, ntb_val, nfc_val, yva)
+    ds_test = LLMPriceDataset(texts_test_split, pf_test, pm_test,
+                              njc_test, nfo_test, ntb_test, nfc_test, yte)
+
+    argsP.embed_size = predictor.hidden_dim
+
+    return ds_train, ds_val, ds_test, costs_val, costs_test, lengths_test, templates_test
+
+
+def get_frozen_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_info, argsP):
+    """
+    Build datasets for PRICE+MLP finetuning with pre-computed (frozen) LLM embeddings.
+
+    Instead of storing raw text (which requires a live LLM forward pass each batch),
+    this calls get_embeddings() to load cached LLM embeddings and stores them as tensors.
+    The cached embeddings are reused from prior LLM inference runs (algo=llm).
+
+    Returns same signature as get_llm_price_ds_from_csv:
+        ds_train, ds_val, ds_test, costs_val, costs_test, lengths_test, templates_test
+    """
+    import price_data_utils as pdu
+
+    argsP.inference_logger.info(f"Getting frozen-LLM+PRICE dataset from {dat_path_train_list} and {dat_path_test}")
+
+    workload = argsP.workload_test
+    db_name = pdu.get_db_name_for_workload(workload)
+    bin_size = getattr(argsP, 'price_bin_size', 40)
+
+    # ---- Step 1: Get LLM embeddings via get_embeddings() (cached) ----
+    # Temporarily override algo so cache key matches prior "llm" inference runs
+    orig_algo = argsP.algo
+    argsP.algo = "llm"
+    print(f"[FrozenLLM+PRICE] Step 1: Loading cached LLM embeddings for test...", flush=True)
+    embeddings_test, costs_test, lengths_test, templates_test = get_embeddings(
+        predictor, ds_info, dat_path_test, argsP, batch_size=16, normalize_feats=False
+    )
+    argsP.algo = orig_algo
+
+    llm_embed_size = embeddings_test.shape[1]
+    print(f"[FrozenLLM+PRICE] Step 1 done: {embeddings_test.shape[0]} embeddings, dim={llm_embed_size}", flush=True)
+
+    # ---- Step 2: Parse SQL for PRICE ----
+    is_cross_wl_test = dat_path_test.endswith("c8220.json")
+    if is_cross_wl_test:
+        test_db = pdu.get_db_name_from_json_path(dat_path_test)
+        print(f"[FrozenLLM+PRICE] Step 2: Reconstructing SQL from {dat_path_test} (db={test_db})", flush=True)
+        sql_list_test = pdu.get_sql_for_cross_workload_plans(dat_path_test, test_db)
+        sql_list_test = [s if s is not None else "select count(*) from _dummy" for s in sql_list_test]
+        db_name = test_db
+    else:
+        sql_file = pdu.get_sql_file_for_workload(workload, card=argsP.card)
+        print(f"[FrozenLLM+PRICE] Step 2: Loading SQL from {sql_file}", flush=True)
+        sql_list_test = pdu.extract_raw_sql_from_queries_true(sql_file)
+
+    # Verify alignment
+    n_emb = embeddings_test.shape[0]
+    if len(sql_list_test) != n_emb:
+        print(f"[FrozenLLM+PRICE] Warning: SQL count ({len(sql_list_test)}) != embedding count ({n_emb}). Using min.")
+        min_len = min(len(sql_list_test), n_emb)
+        sql_list_test = sql_list_test[:min_len]
+        embeddings_test = embeddings_test[:min_len]
+        costs_test = costs_test[:min_len]
+        lengths_test = lengths_test[:min_len]
+        templates_test = templates_test[:min_len]
+
+    # ---- Step 3: Generate PRICE features ----
+    print(f"[FrozenLLM+PRICE] Step 3: Generating PRICE features for {len(sql_list_test)} test queries...", flush=True)
+    data_features_test, n_join_cols_test, n_fanouts_test, n_tables_test, n_filter_cols_test = pdu.generate_price_features(
+        workload, sql_list_test, db_name, bin_size,
+        price_m=getattr(argsP, 'price_m', False),
+        price_s=getattr(argsP, 'price_s', False),
+        already_price_format=is_cross_wl_test,
+    )
+
+    # ---- Step 4: Split train/val/test and pad ----
+    print(f"[FrozenLLM+PRICE] Step 4: Splitting train/val/test...", flush=True)
+    if len(dat_path_train_list) == 1 and dat_path_train_list[0] == dat_path_test:
+        # Same file for train/test
+        padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc = pdu.pad_and_cache_features(
+            data_features_test, n_join_cols_test, n_fanouts_test, n_tables_test, n_filter_cols_test,
+            bin_size=bin_size,
+            price_m=getattr(argsP, 'price_m', False),
+        )
+
+        train_ids, val_ids, test_ids = train_val_test(n_emb, argsP)
+
+        def _subset(lst, ids):
+            return [lst[i] for i in ids]
+
+        def _subset_tensor(t, ids):
+            return t[ids]
+
+        emb_train = _subset_tensor(embeddings_test, train_ids)
+        emb_val = _subset_tensor(embeddings_test, val_ids)
+        emb_test = _subset_tensor(embeddings_test, test_ids)
+
+        costs_train = _subset(costs_test, train_ids)
+        costs_val = _subset(costs_test, val_ids)
+        costs_test = _subset(costs_test, test_ids)
+
+        lengths_test = _subset(lengths_test, test_ids)
+        templates_test = _subset(templates_test, test_ids)
+
+        pf_train = _subset(padded_features, train_ids)
+        pf_val = _subset(padded_features, val_ids)
+        pf_test = _subset(padded_features, test_ids)
+
+        pm_train = _subset(padding_masks, train_ids)
+        pm_val = _subset(padding_masks, val_ids)
+        pm_test = _subset(padding_masks, test_ids)
+
+        njc_train = _subset(n_join_cols_test, train_ids)
+        njc_val = _subset(n_join_cols_test, val_ids)
+        njc_test = _subset(n_join_cols_test, test_ids)
+
+        nfo_train = _subset(n_fanouts_test, train_ids)
+        nfo_val = _subset(n_fanouts_test, val_ids)
+        nfo_test = _subset(n_fanouts_test, test_ids)
+
+        ntb_train = _subset(n_tables_test, train_ids)
+        ntb_val = _subset(n_tables_test, val_ids)
+        ntb_test = _subset(n_tables_test, test_ids)
+
+        nfc_train = _subset(n_filter_cols_test, train_ids)
+        nfc_val = _subset(n_filter_cols_test, val_ids)
+        nfc_test = _subset(n_filter_cols_test, test_ids)
+    else:
+        # Separate train / test files
+        emb_train_all, costs_train_all = [], []
+        raw_feats_train_all = []
+        njc_train_all, nfo_train_all, ntb_train_all, nfc_train_all = [], [], [], []
+
+        for idx_dp, dat_path_train in enumerate(dat_path_train_list):
+            print(f"[FrozenLLM+PRICE] Loading cached LLM embeddings for train: {dat_path_train}...", flush=True)
+            orig_algo2 = argsP.algo
+            argsP.algo = "llm"
+            emb_part, costs_part, _, _ = get_embeddings(
+                predictor, ds_info, dat_path_train, argsP, batch_size=16, normalize_feats=False
+            )
+            argsP.algo = orig_algo2
+            emb_train_all.append(emb_part)
+            costs_train_all.extend(costs_part)
+
+            is_cross_wl_train = dat_path_train.endswith("c8220.json")
+            if is_cross_wl_train:
+                train_db = pdu.get_db_name_from_json_path(dat_path_train)
+                train_wl = train_db
+                print(f"[FrozenLLM+PRICE] Reconstructing SQL from {dat_path_train} (db={train_db})", flush=True)
+                train_sqls = pdu.get_sql_for_cross_workload_plans(dat_path_train, train_db)
+                train_sqls = [s if s is not None else "select count(*) from _dummy" for s in train_sqls]
+            else:
+                train_wl = argsP.workloads_train[idx_dp] if idx_dp < len(argsP.workloads_train) else workload
+                train_db = pdu.get_db_name_for_workload(train_wl)
+                train_sql_file = pdu.get_sql_file_for_workload(train_wl, card=argsP.card, for_training=True)
+                train_sqls = pdu.extract_raw_sql_from_queries_true(train_sql_file)
+
+            min_len = min(len(train_sqls), emb_part.shape[0])
+            train_sqls = train_sqls[:min_len]
+
+            df_feats, njc, nfo, ntb, nfc = pdu.generate_price_features(train_wl, train_sqls, train_db, bin_size, price_m=getattr(argsP, 'price_m', False), price_s=getattr(argsP, 'price_s', False), already_price_format=is_cross_wl_train)
+            raw_feats_train_all.extend(df_feats[:min_len])
+            njc_train_all.extend(njc[:min_len])
+            nfo_train_all.extend(nfo[:min_len])
+            ntb_train_all.extend(ntb[:min_len])
+            nfc_train_all.extend(nfc[:min_len])
+
+        emb_train_cat = torch.cat(emb_train_all, dim=0)
+
+        # Pad all features with unified max dims
+        all_raw_feats = raw_feats_train_all + list(data_features_test)
+        all_njc_list = njc_train_all + n_join_cols_test
+        all_nfo_list = nfo_train_all + n_fanouts_test
+        all_ntb_list = ntb_train_all + n_tables_test
+        all_nfc_list = nfc_train_all + n_filter_cols_test
+
+        all_padded, all_masks, max_njc, max_nfo, max_ntb, max_nfc = pdu.pad_and_cache_features(
+            all_raw_feats, all_njc_list, all_nfo_list, all_ntb_list, all_nfc_list,
+            bin_size=bin_size,
+            price_m=getattr(argsP, 'price_m', False),
+        )
+
+        n_train = len(raw_feats_train_all)
+        pf_train_all = all_padded[:n_train]
+        pm_train_all = all_masks[:n_train]
+        pf_test = all_padded[n_train:]
+        pm_test = all_masks[n_train:]
+
+        train_ids, val_ids = train_val(n_train, argsP)
+
+        def _subset(lst, ids):
+            return [lst[i] for i in ids]
+
+        def _subset_tensor(t, ids):
+            return t[ids]
+
+        emb_val = _subset_tensor(emb_train_cat, val_ids)
+        emb_train = _subset_tensor(emb_train_cat, train_ids)
+
+        costs_val = _subset(costs_train_all, val_ids)
+        costs_train = _subset(costs_train_all, train_ids)
+
+        pf_val = _subset(pf_train_all, val_ids)
+        pf_train = _subset(pf_train_all, train_ids)
+
+        pm_val = _subset(pm_train_all, val_ids)
+        pm_train = _subset(pm_train_all, train_ids)
+
+        njc_val = _subset(njc_train_all, val_ids)
+        njc_train = _subset(njc_train_all, train_ids)
+
+        nfo_val = _subset(nfo_train_all, val_ids)
+        nfo_train = _subset(nfo_train_all, train_ids)
+
+        ntb_val = _subset(ntb_train_all, val_ids)
+        ntb_train = _subset(ntb_train_all, train_ids)
+
+        nfc_val = _subset(nfc_train_all, val_ids)
+        nfc_train = _subset(nfc_train_all, train_ids)
+
+        njc_test = n_join_cols_test
+        nfo_test = n_fanouts_test
+        ntb_test = n_tables_test
+        nfc_test = n_filter_cols_test
+        emb_test = embeddings_test
+
+    # Store max dims on argsP for model construction
+    argsP.price_max_n_join_col = max_njc
+    argsP.price_max_n_fanout = max_nfo
+    argsP.price_max_n_table = max_ntb
+    argsP.price_max_n_filter_col = max_nfc
+    argsP.embed_size = llm_embed_size
+    print(f"[FrozenLLM+PRICE] Model dims: n_join_col={max_njc}, n_fanout={max_nfo}, n_table={max_ntb}, n_filter_col={max_nfc}, llm_dim={llm_embed_size}", flush=True)
+
+    # ---- Step 5: Normalize labels and create datasets ----
+    print(f"[FrozenLLM+PRICE] Step 5: Creating datasets (train={len(emb_train)}, val={len(emb_val)}, test={len(emb_test)})...", flush=True)
+    update_ds_info_minmax(ds_info, costs_train + costs_val + costs_test,
+                          costs_train + costs_val + costs_test)
+    prepare_ds_info_norm(ds_info)
+
+    if not argsP.card:
+        ytr = ds_info.cost_norm.normalize_labels(costs_train)
+        yva = ds_info.cost_norm.normalize_labels(costs_val)
+        yte = ds_info.cost_norm.normalize_labels(costs_test)
+    else:
+        ytr = ds_info.card_norm.normalize_labels(costs_train)
+        yva = ds_info.card_norm.normalize_labels(costs_val)
+        yte = ds_info.card_norm.normalize_labels(costs_test)
+
+    ds_train = FrozenLLMPriceDataset(emb_train, pf_train, pm_train,
+                                     njc_train, nfo_train, ntb_train, nfc_train, ytr)
+    ds_val = FrozenLLMPriceDataset(emb_val, pf_val, pm_val,
+                                   njc_val, nfo_val, ntb_val, nfc_val, yva)
+    ds_test = FrozenLLMPriceDataset(emb_test, pf_test, pm_test,
+                                    njc_test, nfo_test, ntb_test, nfc_test, yte)
+
+    return ds_train, ds_val, ds_test, costs_val, costs_test, lengths_test, templates_test

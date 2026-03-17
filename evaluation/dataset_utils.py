@@ -4,10 +4,11 @@ import json
 from datetime import datetime
 import time
 
+import os
 import sys
 sys.path.append('../evaluation/')
 
-from feature_extractor import traversePlan, DatasetInfo, extractNode
+from feature_extractor import traversePlan, traversePlanDuckDB, DatasetInfo, extractNode
 
 def save_error_cdf(errors, save_path, error_type='Qerror'):
     errors = np.array(errors)
@@ -53,26 +54,42 @@ def get_col_min_max(minmax_df):
             col_min_max[name] = [mi, ma]
     return col_min_max
 
-def get_costs(js_nodes, card=False): 
+def get_costs(js_nodes, card=False, db='postgres'):
     costs = []
-    if not card:
+    if db == 'duckdb':
         for js_node in js_nodes:
-            if "Execution Time" in js_node:
-                costs.append(js_node['Execution Time'])
-            elif "Actual Total Time" in js_node:
-                costs.append(js_node['Actual Total Time'])
+            if not card:
+                # DuckDB latency is in seconds → convert to ms
+                if "latency" in js_node:
+                    costs.append(js_node['latency'] * 1000.0)
+                else:
+                    print(f"DuckDB node without 'latency': {list(js_node.keys())[:10]}")
+                    exit(1)
             else:
-                # Provide more information to help identify the issue
-                print(f"Node without 'Actual Total Time': {js_node}")
-                exit(1)
+                if "rows_returned" in js_node:
+                    costs.append(js_node['rows_returned'])
+                else:
+                    print(f"DuckDB node without 'rows_returned': {list(js_node.keys())[:10]}")
+                    exit(1)
     else:
-        for js_node in js_nodes:
-            if "Actual Rows" in js_node:
-                costs.append(js_node['Actual Rows'])
-            else:
-                # Provide more information to help identify the issue
-                print(f"Node without 'Actual Rows': {js_node}")
-                exit(1)
+        if not card:
+            for js_node in js_nodes:
+                if "Execution Time" in js_node:
+                    costs.append(js_node['Execution Time'])
+                elif "Actual Total Time" in js_node:
+                    costs.append(js_node['Actual Total Time'])
+                else:
+                    # Provide more information to help identify the issue
+                    print(f"Node without 'Actual Total Time': {js_node}")
+                    exit(1)
+        else:
+            for js_node in js_nodes:
+                if "Actual Rows" in js_node:
+                    costs.append(js_node['Actual Rows'])
+                else:
+                    # Provide more information to help identify the issue
+                    print(f"Node without 'Actual Rows': {js_node}")
+                    exit(1)
     return costs
 
 def get_index(df):
@@ -96,11 +113,12 @@ def get_index(df):
                     
     return list(set(idx_list))
 
-def df2nodes(df):
+def df2nodes(df, db='postgres'):
     t0 = time.time()
     idxs = []
     roots = []
     js_nodes = []
+    traverse_fn = traversePlanDuckDB if db == 'duckdb' else traversePlan
     for i, row in df.iterrows():
         if 'id' in row:
             idx = row['id']
@@ -108,20 +126,17 @@ def df2nodes(df):
         else:
             idx = i
             js_str = row['Plan_dump']
-            
+
         if js_str == 'failed':
             continue
         js_node = json.loads(js_str)
         js_nodes.append(js_node)
-        root = traversePlan(js_node)
+        root = traverse_fn(js_node)
         roots.append(root)
         idxs.append(idx)
-    # print(f"roots: {roots}")
-    # print(f"idxs: {idxs}")
-    # print(f"js_nodes: {js_nodes}")
-    #print('length: ', len(idxs), ', Time: ',  time.time()-t0)
-    print(f"Number of aliases 'None': {extractNode.none_counter}")
-    print(f"Number of aliases '<temporary>': {extractNode.temporary_counter}")
+    if db != 'duckdb':
+        print(f"Number of aliases 'None': {extractNode.none_counter}")
+        print(f"Number of aliases '<temporary>': {extractNode.temporary_counter}")
     return roots, js_nodes, idxs
 
 def get_imdb(dat_path):
@@ -197,14 +212,18 @@ def get_new(args1, dat_path, dat_path_train_list, dat_path_test):
 
 
     ########## step 2: collect the metrics #########
-    roots, js_nodes, idxs = df2nodes(df)     # For James: collect the metrics
+    db = getattr(args1, 'db', 'postgres')
+    roots, js_nodes, idxs = df2nodes(df, db=db)     # For James: collect the metrics
 
     ########################################################################
 
     index_list = get_index(df)
-    costs = get_costs(js_nodes, args1.card)
+    costs = get_costs(js_nodes, args1.card, db=db)
 
-    minmax = pd.read_csv(dat_path + 'col_min_max.csv')
+    # Metadata lives one level above the engine directory
+    # e.g. ../queryPlans/imdb/col_min_max.csv (shared by postgres/ and duckdb/)
+    metadata_dir = os.path.dirname(dat_path.rstrip('/')) + '/'
+    minmax = pd.read_csv(metadata_dir + 'col_min_max.csv')
     col_min_max = get_col_min_max(minmax)
 
     ########## step 3: aggregate the metrics: get the min max values for each metric, so we can normalize the data #########

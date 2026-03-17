@@ -226,9 +226,11 @@ def get_hist_file(hist_path, bin_number = 50):
     #     table_column.append(combine)
     # hist_file['table_column'] = table_column
 
-    for rid in range(len(hist_file)):
-        hist_file['bins'][rid] = \
-            [float(i) for i in hist_file['bins'][rid][1:-1].split(' ') if len(i)>0]
+    parsed_bins = [
+        [float(i) for i in hist_file['bins'][rid][1:-1].split(' ') if len(i) > 0]
+        for rid in range(len(hist_file))
+    ]
+    hist_file['bins'] = pd.Series(parsed_bins, dtype=object)
 
     # for rid in range(len(hist_file)):
     #     hist_file.loc[rid, 'bins'] = [float(i) for i in hist_file.loc[rid, 'bins'][1:-1].split(' ') if len(i) > 0]

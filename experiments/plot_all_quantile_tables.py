@@ -23,6 +23,9 @@ def extract_display_name(col_name):
         match = re.search(r'h\d+_(.+?)(?:_emb|_quant)', col_name)
         if match:
             model = match.group(1)
+            # Shorten common model names
+            if 'sentence-transformers' in model:
+                model = 'sentBert'
             # Also extract quantization
             quant_match = re.search(r'quant-([^_]+)', col_name)
             if quant_match:
@@ -34,7 +37,12 @@ def extract_display_name(col_name):
             rm_match = re.search(r'(_rm-[a-z\-]+)', col_name)
             if rm_match:
                 display_name += rm_match.group(1)
-            
+
+            # Extract PRICE variant suffix (priceM or priceS)
+            price_variant_match = re.search(r'_(priceM|priceS)', col_name)
+            if price_variant_match:
+                display_name += f"_{price_variant_match.group(1)}"
+
             return display_name
         return 'LLM'
     # For non-LLM: extract algorithm name

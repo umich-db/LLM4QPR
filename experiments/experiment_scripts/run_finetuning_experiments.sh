@@ -16,8 +16,29 @@ echo "Running Finetuning Experiments..."
 
 # Define available models
 models=(
-    "meta-llama/Llama-3.1-8B"
+    "bert-base-uncased"
+    "answerdotai/ModernBERT-base"
+    "sentence-transformers/all-MiniLM-L6-v2"
+    "openai/gpt-oss-20b"
+    "google/embeddinggemma-300m"
+    "google/gemma-3-270m"
+    "google/gemma-3-1b-pt"
+    "google/gemma-3-4b-pt"
+    "google/gemma-3-12b-pt"
+    "google/gemma-3-27b-pt"
+    "Qwen/Qwen3-Embedding-0.6B"
+    "Qwen/Qwen3-Embedding-4B"
+    "Qwen/Qwen3-Embedding-8B"
+    "Qwen/Qwen3-0.6B"
+    "Qwen/Qwen3-1.7B"
+    "Qwen/Qwen3-4B"
+    "Qwen/Qwen3-8B"
+    "Qwen/Qwen3-14B"
+    "Qwen/Qwen3-32B"
+    "meta-llama/Llama-3.2-1B"
     "meta-llama/Llama-3.2-3B"
+    "meta-llama/Llama-3.1-8B"
+    "meta-llama/Llama-3.1-70B"
 )
 
 # Define available workloads
@@ -291,12 +312,14 @@ for SEED in "${seeds[@]}"; do
             export REMOVED_FIELDS="$REMOVED_FIELDS"
             export LLM_DOWNSTREAM
             
-            # Determine train_ratio based on workload
-            if [[ $WORKLOAD == "job" || $WORKLOAD == "syn" ]]; then
-                train_ratio=0.1
-            else
-                train_ratio=1.0
-            fi
+            # # Determine train_ratio based on workload
+            # if [[ $WORKLOAD == "job" || $WORKLOAD == "syn" ]]; then
+            #     train_ratio=0.1
+            # else
+            #     train_ratio=1.0
+            # fi
+
+            train_ratio=1.0
             
             # Run time prediction experiment if selected
             if [ "$RUN_TIME" = true ]; then

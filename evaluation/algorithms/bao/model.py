@@ -80,6 +80,8 @@ class BaoRegression:
             
         self.__net = net.BaoNet(self.__in_channels)
         self.__net.load_state_dict(torch.load(_nn_path(path)))
+        if torch.cuda.is_available():
+            self.__net = self.__net.cuda()
         self.__net.eval()
         
         with open(_y_transform_path(path), "rb") as f:

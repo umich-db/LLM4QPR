@@ -1,0 +1,4 @@
+comparison,spearman,p_value,kendall_tau,n_models
+epoch_0_vs_pretrained,0.075,0.7214,0.054,25
+epoch_1_vs_pretrained,0.071,0.7373,0.075,25
+epoch_0_vs_epoch_1,0.905,0.0,0.777,25

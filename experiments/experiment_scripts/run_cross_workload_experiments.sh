@@ -25,6 +25,7 @@ CLI_PRICE_S=""
 CLI_PRICE_RANDOM_INIT=""
 CLI_PRICE_N_LAYERS=""
 CLI_N_CROSS_LAYERS=""
+CLI_CROSS_ATTN_LR=""
 CLI_FT_NUM_EPOCH=""
 CLI_CHECKPOINT_INTERVAL=""
 CLI_PRICE_LR=""
@@ -55,6 +56,7 @@ while [[ $# -gt 0 ]]; do
         --price_random_init) CLI_PRICE_RANDOM_INIT="true"; shift 1 ;;
         --price_n_layers)   CLI_PRICE_N_LAYERS="$2";     shift 2 ;;
         --n_cross_layers)   CLI_N_CROSS_LAYERS="$2";     shift 2 ;;
+        --cross_attn_lr)    CLI_CROSS_ATTN_LR="$2";     shift 2 ;;
         *)
             echo "Unknown flag: $1"
             exit 1
@@ -675,6 +677,9 @@ for SEED in "${seeds[@]}"; do
             fi
             if [[ -n "$CLI_N_CROSS_LAYERS" ]]; then
                 export N_CROSS_LAYERS="$CLI_N_CROSS_LAYERS"
+            fi
+            if [[ -n "$CLI_CROSS_ATTN_LR" ]]; then
+                export CROSS_ATTN_LR="$CLI_CROSS_ATTN_LR"
             fi
             if [[ -n "$CLI_GRAD_ACCUM_STEPS" ]]; then
                 export GRAD_ACCUM_STEPS="$CLI_GRAD_ACCUM_STEPS"

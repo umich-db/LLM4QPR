@@ -12,6 +12,8 @@ import numpy as np
 parser = argparse.ArgumentParser()
 parser.add_argument("--dir", type=str)
 parser.add_argument("--task", type=str)
+parser.add_argument("--sentbert_only", action="store_true",
+                    help="Only show sentBert-all_quant variants (plus non-LLM baselines) in .png")
 args = parser.parse_args()
 
 def strip_seed(filename):
@@ -71,10 +73,32 @@ def extract_display_name(col_name):
             if '_randInit' in col_name:
                 display_name += '_randInit'
 
+            # Extract PRICE n_layers (e.g., _pL3, _pL12)
+            pl_match = re.search(r'_pL(\d+)', col_name)
+            if pl_match:
+                display_name += f"_pL{pl_match.group(1)}"
+
+            # Extract cross-attention suffix
+            if '_crossAttn' in col_name:
+                display_name += '_crossAttn'
+
+            # Extract cross-attention layer count (e.g., _cx4)
+            cx_match = re.search(r'_cx(\d+)', col_name)
+            if cx_match:
+                display_name += f"_cx{cx_match.group(1)}"
+
+            # Extract refinedPool flag
+            if '_refinedPool' in col_name:
+                display_name += '_refinedPool'
+
             # Extract finetune epoch count (e.g., _e20, _e30)
             ft_epoch_match = re.search(r'_e(\d+)_ftb', col_name)
             if ft_epoch_match:
                 display_name += f"_e{ft_epoch_match.group(1)}"
+
+            # Extract retrainMLP flag
+            if '_retrainMLP' in col_name:
+                display_name += '_retrainMLP'
 
             return display_name
         return 'LLM'
@@ -323,8 +347,19 @@ quant_table = quant_table.reindex(sorted(quant_table.columns), axis=1)
 csv_path = csv_folder + f'/quantile_table_{args.dir.replace("/", "_")}_{args.task}.csv'
 quant_table.to_csv(csv_path)
 
+# Filter to sentBert-all variants only (plus non-LLM baselines) for heatmap
+if args.sentbert_only:
+    display_map = {col: extract_display_name(col) for col in quant_table.columns}
+    keep_cols = [col for col in quant_table.columns
+                 if not is_llm_method(col) or 'sentBert-all' in display_map[col]]
+    heatmap_table = quant_table[keep_cols]
+    suffix = '_sentbert'
+else:
+    heatmap_table = quant_table
+    suffix = ''
+
 # Create heatmap
-heatmap_path = csv_folder + f'/quantile_table_{args.dir.replace("/", "_")}_{args.task}_heatmap.png'
-create_heatmap_with_comparison(quant_table, heatmap_path)
+heatmap_path = csv_folder + f'/quantile_table_{args.dir.replace("/", "_")}_{args.task}{suffix}_heatmap.png'
+create_heatmap_with_comparison(heatmap_table, heatmap_path)
 
 print(csv_folder, "\n", quant_table.to_markdown())

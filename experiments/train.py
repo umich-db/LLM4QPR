@@ -33,17 +33,18 @@ else:
 # Get Hugging Face token from environment variable
 token = os.getenv("HF_TOKEN")
 
-try:
-    # Works if HF_TOKEN is set or you've previously run `hf auth login`
-    HfApi().whoami()
-except Exception:
-    if not argsP.embeddings_exist and argsP.algo != "price_finetune":
-      if token:
-          login(token=token)  # will also cache it locally
-      else:
-          raise RuntimeError(
-              "No Hugging Face token found. Set HF_TOKEN environment variable or run `hf auth login`."
-          )
+if os.environ.get("SKIP_HF_AUTH") != "1":
+    try:
+        # Works if HF_TOKEN is set or you've previously run `hf auth login`
+        HfApi().whoami()
+    except Exception:
+        if not argsP.embeddings_exist and argsP.algo != "price_finetune":
+          if token:
+              login(token=token)  # will also cache it locally
+          else:
+              raise RuntimeError(
+                  "No Hugging Face token found. Set HF_TOKEN environment variable or run `hf auth login`."
+              )
 
 
 db = argsP.db
@@ -79,17 +80,19 @@ if "llm" in argsP.algo:
       ft_bs = getattr(argsP, 'ft_batch_size', 16)
       price_m_suffix = "_priceM" if getattr(argsP, 'price_m', False) else ""
       price_s_suffix = "_priceS" if getattr(argsP, 'price_s', False) else ""
-      if pws in ("joint", "joint_frozen_init", "gated_joint", "cross_attn_joint"):
+      if pws in ("joint", "joint_frozen_init", "gated_joint", "cross_attn_joint", "bi_cross_attn_joint"):
         # Joint finetuning: LLM weights saved with _llm_price_llm suffix
         frozen_init_suffix = "_frozenInit" if pws == "joint_frozen_init" else ""
         gated_suffix = "_gated" if pws == "gated_joint" else ""
         cross_attn_suffix = "_crossAttn" if pws == "cross_attn_joint" else ""
+        bi_cross_attn_suffix = "_biCrossAttn" if pws == "bi_cross_attn_joint" else ""
+        refined_pool_suffix = "_refinedPool" if getattr(argsP, 'refined_pool', False) else ""
         rand_init_suffix = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
         n_layers_suffix = f"_pL{argsP.price_n_layers}" if getattr(argsP, 'price_n_layers', 6) != 6 else ""
-        n_cross_suffix = f"_cx{argsP.n_cross_layers}" if pws == "cross_attn_joint" and getattr(argsP, 'n_cross_layers', 2) != 2 else ""
+        n_cross_suffix = f"_cx{argsP.n_cross_layers}" if pws in ("cross_attn_joint", "bi_cross_attn_joint") and getattr(argsP, 'n_cross_layers', 2) != 2 else ""
         ft_epochs = getattr(argsP, 'ft_num_epoch', 0)
         epoch_suffix = f"_e{ft_epochs}" if ft_epochs > 0 else ""
-        llm_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_m_suffix}{price_s_suffix}_llm_price{frozen_init_suffix}{gated_suffix}{cross_attn_suffix}{rand_init_suffix}{n_layers_suffix}{n_cross_suffix}{epoch_suffix}_llm.pt"
+        llm_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_m_suffix}{price_s_suffix}_llm_price{frozen_init_suffix}{gated_suffix}{cross_attn_suffix}{bi_cross_attn_suffix}{refined_pool_suffix}{rand_init_suffix}{n_layers_suffix}{n_cross_suffix}{epoch_suffix}_llm.pt"
       else:
         # Standalone LLM finetune: weights saved with _llm suffix
         llm_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}_llm.pt"
@@ -251,14 +254,23 @@ elif argsP.algo == "llm_price_finetune" and getattr(argsP, 'freeze_llm', False):
   val_roots = val_js_nodes = None
   test_roots = test_js_nodes = None
 elif "llm" in argsP.algo:
-  # Choose collate function based on algo
-  active_collate = llm_price_collate if argsP.algo == "llm_price_finetune" else llm_collate
+  # Cross-attention inference needs llm_price_finetune data loading (raw texts + PRICE features)
+  _cross_attn_inf = (argsP.algo == "llm_price" and
+                     getattr(argsP, 'price_weights_source', 'pretrained') in ("cross_attn_joint", "bi_cross_attn_joint"))
+  if _cross_attn_inf:
+    active_collate = llm_price_collate
+    _saved_algo = argsP.algo
+    argsP.algo = "llm_price_finetune"  # temporarily switch for correct data loading
+  else:
+    active_collate = llm_price_collate if argsP.algo == "llm_price_finetune" else llm_collate
   ds_info, train_roots, train_js_nodes, train_costs, \
             val_roots,   val_js_nodes,   val_costs,   \
             test_roots,  test_js_nodes,  test_costs,  \
             ds,  val_ds,  test_ds,  \
             train_loader,  val_loader,  test_loader,  \
             test_lengths, test_templates, _ = utilsTrain.load_data(argsP, dat_path, dat_paths_train_list, dat_path_test, dat_dict, LLM, active_collate)
+  if _cross_attn_inf:
+    argsP.algo = _saved_algo  # restore for model construction
 else:
   ds_info, train_roots, train_js_nodes, train_costs, \
             val_roots,   val_js_nodes,   val_costs,   \
@@ -348,13 +360,15 @@ elif argsP.algo == "llm_stats":
   MLP = Prediction(input_dim, argsP.hid_units)
   model_comb = MLP
 elif argsP.algo == "llm_price":
-  if getattr(argsP, 'price_weights_source', 'pretrained') == "cross_attn_joint":
-    # Cross-attention inference: build full model, load weights, evaluate directly
+  pws = getattr(argsP, 'price_weights_source', 'pretrained')
+  if pws in ("cross_attn_joint", "bi_cross_attn_joint"):
+    # Cross-attention / bidirectional cross-attention inference: build full model, load weights, evaluate directly
     import sys as _sys
     if "/root/PRICE" not in _sys.path:
         _sys.path.insert(0, "/root/PRICE")
     from model.encoder import RegressionModel
-    from models.llm_price_model import CrossAttentionPRICEEmbedder, CrossAttentionLLMPriceModel
+    from models.llm_price_model import (CrossAttentionPRICEEmbedder, CrossAttentionLLMPriceModel,
+                                         BiCrossAttentionPRICEEmbedder, BiCrossAttentionLLMPriceModel)
 
     # Build PRICE model
     max_njc = argsP.price_max_n_join_col
@@ -372,11 +386,21 @@ elif argsP.algo == "llm_price":
         query_hidden_dim=512, final_hidden_dim=1024, output_dim=1,
         n_embd=256, n_layers=getattr(argsP, 'price_n_layers', 6), n_heads=8, dropout_rate=0.1
     )
-    cross_price_embedder = CrossAttentionPRICEEmbedder(
-        price_model, argsP.embed_size, n_cross_layers=n_cross,
-        n_embd=256, n_heads=8, dropout_rate=0.1
-    )
-    model_comb = CrossAttentionLLMPriceModel(LLM, cross_price_embedder, argsP.embed_size, 512, argsP.hid_units)
+
+    if pws == "bi_cross_attn_joint":
+      bi_price_embedder = BiCrossAttentionPRICEEmbedder(
+          price_model, argsP.embed_size, n_cross_layers=n_cross,
+          n_embd=256, n_heads=8, dropout_rate=0.1
+      )
+      model_comb = BiCrossAttentionLLMPriceModel(LLM, bi_price_embedder, argsP.embed_size, 512, argsP.hid_units)
+      attn_tag = "_biCrossAttn"
+    else:
+      cross_price_embedder = CrossAttentionPRICEEmbedder(
+          price_model, argsP.embed_size, n_cross_layers=n_cross,
+          n_embd=256, n_heads=8, dropout_rate=0.1
+      )
+      model_comb = CrossAttentionLLMPriceModel(LLM, cross_price_embedder, argsP.embed_size, 512, argsP.hid_units)
+      attn_tag = "_crossAttn"
 
     # Load finetuned PRICE+cross-attn weights
     ft_bs = getattr(argsP, 'ft_batch_size', 16)
@@ -384,23 +408,34 @@ elif argsP.algo == "llm_price":
     price_m_suffix = "_priceM" if getattr(argsP, 'price_m', False) else ""
     price_s_suffix = "_priceS" if getattr(argsP, 'price_s', False) else ""
     rand_init_suffix = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
+    refined_pool_suffix = "_refinedPool" if getattr(argsP, 'refined_pool', False) else ""
     n_layers_suffix = f"_pL{argsP.price_n_layers}" if getattr(argsP, 'price_n_layers', 6) != 6 else ""
     n_cross_suffix = f"_cx{n_cross}" if n_cross != 2 else ""
     ft_epochs = getattr(argsP, 'ft_num_epoch', 0)
     epoch_suffix = f"_e{ft_epochs}" if ft_epochs > 0 else ""
-    weight_prefix = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_m_suffix}{price_s_suffix}_llm_price_crossAttn{rand_init_suffix}{n_layers_suffix}{n_cross_suffix}{epoch_suffix}"
+    weight_prefix = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_m_suffix}{price_s_suffix}_llm_price{attn_tag}{refined_pool_suffix}{rand_init_suffix}{n_layers_suffix}{n_cross_suffix}{epoch_suffix}"
 
     price_sd = torch.load(f"{weight_prefix}_price.pt", map_location=device)
     model_comb.price.load_state_dict(price_sd)
-    print(f"Loaded cross-attn PRICE weights from {weight_prefix}_price.pt")
+    print(f"Loaded {pws} PRICE weights from {weight_prefix}_price.pt")
 
     mlp_sd = torch.load(f"{weight_prefix}_mlp.pt", map_location=device)
     model_comb.mlp.load_state_dict(mlp_sd)
     print(f"Loaded MLP weights from {weight_prefix}_mlp.pt")
+
+    # Load refined_llm_proj if it exists (BiCrossAttn with refined pooling)
+    rlp_path = f"{weight_prefix}_refined_llm_proj.pt"
+    if hasattr(model_comb, 'refined_llm_proj') and os.path.exists(rlp_path):
+        rlp_sd = torch.load(rlp_path, map_location=device)
+        model_comb.refined_llm_proj.load_state_dict(rlp_sd)
+        print(f"Loaded refined_llm_proj weights from {rlp_path}")
     # LLM weights already loaded above in the llm_pretrained block
 
     # Override algo to use llm_price_finetune data loading path
-    argsP._cross_attn_inference = True
+    if getattr(argsP, 'retrain_mlp', False):
+        argsP._retrain_mlp_active = True
+    else:
+        argsP._cross_attn_inference = True
     argsP.algo = "llm_price_finetune"
   else:
     # Standard: Inference on pre-computed LLM+PRICE embeddings — just an MLP
@@ -416,7 +451,7 @@ elif argsP.algo == "llm_price_finetune":
   if "/root/PRICE" not in _sys.path:
       _sys.path.insert(0, "/root/PRICE")
   from model.encoder import RegressionModel
-  from models.llm_price_model import PRICEEmbedder, LLMPriceJointModel, GatedLLMPriceJointModel, FrozenLLMPriceModel, CrossAttentionPRICEEmbedder, CrossAttentionLLMPriceModel
+  from models.llm_price_model import PRICEEmbedder, LLMPriceJointModel, GatedLLMPriceJointModel, FrozenLLMPriceModel, CrossAttentionPRICEEmbedder, CrossAttentionLLMPriceModel, BiCrossAttentionPRICEEmbedder, BiCrossAttentionLLMPriceModel
 
   # Load pretrained PRICE model
   price_state_dict = torch.load(argsP.price_model_path, map_location=device)
@@ -497,6 +532,25 @@ elif argsP.algo == "llm_price_finetune":
     n_cross_params = sum(p.numel() for n, p in cross_price_embedder.named_parameters()
                          if 'cross_attn' in n or 'llm_proj' in n)
     print(f"[cross_attention] {n_cross} cross-attention layers, {n_cross_params:,} new params")
+  elif getattr(argsP, 'use_bi_cross_attention', False):
+    # Bidirectional cross-attention path: PRICE <-> LLM attend to each other
+    n_cross = getattr(argsP, 'n_cross_layers', 2)
+    bi_price_embedder = BiCrossAttentionPRICEEmbedder(
+        price_model, argsP.embed_size, n_cross_layers=n_cross,
+        n_embd=256, n_heads=8, dropout_rate=0.1
+    )
+    # Copy PRICE weights that were loaded into price_embedder to bi_price_embedder
+    if not getattr(argsP, 'price_random_init', False):
+      shared_sd = {k: v for k, v in price_embedder.state_dict().items()
+                   if k in bi_price_embedder.state_dict() and
+                   bi_price_embedder.state_dict()[k].shape == v.shape}
+      bi_price_embedder.load_state_dict(shared_sd, strict=False)
+      print(f"[bi_cross_attention] Copied {len(shared_sd)} shared PRICE weight tensors; "
+            f"bi-cross-attention layers randomly initialized")
+    model_comb = BiCrossAttentionLLMPriceModel(LLM, bi_price_embedder, argsP.embed_size, 512, argsP.hid_units)
+    n_cross_params = sum(p.numel() for n, p in bi_price_embedder.named_parameters()
+                         if 'cross_attn' in n or 'llm_proj' in n)
+    print(f"[bi_cross_attention] {n_cross} bidirectional cross-attention layers, {n_cross_params:,} new params")
   else:
     if getattr(argsP, 'use_price_gate', False):
       model_comb = GatedLLMPriceJointModel(LLM, price_embedder, argsP.embed_size, 512, argsP.hid_units)
@@ -578,6 +632,73 @@ elif argsP.algo == "price_finetune":
   model_comb = PRICEFinetunWrapper(price_model)
 
 
+# ─── Retrain MLP: pre-compute frozen cross-attn embeddings ─────────────
+if getattr(argsP, '_retrain_mlp_active', False):
+    # Cache path derived from the finetuned weight prefix (set during cross-attn model construction)
+    _retrain_cache_path = f"{weight_prefix}_retrainMLP_embeddings.pt"
+    _cache_hit = os.path.exists(_retrain_cache_path)
+
+    if _cache_hit:
+        print(f"[retrain_mlp] Loading cached embeddings from {_retrain_cache_path}")
+        _cached = torch.load(_retrain_cache_path, map_location="cpu")
+        all_embeddings = _cached["embeddings"]
+        all_labels = _cached["labels"]
+        for split_name in ("train", "val", "test"):
+            print(f"  {split_name}: {all_embeddings[split_name].shape[0]} samples, embed_dim={all_embeddings[split_name].shape[1]}")
+        # No need for the full model
+        model_comb.cpu()
+        del model_comb
+        torch.cuda.empty_cache()
+    else:
+        print("[retrain_mlp] Pre-computing frozen cross-attention embeddings...")
+        model_comb.to(device)
+        model_comb.eval()
+
+        all_embeddings = {}
+        all_labels = {}
+        for split_name, loader in [("train", train_loader), ("val", val_loader), ("test", test_loader)]:
+            emb_list, lab_list = [], []
+            n_batches = len(loader)
+            with torch.no_grad():
+                for bi, (batch_x, batch_y) in enumerate(loader):
+                    emb = model_comb.forward_embeddings(batch_x)
+                    emb_list.append(emb.cpu())
+                    lab_list.append(batch_y.cpu())
+                    if (bi + 1) % max(1, n_batches // 10) == 0 or bi + 1 == n_batches:
+                        print(f"  [{split_name}] {bi+1}/{n_batches} batches", flush=True)
+            all_embeddings[split_name] = torch.cat(emb_list, dim=0)
+            all_labels[split_name] = torch.cat(lab_list, dim=0)
+            print(f"  {split_name}: {all_embeddings[split_name].shape[0]} samples, embed_dim={all_embeddings[split_name].shape[1]}")
+
+        # Save cache
+        torch.save({"embeddings": all_embeddings, "labels": all_labels}, _retrain_cache_path)
+        print(f"[retrain_mlp] Cached embeddings to {_retrain_cache_path}")
+
+        # Free the full model from GPU
+        model_comb.cpu()
+        del model_comb
+        torch.cuda.empty_cache()
+
+    # Build fresh MLP and new loaders
+    combined_dim = all_embeddings["train"].shape[1]
+    model_comb = Prediction(combined_dim, argsP.hid_units)
+    print(f"[retrain_mlp] Fresh MLP: input_dim={combined_dim}, hid_units={argsP.hid_units}")
+
+    ds = TensorDataset(all_embeddings["train"], all_labels["train"])
+    val_ds = TensorDataset(all_embeddings["val"], all_labels["val"])
+    test_ds = TensorDataset(all_embeddings["test"], all_labels["test"])
+
+    train_loader = DataLoader(ds, batch_size=argsP.batch_size, shuffle=True,
+                              generator=torch.Generator().manual_seed(argsP.seed))
+    val_loader = DataLoader(val_ds, batch_size=argsP.batch_size, shuffle=False)
+    test_loader = DataLoader(test_ds, batch_size=1, shuffle=False)
+
+    # Switch algo so training loop uses standard MLP path (StepLR scheduler)
+    argsP.algo = "llm_price"
+    argsP.embed_size = combined_dim
+    print(f"[retrain_mlp] Switched to algo=llm_price for MLP-only training ({argsP.num_epoch} epochs)")
+
+
 crit = nn.MSELoss()
 
 # Custom optimizer/scheduler for price_finetune or freeze_llm
@@ -636,17 +757,22 @@ if argsP.algo == "llm_price_finetune":
     _fi = "_frozenInit" if getattr(argsP, 'price_init_frozen_joint', False) else ""
     _ga = "_gated" if getattr(argsP, 'use_price_gate', False) else ""
     _ca = "_crossAttn" if getattr(argsP, 'use_cross_attention', False) else ""
+    _bca = "_biCrossAttn" if getattr(argsP, 'use_bi_cross_attention', False) else ""
+    _rp = "_refinedPool" if getattr(argsP, 'refined_pool', False) else ""
     _pm = "_priceM" if getattr(argsP, 'price_m', False) else ""
     _ps = "_priceS" if getattr(argsP, 'price_s', False) else ""
     _ri = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
     _nl = f"_pL{argsP.price_n_layers}" if getattr(argsP, 'price_n_layers', 6) != 6 else ""
-    _nc = f"_cx{argsP.n_cross_layers}" if getattr(argsP, 'use_cross_attention', False) and getattr(argsP, 'n_cross_layers', 2) != 2 else ""
-    _ckpt_prefix = f"{argsP.canonical_wl_prefix}_{_task}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{_pm}{_ps}_llm_price{_fi}{_ga}{_ca}{_ri}{_nl}{_nc}"
+    _nc = f"_cx{argsP.n_cross_layers}" if (getattr(argsP, 'use_cross_attention', False) or getattr(argsP, 'use_bi_cross_attention', False)) and getattr(argsP, 'n_cross_layers', 2) != 2 else ""
+    _ckpt_prefix = f"{argsP.canonical_wl_prefix}_{_task}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{_pm}{_ps}_llm_price{_fi}{_ga}{_ca}{_bca}{_rp}{_ri}{_nl}{_nc}"
 elif argsP.algo == "price_finetune":
     _pm = "_priceM" if getattr(argsP, 'price_m', False) else ""
     _ps = "_priceS" if getattr(argsP, 'price_s', False) else ""
     _ri = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
     _ckpt_prefix = f"{argsP.canonical_wl_prefix}_card_b{argsP.batch_size}{_pm}{_ps}{_ri}_price_separate"
+elif argsP.algo == "llm_finetune":
+    _task = "card" if argsP.card else "time"
+    _ckpt_prefix = f"{argsP.canonical_wl_prefix}_{_task}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}"
 argsP.checkpoint_prefix = _ckpt_prefix
 
 # Resume from checkpoint if specified (or auto-detect latest)
@@ -713,7 +839,11 @@ if not resume_ckpt and _ckpt_prefix and getattr(argsP, 'checkpoint_interval', 0)
 if resume_ckpt and os.path.exists(resume_ckpt) and not _resumed_from_weights:
     print(f"[Checkpoint] Resuming from {resume_ckpt}")
     ckpt = torch.load(resume_ckpt, map_location=argsP.device, weights_only=False)
-    model_comb.load_state_dict(ckpt['model_state_dict'])
+    _load_result = model_comb.load_state_dict(ckpt['model_state_dict'], strict=False)
+    if _load_result.unexpected_keys:
+        print(f"[Checkpoint] Ignored {len(_load_result.unexpected_keys)} unexpected keys (e.g. bitsandbytes metadata)")
+    if _load_result.missing_keys:
+        print(f"[Checkpoint] WARNING: {len(_load_result.missing_keys)} missing keys: {_load_result.missing_keys[:5]}")
     start_epoch = ckpt['epoch']
     # Optimizer/scheduler will be loaded inside train() if we pass them
     if price_finetune_optimizer and ckpt.get('optimizer_state_dict'):
@@ -789,13 +919,15 @@ elif argsP.algo == "llm_price_finetune" and not getattr(argsP, '_cross_attn_infe
     frozen_init_suffix = "_frozenInit" if getattr(argsP, 'price_init_frozen_joint', False) else ""
     gated_suffix = "_gated" if getattr(argsP, 'use_price_gate', False) else ""
     cross_attn_suffix = "_crossAttn" if getattr(argsP, 'use_cross_attention', False) else ""
+    bi_cross_attn_suffix = "_biCrossAttn" if getattr(argsP, 'use_bi_cross_attention', False) else ""
+    refined_pool_suffix = "_refinedPool" if getattr(argsP, 'refined_pool', False) else ""
     price_m_suffix = "_priceM" if getattr(argsP, 'price_m', False) else ""
     price_s_suffix = "_priceS" if getattr(argsP, 'price_s', False) else ""
     rand_init_suffix = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
     n_layers_suffix = f"_pL{argsP.price_n_layers}" if getattr(argsP, 'price_n_layers', 6) != 6 else ""
-    n_cross_suffix = f"_cx{argsP.n_cross_layers}" if getattr(argsP, 'use_cross_attention', False) and getattr(argsP, 'n_cross_layers', 2) != 2 else ""
+    n_cross_suffix = f"_cx{argsP.n_cross_layers}" if (getattr(argsP, 'use_cross_attention', False) or getattr(argsP, 'use_bi_cross_attention', False)) and getattr(argsP, 'n_cross_layers', 2) != 2 else ""
     epoch_suffix = f"_e{argsP.num_epoch}"
-    prefix = f"{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{price_m_suffix}{price_s_suffix}_llm_price{frozen_init_suffix}{gated_suffix}{cross_attn_suffix}{rand_init_suffix}{n_layers_suffix}{n_cross_suffix}{epoch_suffix}"
+    prefix = f"{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{price_m_suffix}{price_s_suffix}_llm_price{frozen_init_suffix}{gated_suffix}{cross_attn_suffix}{bi_cross_attn_suffix}{refined_pool_suffix}{rand_init_suffix}{n_layers_suffix}{n_cross_suffix}{epoch_suffix}"
 
     if not getattr(argsP, 'freeze_llm', False):
         llm_sd = trained_model.llm.model.state_dict()
@@ -820,6 +952,12 @@ elif argsP.algo == "llm_price_finetune" and not getattr(argsP, '_cross_attn_infe
         gate_out = os.path.join(save_path, f"{prefix}_gate.pt")
         torch.save(gate_sd, gate_out)
         print(f"Saved gate weights to {gate_out}")
+
+    if hasattr(trained_model, 'refined_llm_proj'):
+        rlp_sd = trained_model.refined_llm_proj.state_dict()
+        rlp_out = os.path.join(save_path, f"{prefix}_refined_llm_proj.pt")
+        torch.save(rlp_sd, rlp_out)
+        print(f"Saved refined_llm_proj weights to {rlp_out}")
 elif argsP.algo == "price_finetune":
     # Save finetuned PRICE model (the inner RegressionModel state_dict)
     save_path = f"finetuned_models/{argsP.db}/"

@@ -28,6 +28,9 @@ CLI_CHECKPOINT_INTERVAL=""
 CLI_PRICE_LR=""
 CLI_PRICE_N_LAYERS=""
 CLI_N_CROSS_LAYERS=""
+CLI_CROSS_ATTN_LR=""
+CLI_RETRAIN_MLP=""
+CLI_REFINED_POOL=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -54,6 +57,9 @@ while [[ $# -gt 0 ]]; do
         --price_random_init) CLI_PRICE_RANDOM_INIT="true"; shift 1 ;;
         --price_n_layers)   CLI_PRICE_N_LAYERS="$2";     shift 2 ;;
         --n_cross_layers)   CLI_N_CROSS_LAYERS="$2";     shift 2 ;;
+        --cross_attn_lr)    CLI_CROSS_ATTN_LR="$2";     shift 2 ;;
+        --retrain_mlp)      CLI_RETRAIN_MLP="true";     shift 1 ;;
+        --refined_pool)     CLI_REFINED_POOL="true";    shift 1 ;;
         *)
             echo "Unknown flag: $1"
             exit 1
@@ -354,6 +360,7 @@ _resolve_finetune_mode() {
         9)  echo "PriceFTthenJoint" ;;
         10) echo "GatedJointPrice" ;;
         11) echo "CrossAttentionJoint" ;;
+        12) echo "BiCrossAttentionJoint" ;;
         *)  echo "$1" ;;  # already a name string
     esac
 }
@@ -374,7 +381,8 @@ else
     echo "9. LLM+PRICE: Frozen-init then joint (PriceFTthenJoint)"
     echo "10. LLM+PRICE: Gated joint (GatedJointPrice)"
     echo "11. LLM+PRICE: Cross-attention joint (CrossAttentionJoint)"
-    echo "Enter choice (1-11):"
+    echo "12. LLM+PRICE: Bidirectional cross-attention joint (BiCrossAttentionJoint)"
+    echo "Enter choice (1-12):"
     read -r finetune_choice
 
     FINETUNE_MODE="False"
@@ -398,6 +406,8 @@ else
         FINETUNE_MODE="GatedJointPrice"
     elif [[ "$finetune_choice" == "11" ]]; then
         FINETUNE_MODE="CrossAttentionJoint"
+    elif [[ "$finetune_choice" == "12" ]]; then
+        FINETUNE_MODE="BiCrossAttentionJoint"
     fi
 fi
 
@@ -662,6 +672,15 @@ for SEED in "${seeds[@]}"; do
             fi
             if [[ -n "$CLI_N_CROSS_LAYERS" ]]; then
                 export N_CROSS_LAYERS="$CLI_N_CROSS_LAYERS"
+            fi
+            if [[ -n "$CLI_CROSS_ATTN_LR" ]]; then
+                export CROSS_ATTN_LR="$CLI_CROSS_ATTN_LR"
+            fi
+            if [[ -n "$CLI_RETRAIN_MLP" ]]; then
+                export RETRAIN_MLP="$CLI_RETRAIN_MLP"
+            fi
+            if [[ -n "$CLI_REFINED_POOL" ]]; then
+                export REFINED_POOL="$CLI_REFINED_POOL"
             fi
             export FINETUNE_RUN_LAST="$FINETUNE_RUN_LAST"
             export FINETUNE_RUN_LORA="$FINETUNE_RUN_LORA"

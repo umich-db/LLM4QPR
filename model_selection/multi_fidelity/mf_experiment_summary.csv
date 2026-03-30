@@ -1,0 +1,4 @@
+method,hv_pct_mean,hv_pct_std,true_found_mean,budget_mean
+Multi-Fidelity,80.1065786044679,5.047879731496062,2.0,27.4
+Random,81.40921094046837,11.532551773502135,1.25,27.0
+Maximin (single-fidelity),84.036410613938,13.591179166255891,1.4,27.0

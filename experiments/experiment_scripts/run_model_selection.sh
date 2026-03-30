@@ -145,14 +145,117 @@ MODELS=(
     "NeuML/bert-hash-nano-embeddings"               #   970K
     # NeuML/pubmedbert-base-embeddings-1M uses model2vec arch, unsupported by transformers
     "prajjwal1/bert-tiny"                           #   4.4M
+    "google/bert_uncased_L-2_H-128_A-2"             #   4.2M
+    "google/bert_uncased_L-4_H-128_A-2"             #   4.5M
+    "google/bert_uncased_L-6_H-128_A-2"             #   4.8M
+    "google/bert_uncased_L-8_H-128_A-2"             #   5.1M
+    "google/bert_uncased_L-10_H-128_A-2"            #   5.4M
+    "google/bert_uncased_L-12_H-128_A-2"            #   5.7M
+    "EleutherAI/pythia-14m"                         #   7.1M
+    "EleutherAI/pythia-14m-deduped"                 #   7.1M
+    "google/bert_uncased_L-2_H-256_A-4"             #   8.8M
+    "google/electra-small-generator"                #   8.8M
+    "google/bert_uncased_L-4_H-256_A-4"             #  10.2M
+    "albert/albert-base-v1"                         #  11.7M
+    "albert/albert-base-v2"                         #  11.7M
+    "google/bert_uncased_L-6_H-256_A-4"             #  11.5M
+    "sentence-transformers/paraphrase-albert-small-v2" #  11M
+    "google/bert_uncased_L-8_H-256_A-4"             #  12.9M
+    "google/electra-small-discriminator"            #  13.5M
+    "google/bert_uncased_L-10_H-256_A-4"            #  14.2M
+    "google/bert_uncased_L-12_H-256_A-4"            #  15.5M
     "sentence-transformers/paraphrase-MiniLM-L3-v2" #  17.4M
+    "albert/albert-large-v1"                        #  17.7M
+    "albert/albert-large-v2"                        #  17.7M
+    "sentence-transformers/paraphrase-MiniLM-L6-v2" #  22.7M
     "sentence-transformers/all-MiniLM-L6-v2"        #  22.7M
+    "sentence-transformers/multi-qa-MiniLM-L6-cos-v1" #  22.7M
+    "sentence-transformers/multi-qa-MiniLM-L6-dot-v1" #  22.7M
+    "nreimers/MiniLM-L6-H384-uncased"              #  22.7M
+    "microsoft/MiniLM-L12-H384-uncased"             #  22.9M
+    "google/mobilebert-uncased"                     #  25.3M
+    "EleutherAI/pythia-31m"                         #  24.8M
+    "EleutherAI/pythia-31m-deduped"                 #  24.8M
+    "google/bert_uncased_L-2_H-512_A-8"             #  24.1M
+    "google/bert_uncased_L-4_H-512_A-8"             #  27.9M
+    "google/bert_uncased_L-6_H-512_A-8"             #  31.7M
     "intfloat/e5-small-v2"                          #    33M
-    # "nomic-ai/nomic-embed-text-v1.5"                #   137M
+    "sentence-transformers/all-MiniLM-L12-v2"       #  33.4M
+    "sentence-transformers/paraphrase-MiniLM-L12-v2" #  33.4M
+    "google/bert_uncased_L-8_H-512_A-8"             #  35.4M
+    "google/bert_uncased_L-10_H-512_A-8"            #  39.2M
+    "sentence-transformers/paraphrase-albert-base-v2" #  11.8M
+    "google/bert_uncased_L-12_H-512_A-8"            #  43.0M
+    "microsoft/deberta-v3-xsmall"                   #  22M
+    "microsoft/deberta-v3-small"                    #  44M
+    "google/electra-base-generator"                 #  33.6M
+    "google/bert_uncased_L-2_H-768_A-12"            #  46.5M
+    "google/bert_uncased_L-4_H-768_A-12"            #  52.7M
+    "google/bert_uncased_L-6_H-768_A-12"            #  58.8M
+    "albert/albert-xlarge-v1"                       #  58.7M
+    "albert/albert-xlarge-v2"                       #  58.7M
+    "distilbert/distilbert-base-uncased"            #  66.4M
+    "distilbert/distilbert-base-cased"              #  66.4M
+    "distilbert/distilroberta-base"                 #  82.1M
+    "distilbert/distilbert-base-multilingual-cased" #  135M
+    "distilbert/distilgpt2"                         #  82M
+    "EleutherAI/pythia-70m"                         #  52.7M
+    "EleutherAI/pythia-70m-deduped"                 #  52.7M
+    "google/bert_uncased_L-8_H-768_A-12"            #  65.0M
+    "google/bert_uncased_L-10_H-768_A-12"           #  71.2M
+    "google/bert_uncased_L-12_H-768_A-12"           #  77.3M  (≈ BERT-base)
+    "facebook/opt-125m"                             #  83.1M
+    "HuggingFaceTB/SmolLM-135M"                     #  81.9M
+    "HuggingFaceTB/SmolLM-135M-Instruct"            #  81.9M
+    "HuggingFaceTB/SmolLM2-135M"                    #  81.9M
+    "HuggingFaceTB/SmolLM2-135M-Instruct"           #  81.9M
+    "google-bert/bert-base-uncased"                 # 110M
+    "google-bert/bert-base-cased"                   # 110M
+    "google-bert/bert-base-multilingual-cased"      # 179M
+    "google-bert/bert-base-multilingual-uncased"    # 168M
+    "google/electra-base-discriminator"             # 110M
+    "sentence-transformers/all-mpnet-base-v2"       # 110M
+    "sentence-transformers/paraphrase-mpnet-base-v2" # 110M
+    "sentence-transformers/multi-qa-mpnet-base-cos-v1" # 110M
+    "sentence-transformers/paraphrase-TinyBERT-L6-v2" #  66M
+    "sentence-transformers/multi-qa-distilbert-cos-v1" #  66M
+    "sentence-transformers/multi-qa-distilbert-dot-v1" #  66M
+    "EleutherAI/gpt-neo-125m"                      # 125M
+    "FacebookAI/roberta-base"                       # 125M
+    "FacebookAI/xlm-roberta-base"                   # 278M
+    "microsoft/deberta-v3-base"                     # 184M
+    "microsoft/mdeberta-v3-base"                    # 279M
+    "nomic-ai/nomic-embed-text-v1.5"                #   137M
     "Alibaba-NLP/gte-modernbert-base"               #   149M
     "nomic-ai/modernbert-embed-base"                #   149M
+    "answerdotai/ModernBERT-base"                   # 149M
+    "EleutherAI/pythia-160m"                        # 162M
+    "EleutherAI/pythia-160m-deduped"                # 162M
+    "albert/albert-xxlarge-v1"                      # 223M
+    "albert/albert-xxlarge-v2"                      # 223M
     "google/gemma-3-270m"                           #   270M
     "google/embeddinggemma-300m"                    #   300M
+    "facebook/opt-350m"                             # 331M
+    "google/electra-large-generator"                # 335M
+    "google/electra-large-discriminator"            # 335M
+    "microsoft/deberta-v3-large"                    # 304M
+    "HuggingFaceTB/SmolLM-360M"                     # 360M
+    "HuggingFaceTB/SmolLM-360M-Instruct"            # 360M
+    "HuggingFaceTB/SmolLM2-360M"                    # 360M
+    "HuggingFaceTB/SmolLM2-360M-Instruct"           # 360M
+    "FacebookAI/roberta-large"                      # 355M
+    "FacebookAI/xlm-roberta-large"                  # 559M
+    "answerdotai/ModernBERT-large"                  # 395M
+    "EleutherAI/pythia-410m"                        # 405M
+    "EleutherAI/pythia-410m-deduped"                # 405M
+    "Qwen/Qwen1.5-0.5B"                            #   0.5B
+    "Qwen/Qwen1.5-0.5B-Chat"                       #   0.5B
+    "Qwen/Qwen2-0.5B"                              #   0.5B
+    "Qwen/Qwen2-0.5B-Instruct"                     #   0.5B
+    "Qwen/Qwen2.5-0.5B"                            #   0.5B
+    "Qwen/Qwen2.5-0.5B-Instruct"                   #   0.5B
+    "Qwen/Qwen2.5-Coder-0.5B"                      #   0.5B
+    "Qwen/Qwen2.5-Coder-0.5B-Instruct"             #   0.5B
     "Qwen/Qwen3-Embedding-0.6B"                    #   0.6B
     "Qwen/Qwen3-0.6B"                              #   0.6B
 )

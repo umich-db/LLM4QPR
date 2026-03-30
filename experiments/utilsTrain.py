@@ -112,9 +112,9 @@ def parse_args():
                         help="Path to PRICE statistics directory (default: auto-detect)")
     parser.add_argument("--price_pretrained", action="store_true", default=False,
                         help="(Deprecated) Load finetuned PRICE weights for inference. Use --price_weights_source instead.")
-    parser.add_argument("--price_weights_source", type=str, choices=["pretrained", "separate", "joint", "frozen_joint", "joint_frozen_init", "gated_joint", "cross_attn_joint"],
+    parser.add_argument("--price_weights_source", type=str, choices=["pretrained", "separate", "joint", "frozen_joint", "joint_frozen_init", "gated_joint", "cross_attn_joint", "bi_cross_attn_joint"],
                         default="pretrained",
-                        help="Source of PRICE weights: pretrained (original), separate (finetuned on card), joint (jointly finetuned), frozen_joint (finetuned with frozen LLM), joint_frozen_init (jointly finetuned from frozen-joint init), gated_joint (jointly finetuned with learned gate), cross_attn_joint (jointly finetuned with cross-attention)")
+                        help="Source of PRICE weights: pretrained (original), separate (finetuned on card), joint (jointly finetuned), frozen_joint (finetuned with frozen LLM), joint_frozen_init (jointly finetuned from frozen-joint init), gated_joint (jointly finetuned with learned gate), cross_attn_joint (jointly finetuned with cross-attention), bi_cross_attn_joint (jointly finetuned with bidirectional cross-attention)")
     parser.add_argument("--price_lr", type=float, default=None,
                         help="Learning rate for PRICE model parameters (default: 1e-3 with --price_random_init, else 2.85e-5)")
     parser.add_argument("--freeze_llm", action="store_true", default=False,
@@ -163,9 +163,18 @@ def parse_args():
     # Cross-attention fusion arguments (Mode 11)
     parser.add_argument("--use_cross_attention", action="store_true", default=False,
                         help="Use cross-attention fusion: PRICE tokens attend to LLM hidden states")
+    # Bidirectional cross-attention fusion arguments (Mode 12)
+    parser.add_argument("--use_bi_cross_attention", action="store_true", default=False,
+                        help="Use bidirectional cross-attention fusion: PRICE<->LLM attend to each other")
     parser.add_argument("--n_cross_layers", type=int, default=2,
                         help="Number of cross-attention layers (default 2)")
-    
+    parser.add_argument("--cross_attn_lr", type=float, default=None,
+                        help="Learning rate for cross-attention layers (default: same as main learning_rate)")
+    parser.add_argument("--retrain_mlp", action="store_true", default=False,
+                        help="Pre-compute cross-attn embeddings, then train fresh MLP from scratch")
+    parser.add_argument("--refined_pool", action="store_true", default=False,
+                        help="Use refined (cross-attn enriched) LLM pooled embedding instead of original")
+
     args = parser.parse_args()
 
     # Backward compat: --price_pretrained maps to price_weights_source="joint"

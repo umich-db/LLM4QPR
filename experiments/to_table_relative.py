@@ -10,6 +10,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--dirs", type=str, nargs="+", required=True,
                     help="Result directories (datasets), e.g. results/duckdb/results_Train_job_Test_job_ours results/duckdb/results_Train_stats_Test_stats_ours")
 parser.add_argument("--task", type=str, default="time")
+parser.add_argument("--sentbert_only", action="store_true",
+                    help="Only show sentBert-all_quant variants (plus non-LLM baselines) in .png")
 args = parser.parse_args()
 
 
@@ -64,10 +66,32 @@ def extract_display_name(col_name):
             if '_randInit' in col_name:
                 display_name += '_randInit'
 
+            # Extract PRICE n_layers (e.g., _pL3, _pL12)
+            pl_match = re.search(r'_pL(\d+)', col_name)
+            if pl_match:
+                display_name += f"_pL{pl_match.group(1)}"
+
+            # Extract cross-attention suffix
+            if '_crossAttn' in col_name:
+                display_name += '_crossAttn'
+
+            # Extract cross-attention layer count (e.g., _cx4)
+            cx_match = re.search(r'_cx(\d+)', col_name)
+            if cx_match:
+                display_name += f"_cx{cx_match.group(1)}"
+
+            # Extract refinedPool flag
+            if '_refinedPool' in col_name:
+                display_name += '_refinedPool'
+
             # Extract finetune epoch count (e.g., _e20, _e30)
             ft_epoch_match = re.search(r'_e(\d+)_ftb', col_name)
             if ft_epoch_match:
                 display_name += f"_e{ft_epoch_match.group(1)}"
+
+            # Extract retrainMLP flag
+            if '_retrainMLP' in col_name:
+                display_name += '_retrainMLP'
 
             return display_name
         return 'LLM'
@@ -396,5 +420,17 @@ def create_relative_heatmap(table, output_path, task, llm_methods):
     print("="*80)
 
 
-heatmap_path = os.path.join(out_dir, f'relative_qerror_{args.task}_heatmap.png')
-create_relative_heatmap(avg_relative, heatmap_path, args.task, llm_display_names)
+# Filter to sentBert-all variants only (plus non-LLM baselines) for heatmap
+if args.sentbert_only:
+    keep_cols = [col for col in avg_relative.columns
+                 if col not in llm_display_names or 'sentBert-all' in col]
+    heatmap_table = avg_relative[keep_cols]
+    heatmap_llm = {m for m in llm_display_names if 'sentBert-all' in m}
+    suffix = '_sentbert'
+else:
+    heatmap_table = avg_relative
+    heatmap_llm = llm_display_names
+    suffix = ''
+
+heatmap_path = os.path.join(out_dir, f'relative_qerror_{args.task}{suffix}_heatmap.png')
+create_relative_heatmap(heatmap_table, heatmap_path, args.task, heatmap_llm)

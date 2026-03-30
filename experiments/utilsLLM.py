@@ -192,19 +192,24 @@ class QueryPlanPredictor(nn.Module):
 
     def _load_tokenizer(self, model_name: str):
         """Load and configure tokenizer for the model."""
-        if "gpt2" in model_name:
-            from transformers import GPT2TokenizerFast
-            tokenizer = GPT2TokenizerFast.from_pretrained(model_name)
-        elif "qwen" in model_name.lower() or "qwen3" in model_name.lower():
-            tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-        elif "modernbert" in model_name.lower():
-            tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-        elif "bert" in model_name.lower():
-            tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-        elif "google/" in model_name.lower() or "gemma" in model_name.lower():
-            tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-        else:
-            tokenizer = AutoTokenizer.from_pretrained(model_name)
+        try:
+            if "gpt2" in model_name.lower():
+                from transformers import GPT2TokenizerFast
+                tokenizer = GPT2TokenizerFast.from_pretrained(model_name)
+            elif "qwen" in model_name.lower() or "qwen3" in model_name.lower():
+                tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+            elif "modernbert" in model_name.lower():
+                tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+            elif "bert" in model_name.lower():
+                tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+            elif "google/" in model_name.lower() or "gemma" in model_name.lower():
+                tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+            else:
+                tokenizer = AutoTokenizer.from_pretrained(model_name)
+        except Exception:
+            # Fallback to slow tokenizer if fast conversion fails (e.g. DeBERTa-v3)
+            print(f"Fast tokenizer failed for {model_name}, falling back to slow tokenizer")
+            tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False, trust_remote_code=True)
         
         # Set pad token if not present
         if tokenizer.pad_token is None:
@@ -223,7 +228,11 @@ class QueryPlanPredictor(nn.Module):
         elif "modernbert" in model_name.lower():
             return self._load_modernbert_model(model_name, quantification, enable_checkpointing, offload_folder,
                                              use_lora, lora_r, lora_alpha, lora_dropout, target_modules, mode)
-        elif "bert" in model_name.lower():
+        elif "bert" in model_name.lower() or "electra" in model_name.lower():
+            # distilgpt2 has "bert" in publisher name but is a GPT-2 model
+            if "gpt2" in model_name.lower():
+                return self._load_gpt2_model(model_name, quantification, enable_checkpointing, offload_folder,
+                                            use_lora, lora_r, lora_alpha, lora_dropout, target_modules, mode)
             return self._load_bert_model(model_name, quantification, enable_checkpointing, offload_folder,
                                        use_lora, lora_r, lora_alpha, lora_dropout, target_modules, mode)
         elif "gpt2" in model_name:
@@ -247,7 +256,9 @@ class QueryPlanPredictor(nn.Module):
             return self._load_google_model(model_name, quantification, offload_folder,
                                          use_lora, lora_r, lora_alpha, lora_dropout, target_modules)
         else:
-            raise ValueError(f"Unsupported model type: {model_name}")
+            # Generic fallback: AutoModel for any HuggingFace model
+            return self._load_generic_model(model_name, quantification, enable_checkpointing, offload_folder,
+                                           use_lora, lora_r, lora_alpha, lora_dropout, target_modules, mode)
 
     def _infer_hidden_dim(self, model) -> int:
         """
@@ -605,19 +616,22 @@ class QueryPlanPredictor(nn.Module):
             # Use specific device for single GPU
             device_map = self.device if hasattr(self, 'device') else "cuda:0"
         
+        # DeBERTa-v3 overflows with float16/bfloat16; use float32
+        dtype = torch.float32 if "deberta" in model_name.lower() else torch.float16
+
         if quantification == "4-bit":
             # Use 4-bit quantization settings
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_use_double_quant=False,     # Match Llama: Default False
                 bnb_4bit_quant_type="fp4",          # Match Llama: Default fp4
-                bnb_4bit_compute_dtype=torch.float16  # Match Llama: Default float32
+                bnb_4bit_compute_dtype=dtype
             )
             model = AutoModel.from_pretrained(
                 model_name,
                 quantization_config=bnb_config,
                 device_map=device_map,
-                torch_dtype=torch.float16,
+                torch_dtype=dtype,
                 trust_remote_code=True,
                 offload_folder=offload_folder
             )
@@ -633,7 +647,7 @@ class QueryPlanPredictor(nn.Module):
                 model_name,
                 quantization_config=bnb_config,
                 device_map=device_map,
-                torch_dtype=torch.float16,
+                torch_dtype=dtype,
                 trust_remote_code=True,
                 offload_folder=offload_folder
             )
@@ -641,7 +655,7 @@ class QueryPlanPredictor(nn.Module):
             model = AutoModel.from_pretrained(
                 model_name,
                 device_map=device_map,
-                torch_dtype=torch.float16,
+                torch_dtype=dtype,
                 trust_remote_code=True,
                 offload_folder=offload_folder
             )
@@ -649,15 +663,38 @@ class QueryPlanPredictor(nn.Module):
         if enable_checkpointing and mode != "inference":
             model.gradient_checkpointing_enable()
             print("Gradient checkpointing enabled")
-        
+
         # Only prepare for kbit training if quantization is used
         if quantification != "None":
-            model = prepare_model_for_kbit_training(model)
-        
+            supports_gc = getattr(model, "supports_gradient_checkpointing", True)
+            model = prepare_model_for_kbit_training(
+                model, use_gradient_checkpointing=supports_gc
+            )
+
+        # Auto-detect LoRA target modules if not specified
+        if target_modules:
+            default_targets = target_modules
+        else:
+            module_names = {n.split('.')[-1] for n, m in model.named_modules() if isinstance(m, nn.Linear)}
+            if {"query", "value"} <= module_names:
+                default_targets = ["query", "value"]
+            elif {"query_proj", "value_proj"} <= module_names:
+                default_targets = ["query_proj", "value_proj"]
+            elif {"q_lin", "v_lin"} <= module_names:
+                default_targets = ["q_lin", "v_lin"]
+            elif {"q", "v"} <= module_names:
+                default_targets = ["q", "v"]
+            elif {"q_proj", "v_proj"} <= module_names:
+                default_targets = ["q_proj", "v_proj"]
+            elif {"Wqkv"} <= module_names:
+                default_targets = ["Wqkv"]
+            else:
+                default_targets = ["query", "value"]
+            print(f"[bert] LoRA target modules: {default_targets}")
         lora_config = LoraConfig(
             r=lora_r,
             lora_alpha=lora_alpha,
-            target_modules=target_modules or ["query", "value"],
+            target_modules=default_targets,
             lora_dropout=lora_dropout,
             bias="none",
             task_type=TaskType.FEATURE_EXTRACTION,
@@ -938,20 +975,39 @@ class QueryPlanPredictor(nn.Module):
                 offload_folder=offload_folder
             )
         if enable_checkpointing and mode != "inference":
-            self.model.gradient_checkpointing_enable()
-            print("Gradient checkpointing enabled")
+            if getattr(self.model, "supports_gradient_checkpointing", True):
+                self.model.gradient_checkpointing_enable()
+                print("Gradient checkpointing enabled")
+            else:
+                print(f"Skipping gradient checkpointing (not supported by {type(self.model).__name__})")
         # Always apply LoRA (even in inference mode) so that state_dict keys match
         # when loading finetuned weights saved from a PeftModel
         if quantification != "None":
-            self.model = prepare_model_for_kbit_training(self.model)
+            supports_gc = getattr(self.model, "supports_gradient_checkpointing", True)
+            self.model = prepare_model_for_kbit_training(
+                self.model, use_gradient_checkpointing=supports_gc
+            )
         # LoRA configuration for sentence-transformers models (typically BERT-based)
-        # Nomic models use fused Wqkv instead of separate query/value layers
+        # Auto-detect target modules from model architecture
         if target_modules:
             default_targets = target_modules
         elif "nomic" in model_name.lower():
             default_targets = ["Wqkv", "out_proj"]
         else:
-            default_targets = ["query", "value"]
+            module_names = {n.split('.')[-1] for n, m in self.model.named_modules() if isinstance(m, nn.Linear)}
+            if {"query", "value"} <= module_names:
+                default_targets = ["query", "value"]
+            elif {"query_proj", "value_proj"} <= module_names:
+                default_targets = ["query_proj", "value_proj"]
+            elif {"q_lin", "v_lin"} <= module_names:
+                default_targets = ["q_lin", "v_lin"]
+            elif {"q", "v"} <= module_names:
+                default_targets = ["q", "v"]
+            elif {"q_proj", "v_proj"} <= module_names:
+                default_targets = ["q_proj", "v_proj"]
+            else:
+                default_targets = ["query", "value"]
+            print(f"[sentence-transformers] LoRA target modules: {default_targets}")
         lora_config = LoraConfig(
             r=lora_r,
             lora_alpha=lora_alpha,
@@ -974,6 +1030,104 @@ class QueryPlanPredictor(nn.Module):
             base_model.forward = _patched_nomic_forward
 
         return self.model
+
+    def _load_generic_model(self, model_name, quantification, enable_checkpointing, offload_folder,
+                            use_lora, lora_r, lora_alpha, lora_dropout, target_modules, mode):
+        """Generic fallback loader using AutoModel for any HuggingFace model.
+        Handles SmolLM, Pythia, OPT, GPT-Neo, MiniLM, and other unseen models."""
+        print(f"Loading model (generic AutoModel): {model_name}")
+
+        # Report max input length
+        try:
+            from transformers import AutoConfig
+            config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
+            max_pos = getattr(config, 'max_position_embeddings', None)
+            print(f"=== Generic Model Max Input Length ===")
+            if max_pos:
+                print(f"Max position embeddings: {max_pos}")
+            if self.tokenizer.model_max_length > 1_000_000 and max_pos:
+                self.tokenizer.model_max_length = max_pos
+                print(f"Capped tokenizer.model_max_length to {max_pos}")
+            print(f"Effective max input length: {self.tokenizer.model_max_length}")
+        except Exception as e:
+            print(f"Could not load model config: {e}")
+
+        if quantification == "4-bit":
+            from transformers import BitsAndBytesConfig
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_use_double_quant=False,
+                bnb_4bit_quant_type="fp4",
+                bnb_4bit_compute_dtype=torch.float16
+            )
+            model = AutoModel.from_pretrained(
+                model_name,
+                quantization_config=bnb_config,
+                device_map="auto",
+                trust_remote_code=True,
+                offload_folder=offload_folder
+            )
+        elif quantification == "8-bit":
+            from transformers import BitsAndBytesConfig
+            bnb_config = BitsAndBytesConfig(
+                load_in_8bit=True,
+                llm_int8_threshold=6.0,
+                llm_int8_has_fp16_weight=False,
+            )
+            model = AutoModel.from_pretrained(
+                model_name,
+                quantization_config=bnb_config,
+                device_map="auto",
+                trust_remote_code=True,
+                offload_folder=offload_folder
+            )
+        else:
+            model = AutoModel.from_pretrained(
+                model_name,
+                device_map="auto",
+                torch_dtype=torch.float16,
+                trust_remote_code=True,
+                offload_folder=offload_folder
+            )
+
+        if enable_checkpointing and mode != "inference":
+            if hasattr(model, 'gradient_checkpointing_enable'):
+                model.gradient_checkpointing_enable()
+                print("Gradient checkpointing enabled")
+
+        if use_lora:
+            if quantification != "None":
+                supports_gc = getattr(model, "supports_gradient_checkpointing", True)
+                model = prepare_model_for_kbit_training(
+                    model, use_gradient_checkpointing=supports_gc
+                )
+            # Auto-detect LoRA target modules
+            if target_modules:
+                default_targets = target_modules
+            else:
+                # Try common target module names
+                module_names = {n.split('.')[-1] for n, _ in model.named_modules() if isinstance(_, nn.Linear)}
+                if {"q_proj", "v_proj"} <= module_names:
+                    default_targets = ["q_proj", "v_proj"]
+                elif {"query", "value"} <= module_names:
+                    default_targets = ["query", "value"]
+                elif {"Wqkv"} <= module_names:
+                    default_targets = ["Wqkv"]
+                else:
+                    # Fallback: target all linear layers
+                    default_targets = list(module_names)[:4] if module_names else ["query", "value"]
+                print(f"[generic] LoRA target modules: {default_targets}")
+            lora_config = LoraConfig(
+                r=lora_r,
+                lora_alpha=lora_alpha,
+                target_modules=default_targets,
+                lora_dropout=lora_dropout,
+                bias="none",
+                task_type=TaskType.FEATURE_EXTRACTION,
+            )
+            model = get_peft_model(model, lora_config)
+
+        return model
 
     def _load_google_model(self, model_name, quantification, offload_folder,
                            use_lora, lora_r, lora_alpha, lora_dropout, target_modules):
@@ -1174,9 +1328,16 @@ class QueryPlanPredictor(nn.Module):
                 all_windows.extend(text_windows)
                 window_counts.append(len(text_windows))
         
-        # 批量处理所有窗口
+        # Process windows in sub-batches to avoid OOM on long sequences
         if all_windows:
-            embeddings = self._process_batch_optimized(all_windows, max_length)
+            window_batch_size = max(1, int(os.environ.get("WINDOW_BATCH_SIZE", "1")))
+            emb_parts = []
+            for i in range(0, len(all_windows), window_batch_size):
+                chunk = all_windows[i : i + window_batch_size]
+                emb_parts.append(self._process_batch_optimized(chunk, max_length))
+                if window_batch_size == 1:
+                    torch.cuda.empty_cache()
+            embeddings = torch.cat(emb_parts, dim=0)
             
             # 按原始文本分组并平均
             result_embeddings = []
@@ -1289,7 +1450,9 @@ class QueryPlanPredictor(nn.Module):
                 outputs = self.model(**inputs)
                 hs = outputs.last_hidden_state
         else:
-            with torch.amp.autocast('cuda', enabled=True):
+            # DeBERTa-v3 overflows with float16/bfloat16; disable autocast
+            use_amp = "deberta" not in self.model_name.lower()
+            with torch.amp.autocast('cuda', enabled=use_amp):
                 outputs = self.model(**inputs)
                 if hasattr(outputs, 'last_hidden_state'):
                     hs = outputs.last_hidden_state
@@ -1467,15 +1630,104 @@ class QueryPlanPredictor(nn.Module):
     def forward_with_sequence(self, texts: list[str]):
         """
         Like forward(), but also returns hidden states and attention mask
-        for cross-attention fusion. Truncates to max_length (no sliding windows).
+        for cross-attention fusion.  Uses sliding windows when texts exceed
+        model_max_length, concatenating per-window hidden states (keeping
+        only the non-overlapping stride portion from each subsequent window)
+        into a single sequence per text.
 
         Returns:
             pooled_emb:     [B, D_llm]
-            hidden_states:  [B, T, D_llm]
-            attention_mask: [B, T]
+            hidden_states:  [B, T_total, D_llm]
+            attention_mask: [B, T_total]
         """
         max_length = self.tokenizer.model_max_length
-        return self._process_batch_optimized(texts, max_length, return_hidden_states=True)
+
+        if not self.use_sliding_window:
+            return self._process_batch_optimized(texts, max_length, return_hidden_states=True)
+
+        # Tokenize once to check lengths
+        tokenized = [self.tokenizer.encode(t, add_special_tokens=True) for t in texts]
+
+        if not any(len(t) > max_length for t in tokenized):
+            return self._process_batch_optimized(texts, max_length, return_hidden_states=True)
+
+        # Build sliding windows per text
+        stride = int(max_length * self.window_stride_ratio)
+        overlap = max_length - stride
+        all_windows = []          # flat list of token-id lists
+        # Per text: list of (window_idx_in_all_windows, keep_start, keep_end)
+        text_window_info = []
+
+        for tokens in tokenized:
+            info = []
+            if len(tokens) <= max_length:
+                info.append((len(all_windows), 0, len(tokens)))
+                all_windows.append(tokens)
+            else:
+                start = 0
+                is_first = True
+                while start < len(tokens):
+                    end = min(start + max_length, len(tokens))
+                    win_tokens = tokens[start:end]
+                    win_len = len(win_tokens)
+                    win_idx = len(all_windows)
+                    all_windows.append(win_tokens)
+
+                    if is_first:
+                        # First window: keep all real tokens
+                        info.append((win_idx, 0, win_len))
+                        is_first = False
+                    else:
+                        # Later windows: skip the overlapping prefix,
+                        # keep only the new stride portion.
+                        # If this is a short final window (win_len <= overlap),
+                        # all its tokens were already covered — skip it entirely.
+                        ks = min(overlap, win_len)
+                        if ks < win_len:
+                            info.append((win_idx, ks, win_len))
+
+                    if end >= len(tokens):
+                        break
+                    start += stride
+            text_window_info.append(info)
+
+        # Process all windows in one batch
+        all_pooled, all_hs, all_masks = self._process_batch_optimized(
+            all_windows, max_length, return_hidden_states=True
+        )
+        # all_hs: [N_windows, T_padded, D], all_masks: [N_windows, T_padded]
+
+        # Assemble per-text hidden states from non-overlapping slices
+        per_text_hs = []
+        per_text_mask = []
+        pooled_list = []
+
+        for info in text_window_info:
+            hs_parts = []
+            mask_parts = []
+            for win_idx, ks, ke in info:
+                hs_parts.append(all_hs[win_idx, ks:ke, :])
+                mask_parts.append(all_masks[win_idx, ks:ke])
+            per_text_hs.append(torch.cat(hs_parts, dim=0))
+            per_text_mask.append(torch.cat(mask_parts, dim=0))
+            # Pooled embedding: average of per-window pooled embeddings
+            win_indices = [wi for wi, _, _ in info]
+            pooled_list.append(all_pooled[win_indices].mean(dim=0))
+
+        # Pad to uniform length across the batch
+        max_seq = max(h.size(0) for h in per_text_hs)
+        D = all_hs.size(-1)
+        device = all_hs.device
+
+        batch_hs = torch.zeros(len(texts), max_seq, D, device=device, dtype=all_hs.dtype)
+        batch_mask = torch.zeros(len(texts), max_seq, device=device, dtype=all_masks.dtype)
+
+        for i, (h, m) in enumerate(zip(per_text_hs, per_text_mask)):
+            batch_hs[i, :h.size(0), :] = h
+            batch_mask[i, :m.size(0)] = m
+
+        pooled_emb = torch.stack(pooled_list, dim=0)
+        return pooled_emb, batch_hs, batch_mask
 
     def to(self, device):
         """
@@ -2542,7 +2794,11 @@ def get_embeddings(predictor, ds_info, dat_path, argsP, batch_size=1, normalize_
     max_q = getattr(argsP, 'max_queries', -1)
     if max_q > 0:
         maxq_suffix = f"_maxq-{max_q}"
-    cache_file = f"embeddings_{argsP.model_name}_bucketize-{argsP.bucketize_input}_quant-{argsP.quantification}_pretrained-{argsP.llm_pretrained}_pretrainedTask-{argsP.llm_pretrained_task}{algo_suffix}{target_suffix}{seed_suffix}{removed_fields_suffix}{stats_suffix}{maxq_suffix}_{dat_path}".replace("json", "csv")
+    ft_epoch_suffix = ""
+    ft_ep = getattr(argsP, 'ft_num_epoch', 0)
+    if argsP.llm_pretrained and argsP.llm_pretrained != "None" and ft_ep > 0:
+        ft_epoch_suffix = f"_ftEp{ft_ep}"
+    cache_file = f"embeddings_{argsP.model_name}_bucketize-{argsP.bucketize_input}_quant-{argsP.quantification}_pretrained-{argsP.llm_pretrained}_pretrainedTask-{argsP.llm_pretrained_task}{algo_suffix}{target_suffix}{seed_suffix}{removed_fields_suffix}{stats_suffix}{maxq_suffix}{ft_epoch_suffix}_{dat_path}".replace("json", "csv")
     cache_file = cache_file.replace("/","-")
     cache_path = os.path.join(cache_dir, cache_file)
     

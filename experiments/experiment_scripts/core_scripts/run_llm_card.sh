@@ -127,6 +127,10 @@ if [[ -n "${N_CROSS_LAYERS:-}" ]] && [[ "$N_CROSS_LAYERS" -ne 2 ]]; then
   N_CROSS_LAYERS_ARG="--n_cross_layers $N_CROSS_LAYERS"
   N_CROSS_LAYERS_SUFFIX="_cx${N_CROSS_LAYERS}"
 fi
+CROSS_ATTN_LR_ARG=""
+if [[ -n "${CROSS_ATTN_LR:-}" ]]; then
+  CROSS_ATTN_LR_ARG="--cross_attn_lr $CROSS_ATTN_LR"
+fi
 
 # Epoch suffix for finetuned weight files
 EPOCH_SUFFIX="_e${FT_NUM_EPOCH}"
@@ -712,7 +716,8 @@ if [ "$finetune" == "CrossAttentionJoint" ]; then
                                         $PRICE_M_ARG $PRICE_S_ARG \
                                         $PRICE_RANDOM_INIT_FLAG \
                                         $CHECKPOINT_INTERVAL_ARG \
-                                        $N_CROSS_LAYERS_ARG
+                                        $N_CROSS_LAYERS_ARG \
+                                        $CROSS_ATTN_LR_ARG
   fi
 
   #########################inference: pre-trained CrossAttentionJoint (cardinality)#########################

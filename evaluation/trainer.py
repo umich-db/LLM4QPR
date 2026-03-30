@@ -631,11 +631,31 @@ def train(model, train_loader, val_loader, \
             # Separate parameter groups with different LRs
             _raw_price_lr = getattr(args, 'price_lr', None)
             price_lr = _raw_price_lr if _raw_price_lr is not None else (1e-3 if getattr(args, 'price_random_init', False) else 2.85e-5)
-            param_groups = [
-                {'params': [p for p in model.llm.parameters() if p.requires_grad], 'lr': lr},
-                {'params': [p for p in model.price.parameters() if p.requires_grad], 'lr': price_lr},
-                {'params': [p for p in model.mlp.parameters() if p.requires_grad], 'lr': lr},
-            ]
+
+            # Split cross-attention params from PRICE core if available
+            _has_cross_attn = hasattr(model.price, 'cross_attn_parameters')
+            if _has_cross_attn:
+                _cross_attn_lr = getattr(args, 'cross_attn_lr', None) or lr
+                price_core_params = [p for p in model.price.price_core_parameters() if p.requires_grad]
+                cross_attn_params = [p for p in model.price.cross_attn_parameters() if p.requires_grad]
+                # Include refined_llm_proj if present (BiCrossAttn with refined pooling)
+                if hasattr(model, 'refined_llm_proj'):
+                    cross_attn_params += [p for p in model.refined_llm_proj.parameters() if p.requires_grad]
+                param_groups = [
+                    {'params': [p for p in model.llm.parameters() if p.requires_grad], 'lr': lr},
+                    {'params': price_core_params, 'lr': price_lr},
+                    {'params': cross_attn_params, 'lr': _cross_attn_lr},
+                    {'params': [p for p in model.mlp.parameters() if p.requires_grad], 'lr': lr},
+                ]
+                print(f"[Optimizer] Cross-attn param group: lr={_cross_attn_lr} "
+                      f"({len(cross_attn_params)} params, "
+                      f"{sum(p.numel() for p in cross_attn_params)} elements)")
+            else:
+                param_groups = [
+                    {'params': [p for p in model.llm.parameters() if p.requires_grad], 'lr': lr},
+                    {'params': [p for p in model.price.parameters() if p.requires_grad], 'lr': price_lr},
+                    {'params': [p for p in model.mlp.parameters() if p.requires_grad], 'lr': lr},
+                ]
             if hasattr(model, 'gate'):
                 param_groups.append({'params': model.gate.parameters(), 'lr': lr})
             optimizer = torch.optim.Adam(param_groups)
@@ -815,7 +835,7 @@ def train(model, train_loader, val_loader, \
                 print_qerror(ds_info.card_norm.unnormalize_labels(predss), ds_info.card_norm.unnormalize_labels(labels),data_sec = "train")
         ##############
         if record:
-            if epoch > 20:
+            if epoch >= 0:
                 if not args.card:
                     _, _, _, _ = evaluate(model, args, val_loader, ds_info.cost_norm, device, prints=True,data_sec = "val")
                 else:

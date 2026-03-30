@@ -1,0 +1,8 @@
+method,hv_pct_mean,hv_pct_std,true_found_mean,true_found_std,n_frontier_mean,true_total,n_seeds
+Ours (Metadata-Only Maximin),98.2,0.6,3.1,1.1,5.9,9,10
+"Combined (lw=5, fw=3)",98.3,0.7,3.2,1.0,5.8,9,10
+Latency-Only Spacing,93.7,2.1,2.1,0.7,6.9,9,10
+Random,94.2,3.8,2.9,1.4,6.3,9,10
+Uniform Latency,91.6,4.1,1.1,0.7,7.0,9,10
+Smallest-N,85.9,0.0,2.0,0.0,2.0,9,10
+Largest-N,87.7,0.0,1.0,0.0,8.0,9,10

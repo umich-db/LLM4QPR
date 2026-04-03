@@ -104,7 +104,10 @@ def parse_args():
     parser.add_argument("--queries_true_dir", type=str, default="../queries_true",
                         help="Directory containing queries_true embedding CSVs")
     # Joint LLM+PRICE finetuning arguments
-    parser.add_argument("--price_model_path", type=str, default="/root/PRICE/results/model_params.pth",
+    _default_price_model = os.path.join(os.path.dirname(os.path.abspath(__file__)), "price_statistics", "model", "model_params.pth")
+    if not os.path.exists(_default_price_model):
+        _default_price_model = "/root/PRICE/results/model_params.pth"
+    parser.add_argument("--price_model_path", type=str, default=_default_price_model,
                         help="Path to pretrained PRICE model weights")
     parser.add_argument("--price_bin_size", type=int, default=40,
                         help="PRICE histogram bin size (default 40)")

@@ -267,7 +267,10 @@ class QueryPlanPredictor(nn.Module):
         """
         cfg = getattr(model, 'config', None)
         # Try common config attributes
+        # word_embed_proj_dim (OPT models) takes priority — it's the actual output dim
+        # when different from hidden_size
         for attr in [
+            'word_embed_proj_dim',
             'hidden_size', 'd_model', 'n_embd', 'model_dim', 'hidden_dim', 'embed_dim', 'transformer_dim'
         ]:
             if cfg is not None and hasattr(cfg, attr):

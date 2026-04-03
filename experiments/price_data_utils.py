@@ -31,6 +31,16 @@ PRICE_ROOT = "/root/PRICE"
 if PRICE_ROOT not in sys.path:
     sys.path.insert(0, PRICE_ROOT)
 
+# Local PRICE statistics bundled with LLM4QPR (preferred over PRICE_ROOT)
+_LLM4QPR_STATS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "price_statistics")
+
+def _get_stats_dir(db_name: str) -> str:
+    """Return the statistics directory for a given database, preferring local copy."""
+    local = os.path.join(_LLM4QPR_STATS_DIR, db_name)
+    if os.path.isdir(local):
+        return local
+    return os.path.join(PRICE_ROOT, "datas", "statistics", "finetune", db_name)
+
 logger = logging.getLogger("main_logger")
 
 # Column prefix → table name for bare column resolution in TPC-H/DS queries
@@ -177,7 +187,7 @@ def _load_abbrev_mapping(db_name, bin_size=40):
     Load the abbreviation mapping from PRICE statistics.
     Returns dict: {full_table_name: price_alias} e.g. {'title': 'imdb_t'}
     """
-    stats_dir = os.path.join(PRICE_ROOT, "datas", "statistics", "finetune", db_name)
+    stats_dir = _get_stats_dir(db_name)
     abbrev_path = os.path.join(stats_dir, "abbrev_col_type.pkl")
     with open(abbrev_path, "rb") as f:
         data = pickle.load(f)
@@ -192,7 +202,7 @@ def _load_histogram_stats(db_name):
     """Load histogram statistics for aggregate estimation."""
     if db_name in _histogram_cache:
         return _histogram_cache[db_name]
-    stats_dir = os.path.join(PRICE_ROOT, "datas", "statistics", "finetune", db_name)
+    stats_dir = _get_stats_dir(db_name)
     hist_path = os.path.join(stats_dir, "histogram40.pkl")
     if os.path.exists(hist_path):
         with open(hist_path, "rb") as f:

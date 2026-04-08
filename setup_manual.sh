@@ -8,6 +8,7 @@ echo "Setting up LLM4QPR environment manually..."
 
 sudo add-apt-repository ppa:deadsnakes/ppa
 sudo apt update
+sudo apt install -y build-essential
 sudo apt install python3.12 python3.12-venv python3.12-dev
 python3.12 -m venv ~/venvs/py312
 source ~/venvs/py312/bin/activate

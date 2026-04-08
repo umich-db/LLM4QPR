@@ -26,8 +26,9 @@ try:
 except ImportError:
     HAS_SQLGLOT = False
 
-# Add PRICE to path
-PRICE_ROOT = "/root/PRICE"
+# Add PRICE to path — prefer local bundled copy, fall back to /root/PRICE
+_LOCAL_PRICE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "PRICE")
+PRICE_ROOT = _LOCAL_PRICE if os.path.isdir(os.path.join(_LOCAL_PRICE, "setup")) else "/root/PRICE"
 if PRICE_ROOT not in sys.path:
     sys.path.insert(0, PRICE_ROOT)
 

@@ -134,6 +134,12 @@ def parse_args():
                         help="Initialize PRICE with random weights instead of pretrained")
     parser.add_argument("--price_n_layers", type=int, default=6,
                         help="Number of transformer blocks per PRICE encoder (default 6, pretrained uses 6)")
+    parser.add_argument("--price_n_embd", type=int, default=256,
+                        help="PRICE embedding dimension (default 256, pretrained uses 256)")
+    parser.add_argument("--price_n_heads", type=int, default=8,
+                        help="PRICE attention heads (default 8, must divide n_embd evenly)")
+    parser.add_argument("--price_ffn_ratio", type=float, default=4.0,
+                        help="PRICE FFN expansion ratio (default 4.0, pretrained uses 4)")
     parser.add_argument("--freeze_all_price", action="store_true", default=False,
                         help="Freeze ALL PRICE parameters during joint finetuning (LLMOnly control)")
     parser.add_argument("--freeze_price_encoder", action="store_true", default=False,

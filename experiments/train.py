@@ -364,8 +364,9 @@ elif argsP.algo == "llm_price":
   if pws in ("cross_attn_joint", "bi_cross_attn_joint"):
     # Cross-attention / bidirectional cross-attention inference: build full model, load weights, evaluate directly
     import sys as _sys
-    if "/root/PRICE" not in _sys.path:
-        _sys.path.insert(0, "/root/PRICE")
+    _local_price = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "PRICE"); _price_root = _local_price if _os.path.isdir(_os.path.join(_local_price, "setup")) else "/root/PRICE"
+    if _price_root not in _sys.path:
+        _sys.path.insert(0, _price_root)
     from model.encoder import RegressionModel
     from models.llm_price_model import (CrossAttentionPRICEEmbedder, CrossAttentionLLMPriceModel,
                                          BiCrossAttentionPRICEEmbedder, BiCrossAttentionLLMPriceModel)
@@ -380,11 +381,15 @@ elif argsP.algo == "llm_price":
     filter_dim = (bin_size + 21) if getattr(argsP, 'price_m', False) else (bin_size + 3)
     n_cross = getattr(argsP, 'n_cross_layers', 2)
 
+    _price_n_embd = getattr(argsP, 'price_n_embd', 256)
+    _price_n_heads = getattr(argsP, 'price_n_heads', 8)
+    _price_ffn_ratio = getattr(argsP, 'price_ffn_ratio', 4.0)
     price_model = RegressionModel(
         n_join_col=max_njc, n_fanout=max_nfo, n_table=max_ntb, n_filter_col=max_nfc,
         hist_dim=bin_size, table_dim=table_dim, filter_dim=filter_dim,
         query_hidden_dim=512, final_hidden_dim=1024, output_dim=1,
-        n_embd=256, n_layers=getattr(argsP, 'price_n_layers', 6), n_heads=8, dropout_rate=0.1
+        n_embd=_price_n_embd, n_layers=getattr(argsP, 'price_n_layers', 6), n_heads=_price_n_heads,
+        dropout_rate=0.1, ffn_ratio=_price_ffn_ratio
     )
 
     if pws == "bi_cross_attn_joint":
@@ -448,8 +453,9 @@ elif argsP.algo == "llm_finetune":
   model_comb = nn.Sequential(LLM, MLP)
 elif argsP.algo == "llm_price_finetune":
   import sys as _sys
-  if "/root/PRICE" not in _sys.path:
-      _sys.path.insert(0, "/root/PRICE")
+  _local_price = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "PRICE"); _price_root = _local_price if _os.path.isdir(_os.path.join(_local_price, "setup")) else "/root/PRICE"
+    if _price_root not in _sys.path:
+      _sys.path.insert(0, _price_root)
   from model.encoder import RegressionModel
   from models.llm_price_model import PRICEEmbedder, LLMPriceJointModel, GatedLLMPriceJointModel, FrozenLLMPriceModel, CrossAttentionPRICEEmbedder, CrossAttentionLLMPriceModel, BiCrossAttentionPRICEEmbedder, BiCrossAttentionLLMPriceModel
 
@@ -467,11 +473,15 @@ elif argsP.algo == "llm_price_finetune":
   table_dim = 4
   filter_dim = (bin_size + 21) if getattr(argsP, 'price_m', False) else (bin_size + 3)
 
+  _price_n_embd = getattr(argsP, 'price_n_embd', 256)
+  _price_n_heads = getattr(argsP, 'price_n_heads', 8)
+  _price_ffn_ratio = getattr(argsP, 'price_ffn_ratio', 4.0)
   price_model = RegressionModel(
       n_join_col=max_njc, n_fanout=max_nfo, n_table=max_ntb, n_filter_col=max_nfc,
       hist_dim=bin_size, table_dim=table_dim, filter_dim=filter_dim,
       query_hidden_dim=512, final_hidden_dim=1024, output_dim=1,
-      n_embd=256, n_layers=getattr(argsP, 'price_n_layers', 6), n_heads=8, dropout_rate=0.1
+      n_embd=_price_n_embd, n_layers=getattr(argsP, 'price_n_layers', 6), n_heads=_price_n_heads,
+      dropout_rate=0.1, ffn_ratio=_price_ffn_ratio
   )
   # Load weights with partial init for PRICE_M (histogram bins shared, operator dims differ)
   def _load_price_sd(model, ckpt_sd, label=""):
@@ -586,8 +596,9 @@ elif argsP.algo == "llm_price_finetune":
 
 elif argsP.algo == "price_finetune":
   import sys as _sys
-  if "/root/PRICE" not in _sys.path:
-      _sys.path.insert(0, "/root/PRICE")
+  _local_price = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "PRICE"); _price_root = _local_price if _os.path.isdir(_os.path.join(_local_price, "setup")) else "/root/PRICE"
+    if _price_root not in _sys.path:
+      _sys.path.insert(0, _price_root)
   from model.encoder import RegressionModel
   from models.llm_price_model import PRICEFinetunWrapper
 
@@ -603,11 +614,15 @@ elif argsP.algo == "price_finetune":
   table_dim = 4
   filter_dim = (bin_size + 21) if getattr(argsP, 'price_m', False) else (bin_size + 3)
 
+  _price_n_embd = getattr(argsP, 'price_n_embd', 256)
+  _price_n_heads = getattr(argsP, 'price_n_heads', 8)
+  _price_ffn_ratio = getattr(argsP, 'price_ffn_ratio', 4.0)
   price_model = RegressionModel(
       n_join_col=max_njc, n_fanout=max_nfo, n_table=max_ntb, n_filter_col=max_nfc,
       hist_dim=bin_size, table_dim=table_dim, filter_dim=filter_dim,
       query_hidden_dim=512, final_hidden_dim=1024, output_dim=1,
-      n_embd=256, n_layers=getattr(argsP, 'price_n_layers', 6), n_heads=8, dropout_rate=0.1
+      n_embd=_price_n_embd, n_layers=getattr(argsP, 'price_n_layers', 6), n_heads=_price_n_heads,
+      dropout_rate=0.1, ffn_ratio=_price_ffn_ratio
   )
   # Load with partial init for PRICE_M (histogram bins shared, operator dims differ)
   def _load_price_sd_ft(model, ckpt_sd, label=""):

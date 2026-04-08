@@ -363,8 +363,9 @@ elif argsP.algo == "llm_price":
   pws = getattr(argsP, 'price_weights_source', 'pretrained')
   if pws in ("cross_attn_joint", "bi_cross_attn_joint"):
     # Cross-attention / bidirectional cross-attention inference: build full model, load weights, evaluate directly
-    import sys as _sys
-    _local_price = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "PRICE"); _price_root = _local_price if _os.path.isdir(_os.path.join(_local_price, "setup")) else "/root/PRICE"
+    import sys as _sys, os as _os
+    _local_price = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "PRICE")
+    _price_root = _local_price if _os.path.isdir(_os.path.join(_local_price, "setup")) else "/root/PRICE"
     if _price_root not in _sys.path:
         _sys.path.insert(0, _price_root)
     from model.encoder import RegressionModel
@@ -452,9 +453,10 @@ elif argsP.algo == "llm_finetune":
   MLP = Prediction(input_dim, argsP.hid_units)
   model_comb = nn.Sequential(LLM, MLP)
 elif argsP.algo == "llm_price_finetune":
-  import sys as _sys
-  _local_price = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "PRICE"); _price_root = _local_price if _os.path.isdir(_os.path.join(_local_price, "setup")) else "/root/PRICE"
-    if _price_root not in _sys.path:
+  import sys as _sys, os as _os
+  _local_price = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "PRICE")
+  _price_root = _local_price if _os.path.isdir(_os.path.join(_local_price, "setup")) else "/root/PRICE"
+  if _price_root not in _sys.path:
       _sys.path.insert(0, _price_root)
   from model.encoder import RegressionModel
   from models.llm_price_model import PRICEEmbedder, LLMPriceJointModel, GatedLLMPriceJointModel, FrozenLLMPriceModel, CrossAttentionPRICEEmbedder, CrossAttentionLLMPriceModel, BiCrossAttentionPRICEEmbedder, BiCrossAttentionLLMPriceModel
@@ -595,9 +597,10 @@ elif argsP.algo == "llm_price_finetune":
           f" (unfreeze_last_n_blocks={unfreeze_last_n})")
 
 elif argsP.algo == "price_finetune":
-  import sys as _sys
-  _local_price = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "PRICE"); _price_root = _local_price if _os.path.isdir(_os.path.join(_local_price, "setup")) else "/root/PRICE"
-    if _price_root not in _sys.path:
+  import sys as _sys, os as _os
+  _local_price = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "PRICE")
+  _price_root = _local_price if _os.path.isdir(_os.path.join(_local_price, "setup")) else "/root/PRICE"
+  if _price_root not in _sys.path:
       _sys.path.insert(0, _price_root)
   from model.encoder import RegressionModel
   from models.llm_price_model import PRICEFinetunWrapper

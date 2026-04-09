@@ -2801,7 +2801,8 @@ def get_embeddings(predictor, ds_info, dat_path, argsP, batch_size=1, normalize_
     ft_ep = getattr(argsP, 'ft_num_epoch', 0)
     if argsP.llm_pretrained and argsP.llm_pretrained != "None" and ft_ep > 0:
         ft_epoch_suffix = f"_ftEp{ft_ep}"
-    cache_file = f"embeddings_{argsP.model_name}_bucketize-{argsP.bucketize_input}_quant-{argsP.quantification}_pretrained-{argsP.llm_pretrained}_pretrainedTask-{argsP.llm_pretrained_task}{algo_suffix}{target_suffix}{seed_suffix}{removed_fields_suffix}{stats_suffix}{maxq_suffix}{ft_epoch_suffix}_{dat_path}".replace("json", "csv")
+    triple_concat_suffix = "_tripleConcat" if getattr(argsP, 'triple_concat', False) else ""
+    cache_file = f"embeddings_{argsP.model_name}_bucketize-{argsP.bucketize_input}_quant-{argsP.quantification}_pretrained-{argsP.llm_pretrained}_pretrainedTask-{argsP.llm_pretrained_task}{algo_suffix}{target_suffix}{seed_suffix}{removed_fields_suffix}{stats_suffix}{maxq_suffix}{ft_epoch_suffix}{triple_concat_suffix}_{dat_path}".replace("json", "csv")
     cache_file = cache_file.replace("/","-")
     cache_path = os.path.join(cache_dir, cache_file)
     

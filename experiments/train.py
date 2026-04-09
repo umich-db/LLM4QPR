@@ -364,7 +364,10 @@ elif argsP.algo == "llm_price":
   if pws in ("cross_attn_joint", "bi_cross_attn_joint"):
     # Cross-attention / bidirectional cross-attention inference: build full model, load weights, evaluate directly
     import sys as _sys, os as _os
-    _local_price = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "PRICE")
+    _experiments_dir = _os.path.dirname(_os.path.abspath(__file__))
+    if _experiments_dir not in _sys.path:
+        _sys.path.insert(0, _experiments_dir)
+    _local_price = _os.path.join(_experiments_dir, "..", "PRICE")
     _price_root = _local_price if _os.path.isdir(_os.path.join(_local_price, "setup")) else "/root/PRICE"
     if _price_root not in _sys.path:
         _sys.path.insert(0, _price_root)
@@ -454,7 +457,10 @@ elif argsP.algo == "llm_finetune":
   model_comb = nn.Sequential(LLM, MLP)
 elif argsP.algo == "llm_price_finetune":
   import sys as _sys, os as _os
-  _local_price = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "PRICE")
+  _experiments_dir = _os.path.dirname(_os.path.abspath(__file__))
+  if _experiments_dir not in _sys.path:
+      _sys.path.insert(0, _experiments_dir)
+  _local_price = _os.path.join(_experiments_dir, "..", "PRICE")
   _price_root = _local_price if _os.path.isdir(_os.path.join(_local_price, "setup")) else "/root/PRICE"
   if _price_root not in _sys.path:
       _sys.path.insert(0, _price_root)
@@ -598,7 +604,10 @@ elif argsP.algo == "llm_price_finetune":
 
 elif argsP.algo == "price_finetune":
   import sys as _sys, os as _os
-  _local_price = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "PRICE")
+  _experiments_dir = _os.path.dirname(_os.path.abspath(__file__))
+  if _experiments_dir not in _sys.path:
+      _sys.path.insert(0, _experiments_dir)
+  _local_price = _os.path.join(_experiments_dir, "..", "PRICE")
   _price_root = _local_price if _os.path.isdir(_os.path.join(_local_price, "setup")) else "/root/PRICE"
   if _price_root not in _sys.path:
       _sys.path.insert(0, _price_root)

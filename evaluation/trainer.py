@@ -639,7 +639,7 @@ def train(model, train_loader, val_loader, \
                 price_core_params = [p for p in model.price.price_core_parameters() if p.requires_grad]
                 cross_attn_params = [p for p in model.price.cross_attn_parameters() if p.requires_grad]
                 # Include refined_llm_proj if present (BiCrossAttn with refined pooling)
-                if hasattr(model, 'refined_llm_proj'):
+                if hasattr(model, 'refined_llm_proj') and model.refined_llm_proj is not None:
                     cross_attn_params += [p for p in model.refined_llm_proj.parameters() if p.requires_grad]
                 param_groups = [
                     {'params': [p for p in model.llm.parameters() if p.requires_grad], 'lr': lr},

@@ -834,17 +834,9 @@ def train(model, train_loader, val_loader, \
             else:
                 print_qerror(ds_info.card_norm.unnormalize_labels(predss), ds_info.card_norm.unnormalize_labels(labels),data_sec = "train")
         ##############
-        if record:
-            if epoch >= 0:
-                if not args.card:
-                    _, _, _, _ = evaluate(model, args, val_loader, ds_info.cost_norm, device, prints=True,data_sec = "val")
-                else:
-                    _, _, _, _ = evaluate(model, args, val_loader, ds_info.card_norm, device, prints=True,data_sec = "val")
-
-        ##############
         scheduler.step()
 
-        # Save checkpoint if requested
+        # Save checkpoint if requested (before val evaluation to avoid OOM loss)
         ckpt_interval = getattr(args, 'checkpoint_interval', 0)
         if ckpt_interval > 0 and (epoch + 1) % ckpt_interval == 0:
             ckpt_dir = f"finetuned_models/{getattr(args, 'db', 'postgres')}/checkpoints"
@@ -859,6 +851,33 @@ def train(model, train_loader, val_loader, \
             }
             torch.save(ckpt, ckpt_path)
             print(f"[Checkpoint] Saved epoch {epoch+1} to {ckpt_path}")
+
+        ##############
+        if record:
+            if epoch >= 0:
+                if not args.card:
+                    val_qerrors, _, _, _ = evaluate(model, args, val_loader, ds_info.cost_norm, device, prints=True,data_sec = "val")
+                else:
+                    val_qerrors, _, _, _ = evaluate(model, args, val_loader, ds_info.card_norm, device, prints=True,data_sec = "val")
+
+                # Early stopping based on val p90 Q-error
+                _es_patience = getattr(args, 'early_stop_patience', 0)
+                if _es_patience > 0 and val_qerrors is not None:
+                    val_p90 = val_qerrors.get('q_90', float('inf'))
+                    if not hasattr(args, '_es_best_val_p90'):
+                        args._es_best_val_p90 = float('inf')
+                        args._es_wait = 0
+                        args._es_best_epoch = epoch
+                    if val_p90 < args._es_best_val_p90:
+                        args._es_best_val_p90 = val_p90
+                        args._es_wait = 0
+                        args._es_best_epoch = epoch
+                    else:
+                        args._es_wait += 1
+                    if args._es_wait >= _es_patience:
+                        print(f"[EarlyStop] No improvement for {_es_patience} epochs "
+                              f"(best val p90={args._es_best_val_p90:.4f} at epoch {args._es_best_epoch+1}). Stopping.")
+                        return model
 
     return model
 

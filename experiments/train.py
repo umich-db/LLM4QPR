@@ -10,6 +10,10 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader, TensorDataset
 import utilsTrain
 from huggingface_hub import HfApi, login
+# Ensure experiments/ dir is on path (for models/ package and utilsTrain)
+_this_dir = os.path.dirname(os.path.abspath(__file__))
+if _this_dir not in sys.path:
+    sys.path.insert(0, _this_dir)
 sys.path.append('../evaluation/')
 from dataset_utils import *
 from time import time as timer

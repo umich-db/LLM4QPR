@@ -185,6 +185,8 @@ def parse_args():
                         help="Pre-compute cross-attn embeddings, then train fresh MLP from scratch")
     parser.add_argument("--refined_pool", action="store_true", default=False,
                         help="Use refined (cross-attn enriched) LLM pooled embedding instead of original")
+    parser.add_argument("--triple_concat", action="store_true", default=False,
+                        help="Concatenate original LLM + refined LLM + PRICE embeddings (BiCross only)")
 
     args = parser.parse_args()
 

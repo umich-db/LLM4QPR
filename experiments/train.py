@@ -91,12 +91,13 @@ if "llm" in argsP.algo:
         cross_attn_suffix = "_crossAttn" if pws == "cross_attn_joint" else ""
         bi_cross_attn_suffix = "_biCrossAttn" if pws == "bi_cross_attn_joint" else ""
         refined_pool_suffix = "_refinedPool" if getattr(argsP, 'refined_pool', False) else ""
+        triple_concat_suffix = "_tripleConcat" if getattr(argsP, 'triple_concat', False) else ""
         rand_init_suffix = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
         n_layers_suffix = f"_pL{argsP.price_n_layers}" if getattr(argsP, 'price_n_layers', 6) != 6 else ""
         n_cross_suffix = f"_cx{argsP.n_cross_layers}" if pws in ("cross_attn_joint", "bi_cross_attn_joint") and getattr(argsP, 'n_cross_layers', 2) != 2 else ""
         ft_epochs = getattr(argsP, 'ft_num_epoch', 0)
         epoch_suffix = f"_e{ft_epochs}" if ft_epochs > 0 else ""
-        llm_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_m_suffix}{price_s_suffix}_llm_price{frozen_init_suffix}{gated_suffix}{cross_attn_suffix}{bi_cross_attn_suffix}{refined_pool_suffix}{rand_init_suffix}{n_layers_suffix}{n_cross_suffix}{epoch_suffix}_llm.pt"
+        llm_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_m_suffix}{price_s_suffix}_llm_price{frozen_init_suffix}{gated_suffix}{cross_attn_suffix}{bi_cross_attn_suffix}{refined_pool_suffix}{triple_concat_suffix}{rand_init_suffix}{n_layers_suffix}{n_cross_suffix}{epoch_suffix}_llm.pt"
       else:
         # Standalone LLM finetune: weights saved with _llm suffix
         llm_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}_llm.pt"
@@ -405,7 +406,7 @@ elif argsP.algo == "llm_price":
           price_model, argsP.embed_size, n_cross_layers=n_cross,
           n_embd=256, n_heads=8, dropout_rate=0.1
       )
-      model_comb = BiCrossAttentionLLMPriceModel(LLM, bi_price_embedder, argsP.embed_size, 512, argsP.hid_units)
+      model_comb = BiCrossAttentionLLMPriceModel(LLM, bi_price_embedder, argsP.embed_size, 512, argsP.hid_units, triple_concat=getattr(argsP, "triple_concat", False))
       attn_tag = "_biCrossAttn"
     else:
       cross_price_embedder = CrossAttentionPRICEEmbedder(
@@ -422,11 +423,12 @@ elif argsP.algo == "llm_price":
     price_s_suffix = "_priceS" if getattr(argsP, 'price_s', False) else ""
     rand_init_suffix = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
     refined_pool_suffix = "_refinedPool" if getattr(argsP, 'refined_pool', False) else ""
+    triple_concat_suffix = "_tripleConcat" if getattr(argsP, 'triple_concat', False) else ""
     n_layers_suffix = f"_pL{argsP.price_n_layers}" if getattr(argsP, 'price_n_layers', 6) != 6 else ""
     n_cross_suffix = f"_cx{n_cross}" if n_cross != 2 else ""
     ft_epochs = getattr(argsP, 'ft_num_epoch', 0)
     epoch_suffix = f"_e{ft_epochs}" if ft_epochs > 0 else ""
-    weight_prefix = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_m_suffix}{price_s_suffix}_llm_price{attn_tag}{refined_pool_suffix}{rand_init_suffix}{n_layers_suffix}{n_cross_suffix}{epoch_suffix}"
+    weight_prefix = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_m_suffix}{price_s_suffix}_llm_price{attn_tag}{refined_pool_suffix}{triple_concat_suffix}{rand_init_suffix}{n_layers_suffix}{n_cross_suffix}{epoch_suffix}"
 
     price_sd = torch.load(f"{weight_prefix}_price.pt", map_location=device)
     model_comb.price.load_state_dict(price_sd)
@@ -569,7 +571,7 @@ elif argsP.algo == "llm_price_finetune":
       bi_price_embedder.load_state_dict(shared_sd, strict=False)
       print(f"[bi_cross_attention] Copied {len(shared_sd)} shared PRICE weight tensors; "
             f"bi-cross-attention layers randomly initialized")
-    model_comb = BiCrossAttentionLLMPriceModel(LLM, bi_price_embedder, argsP.embed_size, 512, argsP.hid_units)
+    model_comb = BiCrossAttentionLLMPriceModel(LLM, bi_price_embedder, argsP.embed_size, 512, argsP.hid_units, triple_concat=getattr(argsP, "triple_concat", False))
     n_cross_params = sum(p.numel() for n, p in bi_price_embedder.named_parameters()
                          if 'cross_attn' in n or 'llm_proj' in n)
     print(f"[bi_cross_attention] {n_cross} bidirectional cross-attention layers, {n_cross_params:,} new params")
@@ -952,13 +954,14 @@ elif argsP.algo == "llm_price_finetune" and not getattr(argsP, '_cross_attn_infe
     cross_attn_suffix = "_crossAttn" if getattr(argsP, 'use_cross_attention', False) else ""
     bi_cross_attn_suffix = "_biCrossAttn" if getattr(argsP, 'use_bi_cross_attention', False) else ""
     refined_pool_suffix = "_refinedPool" if getattr(argsP, 'refined_pool', False) else ""
+    triple_concat_suffix = "_tripleConcat" if getattr(argsP, 'triple_concat', False) else ""
     price_m_suffix = "_priceM" if getattr(argsP, 'price_m', False) else ""
     price_s_suffix = "_priceS" if getattr(argsP, 'price_s', False) else ""
     rand_init_suffix = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
     n_layers_suffix = f"_pL{argsP.price_n_layers}" if getattr(argsP, 'price_n_layers', 6) != 6 else ""
     n_cross_suffix = f"_cx{argsP.n_cross_layers}" if (getattr(argsP, 'use_cross_attention', False) or getattr(argsP, 'use_bi_cross_attention', False)) and getattr(argsP, 'n_cross_layers', 2) != 2 else ""
     epoch_suffix = f"_e{argsP.num_epoch}"
-    prefix = f"{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{price_m_suffix}{price_s_suffix}_llm_price{frozen_init_suffix}{gated_suffix}{cross_attn_suffix}{bi_cross_attn_suffix}{refined_pool_suffix}{rand_init_suffix}{n_layers_suffix}{n_cross_suffix}{epoch_suffix}"
+    prefix = f"{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{price_m_suffix}{price_s_suffix}_llm_price{frozen_init_suffix}{gated_suffix}{cross_attn_suffix}{bi_cross_attn_suffix}{refined_pool_suffix}{triple_concat_suffix}{rand_init_suffix}{n_layers_suffix}{n_cross_suffix}{epoch_suffix}"
 
     if not getattr(argsP, 'freeze_llm', False):
         llm_sd = trained_model.llm.model.state_dict()

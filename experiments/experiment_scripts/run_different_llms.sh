@@ -31,6 +31,7 @@ CLI_N_CROSS_LAYERS=""
 CLI_CROSS_ATTN_LR=""
 CLI_RETRAIN_MLP=""
 CLI_REFINED_POOL=""
+CLI_TRIPLE_CONCAT=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -60,6 +61,7 @@ while [[ $# -gt 0 ]]; do
         --cross_attn_lr)    CLI_CROSS_ATTN_LR="$2";     shift 2 ;;
         --retrain_mlp)      CLI_RETRAIN_MLP="true";     shift 1 ;;
         --refined_pool)     CLI_REFINED_POOL="true";    shift 1 ;;
+        --triple_concat)   CLI_TRIPLE_CONCAT="true";   shift 1 ;;
         *)
             echo "Unknown flag: $1"
             exit 1
@@ -681,6 +683,9 @@ for SEED in "${seeds[@]}"; do
             fi
             if [[ -n "$CLI_REFINED_POOL" ]]; then
                 export REFINED_POOL="$CLI_REFINED_POOL"
+            fi
+            if [[ -n "$CLI_TRIPLE_CONCAT" ]]; then
+                export TRIPLE_CONCAT="$CLI_TRIPLE_CONCAT"
             fi
             export FINETUNE_RUN_LAST="$FINETUNE_RUN_LAST"
             export FINETUNE_RUN_LORA="$FINETUNE_RUN_LORA"

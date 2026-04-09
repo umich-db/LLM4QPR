@@ -575,14 +575,23 @@ class BiCrossAttentionLLMPriceModel(nn.Module):
     for the MLP head.
     """
 
-    def __init__(self, llm, price_embedder, llm_embed_size, price_embed_size, hid_units):
+    def __init__(self, llm, price_embedder, llm_embed_size, price_embed_size, hid_units,
+                 triple_concat=False):
         super().__init__()
         self.llm = llm
         self.price = price_embedder  # BiCrossAttentionPRICEEmbedder
-        # Mean-pooled refined LLM tokens stay at n_embd (256) — no projection needed
+        self.triple_concat = triple_concat
         self.n_embd = price_embedder.cross_attn_blocks[0].norm1.normalized_shape[0]  # 256
-        # Concatenate: original LLM (llm_embed_size) + refined LLM (256) + PRICE (price_embed_size)
-        combined_dim = llm_embed_size + self.n_embd + price_embed_size
+
+        if triple_concat:
+            # Concatenate: original LLM + refined LLM (256) + PRICE
+            self.refined_llm_proj = None
+            combined_dim = llm_embed_size + self.n_embd + price_embed_size
+        else:
+            # Original: project refined LLM to llm_embed_size, concat with PRICE
+            self.refined_llm_proj = nn.Linear(self.n_embd, llm_embed_size)
+            combined_dim = llm_embed_size + price_embed_size
+
         from trainer import Prediction
         self.mlp = Prediction(combined_dim, hid_units)
 
@@ -591,7 +600,9 @@ class BiCrossAttentionLLMPriceModel(nn.Module):
         # refined_llm: [B, T, 256], attn_mask: [B, T]
         mask = attn_mask.unsqueeze(-1).float()  # [B, T, 1]
         pooled = (refined_llm * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1)  # [B, 256]
-        return pooled  # [B, 256] — keep at native cross-attn dim, no projection
+        if self.refined_llm_proj is not None:
+            return self.refined_llm_proj(pooled)  # [B, llm_embed_size]
+        return pooled  # [B, 256]
 
     def forward(self, x):
         """
@@ -611,14 +622,22 @@ class BiCrossAttentionLLMPriceModel(nn.Module):
             llm_hidden_states=hidden_states, llm_attention_mask=attn_mask
         )
 
-        # Concatenate: original LLM + refined LLM (from cross-attn) + PRICE
-        if refined_llm is not None:
-            refined_llm_emb = self._pool_refined_llm(refined_llm, refined_mask)
-            combined = torch.cat([pooled_emb, refined_llm_emb, price_emb], dim=1)
+        # Combine LLM + PRICE embeddings
+        if self.triple_concat:
+            # Triple: original LLM + refined LLM (256) + PRICE
+            if refined_llm is not None:
+                refined_llm_emb = self._pool_refined_llm(refined_llm, refined_mask)
+                combined = torch.cat([pooled_emb, refined_llm_emb, price_emb], dim=1)
+            else:
+                zeros = torch.zeros(pooled_emb.size(0), self.n_embd, device=pooled_emb.device)
+                combined = torch.cat([pooled_emb, zeros, price_emb], dim=1)
         else:
-            # No cross-attention: pad refined_llm slot with zeros
-            zeros = torch.zeros(pooled_emb.size(0), self.n_embd, device=pooled_emb.device)
-            combined = torch.cat([pooled_emb, zeros, price_emb], dim=1)
+            # Original: refined LLM (projected to llm_size) + PRICE
+            if refined_llm is not None:
+                llm_emb = self._pool_refined_llm(refined_llm, refined_mask)
+            else:
+                llm_emb = pooled_emb
+            combined = torch.cat([llm_emb, price_emb], dim=1)
         return self.mlp(combined)
 
     @torch.no_grad()
@@ -632,9 +651,16 @@ class BiCrossAttentionLLMPriceModel(nn.Module):
             price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col,
             llm_hidden_states=hidden_states, llm_attention_mask=attn_mask
         )
-        if refined_llm is not None:
-            refined_llm_emb = self._pool_refined_llm(refined_llm, refined_mask)
-            return torch.cat([pooled_emb, refined_llm_emb, price_emb], dim=1)
+        if self.triple_concat:
+            if refined_llm is not None:
+                refined_llm_emb = self._pool_refined_llm(refined_llm, refined_mask)
+                return torch.cat([pooled_emb, refined_llm_emb, price_emb], dim=1)
+            else:
+                zeros = torch.zeros(pooled_emb.size(0), self.n_embd, device=pooled_emb.device)
+                return torch.cat([pooled_emb, zeros, price_emb], dim=1)
         else:
-            zeros = torch.zeros(pooled_emb.size(0), self.n_embd, device=pooled_emb.device)
-            return torch.cat([pooled_emb, zeros, price_emb], dim=1)
+            if refined_llm is not None:
+                llm_emb = self._pool_refined_llm(refined_llm, refined_mask)
+            else:
+                llm_emb = pooled_emb
+            return torch.cat([llm_emb, price_emb], dim=1)

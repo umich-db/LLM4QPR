@@ -163,6 +163,13 @@ if [[ "${REFINED_POOL:-}" == "true" ]]; then
   REFINED_POOL_SUFFIX="_refinedPool"
 fi
 
+TRIPLE_CONCAT_FLAG=""
+TRIPLE_CONCAT_SUFFIX=""
+if [[ "${TRIPLE_CONCAT:-}" == "true" ]]; then
+  TRIPLE_CONCAT_FLAG="--triple_concat"
+  TRIPLE_CONCAT_SUFFIX="_tripleConcat"
+fi
+
 # Epoch suffix for finetuned weight files
 EPOCH_SUFFIX="_e${FT_NUM_EPOCH}"
 
@@ -1208,9 +1215,9 @@ if [ "$finetune" == "CrossAttentionJoint" ]; then
   setup_args_and_suffixes
 
   python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}.csv \
-                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}_abs.txt \
-                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}.log \
+                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}.csv \
+                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}_abs.txt \
+                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}.log \
                                       --db $DB_ENGINE \
                                       --workloads_train "${TRAIN_WLS[@]}" \
                                       --workload_test ${WORKLOAD_TEST} \
@@ -1242,6 +1249,7 @@ if [ "$finetune" == "CrossAttentionJoint" ]; then
                                       $N_CROSS_LAYERS_ARG \
                                       $RETRAIN_MLP_FLAG \
                                       $REFINED_POOL_FLAG
+                                        $TRIPLE_CONCAT_FLAG
 fi
 
 if [ "$finetune" == "BiCrossAttentionJoint" ]; then
@@ -1249,7 +1257,7 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
   # Check if finetuned BiCrossAttentionJoint weights already exist
-  BI_CROSS_ATTN_JOINT_PREFIX="finetuned_models/${DB_ENGINE}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}_llm_price${BI_CROSS_ATTN_SUFFIX}${REFINED_POOL_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${EPOCH_SUFFIX}"
+  BI_CROSS_ATTN_JOINT_PREFIX="finetuned_models/${DB_ENGINE}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}_llm_price${BI_CROSS_ATTN_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${EPOCH_SUFFIX}"
   if [ -f "${BI_CROSS_ATTN_JOINT_PREFIX}_llm.pt" ] && [ -f "${BI_CROSS_ATTN_JOINT_PREFIX}_price.pt" ]; then
     echo "Finetuned BiCrossAttentionJoint weights already exist, skipping finetune:"
     echo "  LLM:   ${BI_CROSS_ATTN_JOINT_PREFIX}_llm.pt"
@@ -1275,7 +1283,7 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
     setup_args_and_suffixes
 
     python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_lora_biCrossAttn_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${EPOCH_SUFFIX}.log \
+                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_lora_biCrossAttn_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${EPOCH_SUFFIX}.log \
                                         --db $DB_ENGINE \
                                         --workloads_train "${TRAIN_WLS[@]}" \
                                         --workload_test ${WORKLOAD_TEST} \
@@ -1303,6 +1311,7 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
                                         $N_CROSS_LAYERS_ARG \
                                         $CROSS_ATTN_LR_ARG \
                                         $REFINED_POOL_FLAG
+                                        $TRIPLE_CONCAT_FLAG
   fi
 
   #########################inference: pre-trained BiCrossAttentionJoint#########################
@@ -1318,9 +1327,9 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
   setup_args_and_suffixes
 
   python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceBiCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}.csv \
-                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceBiCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}_abs.txt \
-                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceBiCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}.log \
+                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceBiCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}.csv \
+                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceBiCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}_abs.txt \
+                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceBiCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}.log \
                                       --db $DB_ENGINE \
                                       --workloads_train "${TRAIN_WLS[@]}" \
                                       --workload_test ${WORKLOAD_TEST} \
@@ -1352,6 +1361,7 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
                                       $N_CROSS_LAYERS_ARG \
                                       $RETRAIN_MLP_FLAG \
                                       $REFINED_POOL_FLAG
+                                        $TRIPLE_CONCAT_FLAG
 fi
 
 if [ "$finetune" == "PriceFTthenJoint" ]; then

@@ -1253,9 +1253,9 @@ if [ "$finetune" == "CrossAttentionJoint" ]; then
                                       $PRICE_N_LAYERS_ARG \
                                       $N_CROSS_LAYERS_ARG \
                                       $RETRAIN_MLP_FLAG \
-                                      $REFINED_POOL_FLAG
-                                        $TRIPLE_CONCAT_FLAG \
-                                        $EARLY_STOP_ARG
+                                      $REFINED_POOL_FLAG \
+                                      $TRIPLE_CONCAT_FLAG \
+                                      $EARLY_STOP_ARG
 fi
 
 if [ "$finetune" == "BiCrossAttentionJoint" ]; then
@@ -1316,9 +1316,9 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
                                         $PRICE_N_LAYERS_ARG \
                                         $N_CROSS_LAYERS_ARG \
                                         $CROSS_ATTN_LR_ARG \
-                                        $REFINED_POOL_FLAG
-                                        $TRIPLE_CONCAT_FLAG \
-                                        $EARLY_STOP_ARG
+                                        $REFINED_POOL_FLAG \
+                                      $TRIPLE_CONCAT_FLAG \
+                                      $EARLY_STOP_ARG
   fi
 
   #########################inference: pre-trained BiCrossAttentionJoint#########################
@@ -1367,9 +1367,9 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
                                       $PRICE_N_LAYERS_ARG \
                                       $N_CROSS_LAYERS_ARG \
                                       $RETRAIN_MLP_FLAG \
-                                      $REFINED_POOL_FLAG
-                                        $TRIPLE_CONCAT_FLAG \
-                                        $EARLY_STOP_ARG
+                                      $REFINED_POOL_FLAG \
+                                      $TRIPLE_CONCAT_FLAG \
+                                      $EARLY_STOP_ARG
 fi
 
 if [ "$finetune" == "PriceFTthenJoint" ]; then

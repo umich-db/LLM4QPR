@@ -26,6 +26,8 @@ COMMON=(
     --retrain_mlp
     --triple_concat
     --n_cross_layers "4"
+    --checkpoint_interval "1"
+    --early_stop_patience "3"
 )
 
 WORKLOADS=("stats" "job" "jobm")

@@ -170,6 +170,11 @@ if [[ "${TRIPLE_CONCAT:-}" == "true" ]]; then
   TRIPLE_CONCAT_SUFFIX="_tripleConcat"
 fi
 
+EARLY_STOP_ARG=""
+if [[ -n "${EARLY_STOP_PATIENCE:-}" ]] && [[ "$EARLY_STOP_PATIENCE" -gt 0 ]]; then
+  EARLY_STOP_ARG="--early_stop_patience $EARLY_STOP_PATIENCE"
+fi
+
 # Epoch suffix for finetuned weight files
 EPOCH_SUFFIX="_e${FT_NUM_EPOCH}"
 
@@ -1249,7 +1254,8 @@ if [ "$finetune" == "CrossAttentionJoint" ]; then
                                       $N_CROSS_LAYERS_ARG \
                                       $RETRAIN_MLP_FLAG \
                                       $REFINED_POOL_FLAG
-                                        $TRIPLE_CONCAT_FLAG
+                                        $TRIPLE_CONCAT_FLAG \
+                                        $EARLY_STOP_ARG
 fi
 
 if [ "$finetune" == "BiCrossAttentionJoint" ]; then
@@ -1311,7 +1317,8 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
                                         $N_CROSS_LAYERS_ARG \
                                         $CROSS_ATTN_LR_ARG \
                                         $REFINED_POOL_FLAG
-                                        $TRIPLE_CONCAT_FLAG
+                                        $TRIPLE_CONCAT_FLAG \
+                                        $EARLY_STOP_ARG
   fi
 
   #########################inference: pre-trained BiCrossAttentionJoint#########################
@@ -1361,7 +1368,8 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
                                       $N_CROSS_LAYERS_ARG \
                                       $RETRAIN_MLP_FLAG \
                                       $REFINED_POOL_FLAG
-                                        $TRIPLE_CONCAT_FLAG
+                                        $TRIPLE_CONCAT_FLAG \
+                                        $EARLY_STOP_ARG
 fi
 
 if [ "$finetune" == "PriceFTthenJoint" ]; then

@@ -862,7 +862,8 @@ def train(model, train_loader, val_loader, \
 
                 # Early stopping based on val p90 Q-error
                 _es_patience = getattr(args, 'early_stop_patience', 0)
-                if _es_patience > 0 and val_qerrors is not None:
+                _es_after = getattr(args, 'early_stop_after_epoch', 0)
+                if _es_patience > 0 and val_qerrors is not None and epoch >= _es_after:
                     val_p90 = val_qerrors.get('q_90', float('inf'))
                     if not hasattr(args, '_es_best_val_p90'):
                         args._es_best_val_p90 = float('inf')

@@ -173,6 +173,9 @@ fi
 EARLY_STOP_ARG=""
 if [[ -n "${EARLY_STOP_PATIENCE:-}" ]] && [[ "$EARLY_STOP_PATIENCE" -gt 0 ]]; then
   EARLY_STOP_ARG="--early_stop_patience $EARLY_STOP_PATIENCE"
+  if [[ -n "${EARLY_STOP_AFTER_EPOCH:-}" ]] && [[ "$EARLY_STOP_AFTER_EPOCH" -gt 0 ]]; then
+    EARLY_STOP_ARG="$EARLY_STOP_ARG --early_stop_after_epoch $EARLY_STOP_AFTER_EPOCH"
+  fi
 fi
 
 # Epoch suffix for finetuned weight files

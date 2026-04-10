@@ -148,6 +148,8 @@ def parse_args():
                         help="When freeze_price_encoder is set, unfreeze the last N encoder blocks (0=freeze all encoder blocks)")
     parser.add_argument("--early_stop_patience", type=int, default=0,
                         help="Stop training if val p90 Q-error doesn't improve for N epochs (0=disabled)")
+    parser.add_argument("--early_stop_after_epoch", type=int, default=0,
+                        help="Only start early stopping check after this epoch (e.g., 10 to skip warmup)")
     parser.add_argument("--checkpoint_interval", type=int, default=0,
                         help="Save checkpoint every N epochs during finetuning (0=no checkpoints)")
     parser.add_argument("--resume_checkpoint", type=str, default="",

@@ -33,6 +33,7 @@ CLI_RETRAIN_MLP=""
 CLI_REFINED_POOL=""
 CLI_TRIPLE_CONCAT=""
 CLI_EARLY_STOP_PATIENCE=""
+CLI_EARLY_STOP_AFTER_EPOCH=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -64,6 +65,7 @@ while [[ $# -gt 0 ]]; do
         --refined_pool)     CLI_REFINED_POOL="true";    shift 1 ;;
         --triple_concat)   CLI_TRIPLE_CONCAT="true";   shift 1 ;;
         --early_stop_patience) CLI_EARLY_STOP_PATIENCE="$2"; shift 2 ;;
+        --early_stop_after_epoch) CLI_EARLY_STOP_AFTER_EPOCH="$2"; shift 2 ;;
         *)
             echo "Unknown flag: $1"
             exit 1
@@ -691,6 +693,9 @@ for SEED in "${seeds[@]}"; do
             fi
             if [[ -n "$CLI_EARLY_STOP_PATIENCE" ]]; then
                 export EARLY_STOP_PATIENCE="$CLI_EARLY_STOP_PATIENCE"
+            fi
+            if [[ -n "$CLI_EARLY_STOP_AFTER_EPOCH" ]]; then
+                export EARLY_STOP_AFTER_EPOCH="$CLI_EARLY_STOP_AFTER_EPOCH"
             fi
             export FINETUNE_RUN_LAST="$FINETUNE_RUN_LAST"
             export FINETUNE_RUN_LORA="$FINETUNE_RUN_LORA"

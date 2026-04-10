@@ -80,9 +80,11 @@ def extract_display_name(col_name):
             if cx_match:
                 display_name += f"_cx{cx_match.group(1)}"
 
-            # Extract refinedPool flag
+            # Extract refinedPool / tripleConcat flag
             if '_refinedPool' in col_name:
                 display_name += '_refinedPool'
+            if '_tripleConcat' in col_name:
+                display_name += '_tripleConcat'
 
             # Extract finetune epoch count (e.g., _e20, _e30)
             ft_epoch_match = re.search(r'_e(\d+)_ftb', col_name)

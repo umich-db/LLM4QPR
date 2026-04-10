@@ -740,7 +740,28 @@ def train(model, train_loader, val_loader, \
         print(f"[GradAccum] Accumulating gradients over {grad_accum_steps} micro-batches "
               f"(effective batch = {bs} * {grad_accum_steps} = {bs * grad_accum_steps})")
 
+    # Staged unfreezing: freeze LLM for the first N epochs, only train PRICE/cross-attn
+    _freeze_llm_until = getattr(args, 'freeze_llm_until_epoch', 0)
+    _llm_frozen = False
+    if _freeze_llm_until > 0 and start_epoch < _freeze_llm_until:
+        # Find LLM parameters — look for 'llm.' prefix or Sequential index '0.'
+        _llm_params = []
+        for name, p in model.named_parameters():
+            if name.startswith('llm.') or name.startswith('0.'):
+                if p.requires_grad:
+                    _llm_params.append((name, p))
+                    p.requires_grad = False
+        _llm_frozen = True
+        print(f"[StagedUnfreeze] Froze {len(_llm_params)} LLM params for epochs 0-{_freeze_llm_until-1}")
+
     for epoch in range(start_epoch, epochs):
+        # Unfreeze LLM at the designated epoch
+        if _llm_frozen and epoch >= _freeze_llm_until:
+            for name, p in _llm_params:
+                p.requires_grad = True
+            _llm_frozen = False
+            print(f"[StagedUnfreeze] Unfroze {len(_llm_params)} LLM params at epoch {epoch}")
+
         epoch_start = timer()
         model.train()
         losses = 0

@@ -178,6 +178,11 @@ if [[ -n "${EARLY_STOP_PATIENCE:-}" ]] && [[ "$EARLY_STOP_PATIENCE" -gt 0 ]]; th
   fi
 fi
 
+FREEZE_LLM_ARG=""
+if [[ -n "${FREEZE_LLM_UNTIL_EPOCH:-}" ]] && [[ "$FREEZE_LLM_UNTIL_EPOCH" -gt 0 ]]; then
+  FREEZE_LLM_ARG="--freeze_llm_until_epoch $FREEZE_LLM_UNTIL_EPOCH"
+fi
+
 # Epoch suffix for finetuned weight files
 EPOCH_SUFFIX="_e${FT_NUM_EPOCH}"
 
@@ -1258,7 +1263,8 @@ if [ "$finetune" == "CrossAttentionJoint" ]; then
                                       $RETRAIN_MLP_FLAG \
                                       $REFINED_POOL_FLAG \
                                       $TRIPLE_CONCAT_FLAG \
-                                      $EARLY_STOP_ARG
+                                      $EARLY_STOP_ARG \
+                                      $FREEZE_LLM_ARG
 fi
 
 if [ "$finetune" == "BiCrossAttentionJoint" ]; then
@@ -1321,7 +1327,8 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
                                         $CROSS_ATTN_LR_ARG \
                                         $REFINED_POOL_FLAG \
                                       $TRIPLE_CONCAT_FLAG \
-                                      $EARLY_STOP_ARG
+                                      $EARLY_STOP_ARG \
+                                      $FREEZE_LLM_ARG
   fi
 
   #########################inference: pre-trained BiCrossAttentionJoint#########################
@@ -1372,7 +1379,8 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
                                       $RETRAIN_MLP_FLAG \
                                       $REFINED_POOL_FLAG \
                                       $TRIPLE_CONCAT_FLAG \
-                                      $EARLY_STOP_ARG
+                                      $EARLY_STOP_ARG \
+                                      $FREEZE_LLM_ARG
 fi
 
 if [ "$finetune" == "PriceFTthenJoint" ]; then

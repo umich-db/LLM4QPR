@@ -115,9 +115,9 @@ def parse_args():
                         help="Path to PRICE statistics directory (default: auto-detect)")
     parser.add_argument("--price_pretrained", action="store_true", default=False,
                         help="(Deprecated) Load finetuned PRICE weights for inference. Use --price_weights_source instead.")
-    parser.add_argument("--price_weights_source", type=str, choices=["pretrained", "separate", "joint", "frozen_joint", "joint_frozen_init", "gated_joint", "cross_attn_joint", "bi_cross_attn_joint"],
+    parser.add_argument("--price_weights_source", type=str, choices=["pretrained", "separate", "joint", "frozen_joint", "joint_frozen_init", "gated_joint", "cross_attn_joint", "bi_cross_attn_joint", "reverse_cross_attn_joint"],
                         default="pretrained",
-                        help="Source of PRICE weights: pretrained (original), separate (finetuned on card), joint (jointly finetuned), frozen_joint (finetuned with frozen LLM), joint_frozen_init (jointly finetuned from frozen-joint init), gated_joint (jointly finetuned with learned gate), cross_attn_joint (jointly finetuned with cross-attention), bi_cross_attn_joint (jointly finetuned with bidirectional cross-attention)")
+                        help="Source of PRICE weights: pretrained (original), separate (finetuned on card), joint (jointly finetuned), frozen_joint (finetuned with frozen LLM), joint_frozen_init (jointly finetuned from frozen-joint init), gated_joint (jointly finetuned with learned gate), cross_attn_joint (jointly finetuned with cross-attention), bi_cross_attn_joint (jointly finetuned with bidirectional cross-attention), reverse_cross_attn_joint (jointly finetuned with reverse cross-attention)")
     parser.add_argument("--price_lr", type=float, default=None,
                         help="Learning rate for PRICE model parameters (default: 1e-3 with --price_random_init, else 2.85e-5)")
     parser.add_argument("--freeze_llm", action="store_true", default=False,

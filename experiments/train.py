@@ -990,6 +990,7 @@ elif argsP.algo == "llm_price_finetune" and not getattr(argsP, '_cross_attn_infe
     gated_suffix = "_gated" if getattr(argsP, 'use_price_gate', False) else ""
     cross_attn_suffix = "_crossAttn" if getattr(argsP, 'use_cross_attention', False) else ""
     bi_cross_attn_suffix = "_biCrossAttn" if getattr(argsP, 'use_bi_cross_attention', False) else ""
+    rev_cross_attn_suffix = "_revCrossAttn" if getattr(argsP, 'use_reverse_cross_attention', False) else ""
     refined_pool_suffix = "_refinedPool" if getattr(argsP, 'refined_pool', False) else ""
     triple_concat_suffix = "_tripleConcat" if getattr(argsP, 'triple_concat', False) else ""
     price_m_suffix = "_priceM" if getattr(argsP, 'price_m', False) else ""
@@ -999,7 +1000,7 @@ elif argsP.algo == "llm_price_finetune" and not getattr(argsP, '_cross_attn_infe
     ffn_ratio_suffix = f"_ffn{argsP.price_ffn_ratio:g}" if getattr(argsP, 'price_ffn_ratio', 4.0) != 4.0 else ""
     n_cross_suffix = f"_cx{argsP.n_cross_layers}" if (getattr(argsP, 'use_cross_attention', False) or getattr(argsP, 'use_bi_cross_attention', False) or getattr(argsP, 'use_reverse_cross_attention', False)) and getattr(argsP, 'n_cross_layers', 2) != 2 else ""
     epoch_suffix = f"_e{argsP.num_epoch}"
-    prefix = f"{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{price_m_suffix}{price_s_suffix}_llm_price{frozen_init_suffix}{gated_suffix}{cross_attn_suffix}{bi_cross_attn_suffix}{refined_pool_suffix}{triple_concat_suffix}{rand_init_suffix}{n_layers_suffix}{ffn_ratio_suffix}{n_cross_suffix}{epoch_suffix}"
+    prefix = f"{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{price_m_suffix}{price_s_suffix}_llm_price{frozen_init_suffix}{gated_suffix}{cross_attn_suffix}{bi_cross_attn_suffix}{rev_cross_attn_suffix}{refined_pool_suffix}{triple_concat_suffix}{rand_init_suffix}{n_layers_suffix}{ffn_ratio_suffix}{n_cross_suffix}{epoch_suffix}"
 
     if not getattr(argsP, 'freeze_llm', False):
         llm_sd = trained_model.llm.model.state_dict()

@@ -484,10 +484,12 @@ elif argsP.algo == "llm_price_finetune":
   from model.encoder import RegressionModel
   from models.llm_price_model import PRICEEmbedder, LLMPriceJointModel, GatedLLMPriceJointModel, FrozenLLMPriceModel, CrossAttentionPRICEEmbedder, CrossAttentionLLMPriceModel, BiCrossAttentionPRICEEmbedder, BiCrossAttentionLLMPriceModel, ReverseCrossAttentionPRICEEmbedder, ReverseCrossAttentionLLMPriceModel
 
-  # Load pretrained PRICE model
-  price_state_dict = torch.load(argsP.price_model_path, map_location=device)
-  # Strip DataParallel 'module.' prefix
-  price_state_dict = {k.replace('module.', ''): v for k, v in price_state_dict.items()}
+  # Load pretrained PRICE model (skip if random init)
+  price_state_dict = None
+  if not getattr(argsP, 'price_random_init', False):
+    price_state_dict = torch.load(argsP.price_model_path, map_location=device)
+    # Strip DataParallel 'module.' prefix
+    price_state_dict = {k.replace('module.', ''): v for k, v in price_state_dict.items()}
 
   # Build PRICE RegressionModel with correct dimensions
   max_njc = argsP.price_max_n_join_col

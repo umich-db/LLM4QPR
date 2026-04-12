@@ -263,7 +263,7 @@ elif argsP.algo == "llm_price_finetune" and getattr(argsP, 'freeze_llm', False):
 elif "llm" in argsP.algo:
   # Cross-attention inference needs llm_price_finetune data loading (raw texts + PRICE features)
   _cross_attn_inf = (argsP.algo == "llm_price" and
-                     getattr(argsP, 'price_weights_source', 'pretrained') in ("cross_attn_joint", "bi_cross_attn_joint"))
+                     getattr(argsP, 'price_weights_source', 'pretrained') in ("cross_attn_joint", "bi_cross_attn_joint", "reverse_cross_attn_joint"))
   if _cross_attn_inf:
     active_collate = llm_price_collate
     _saved_algo = argsP.algo

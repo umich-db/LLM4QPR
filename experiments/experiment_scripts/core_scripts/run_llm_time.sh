@@ -1300,10 +1300,7 @@ if [ "$finetune" == "CrossAttentionJoint" ]; then
                                       $N_CROSS_LAYERS_ARG \
                                       $RETRAIN_MLP_FLAG \
                                       $REFINED_POOL_FLAG \
-                                      $TRIPLE_CONCAT_FLAG \
-                                      $EARLY_STOP_ARG \
-                                      $FREEZE_LLM_ARG \
-                                      $PRICE_WARMUP_ARG
+                                      $TRIPLE_CONCAT_FLAG
 fi
 
 if [ "$finetune" == "BiCrossAttentionJoint" ]; then
@@ -1420,10 +1417,7 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
                                       $N_CROSS_LAYERS_ARG \
                                       $RETRAIN_MLP_FLAG \
                                       $REFINED_POOL_FLAG \
-                                      $TRIPLE_CONCAT_FLAG \
-                                      $EARLY_STOP_ARG \
-                                      $FREEZE_LLM_ARG \
-                                      $PRICE_WARMUP_ARG
+                                      $TRIPLE_CONCAT_FLAG
 fi
 
 if [ "$finetune" == "ReverseCrossAttentionJoint" ]; then
@@ -1528,10 +1522,7 @@ if [ "$finetune" == "ReverseCrossAttentionJoint" ]; then
                                       $PRICE_N_LAYERS_ARG \
                                       $PRICE_FFN_RATIO_ARG \
                                       $N_CROSS_LAYERS_ARG \
-                                      $RETRAIN_MLP_FLAG \
-                                      $EARLY_STOP_ARG \
-                                      $FREEZE_LLM_ARG \
-                                      $PRICE_WARMUP_ARG
+                                      $RETRAIN_MLP_FLAG
 fi
 
 if [ "$finetune" == "PriceFTthenJoint" ]; then

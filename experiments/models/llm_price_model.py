@@ -606,9 +606,17 @@ class ReverseCrossAttentionBlock(nn.Module):
 
 class ReverseCrossAttentionPRICEEmbedder(nn.Module):
     """
-    Like CrossAttentionPRICEEmbedder but reversed: LLM tokens (Q) attend to
-    PRICE tokens (K/V).  PRICE tokens are projected UP to LLM hidden dim.
-    Returns both the PRICE 512-dim embedding and the updated LLM hidden states.
+    Dual-direction cross-attention embedder (Mode 13).
+
+    Warmup phase (warmup_mode=True):
+      PRICE tokens (Q) attend to LLM tokens (K/V) at PRICE dim (n_embd=256).
+      This lets PRICE learn from frozen LLM, same direction as Mode 11.
+      Returns: (updated_PRICE_512, None, mask)
+
+    Normal phase (warmup_mode=False):
+      LLM tokens (Q) attend to PRICE tokens (K/V) at LLM dim.
+      This lets LLM learn from trained PRICE.
+      Returns: (PRICE_512, updated_LLM, mask)
     """
 
     def __init__(self, regression_model, llm_hidden_dim, n_cross_layers=2,
@@ -631,18 +639,26 @@ class ReverseCrossAttentionPRICEEmbedder(nn.Module):
         self.linear = regression_model.linear
         self.elu = regression_model.elu
 
-        # Project PRICE tokens UP to LLM hidden dim for cross-attention K/V
-        self.price_proj_up = nn.Linear(n_embd, llm_hidden_dim)
+        # ── Warmup direction: PRICE (Q) attends to LLM (K/V) at n_embd ──
+        self.llm_proj_down = nn.Linear(llm_hidden_dim, n_embd)
+        self.warmup_cross_attn_blocks = nn.ModuleList([
+            CrossAttentionBlock(n_embd, n_heads, dropout_rate)
+            for _ in range(n_cross_layers)
+        ])
 
-        # Cross-attention blocks operating at LLM hidden dim
-        # LLM tokens (Q) attend to projected PRICE tokens (K/V)
+        # ── Normal direction: LLM (Q) attends to PRICE (K/V) at llm_dim ──
+        self.price_proj_up = nn.Linear(n_embd, llm_hidden_dim)
         self.cross_attn_blocks = nn.ModuleList([
             ReverseCrossAttentionBlock(llm_hidden_dim, n_heads, dropout_rate)
             for _ in range(n_cross_layers)
         ])
 
+        self.warmup_mode = False
+
     def cross_attn_parameters(self):
-        """Return parameters belonging to cross-attention layers (price_proj_up + blocks)."""
+        """Return parameters belonging to ALL cross-attention layers."""
+        yield from self.llm_proj_down.parameters()
+        yield from self.warmup_cross_attn_blocks.parameters()
         yield from self.price_proj_up.parameters()
         yield from self.cross_attn_blocks.parameters()
 
@@ -662,8 +678,8 @@ class ReverseCrossAttentionPRICEEmbedder(nn.Module):
             llm_attention_mask: [B, T_plan] (1=real token, 0=pad)
 
         Returns:
-            query_output: [B, 512] — PRICE embedding (unmodified by cross-attention)
-            updated_llm: [B, T_plan, D_llm] — LLM hidden states refined by attending to PRICE
+            query_output: [B, 512] — PRICE embedding (updated during warmup, unmodified otherwise)
+            updated_llm: [B, T_plan, D_llm] or None — updated LLM (only in normal mode)
             llm_attention_mask: passed through for masked pooling
         """
         # Scaling stage
@@ -677,20 +693,26 @@ class ReverseCrossAttentionPRICEEmbedder(nn.Module):
         filtering_output = self.filter_encoder(filter_features, masks2)
         # filtering_output: [B, T_stats, n_embd]
 
-        # Reverse cross-attention: LLM tokens attend to PRICE tokens
         updated_llm = None
         if llm_hidden_states is not None:
-            # Project PRICE tokens up to LLM dim
-            price_proj = self.price_proj_up(filtering_output.float())  # [B, T_stats, D_llm]
-            price_mask = masks2  # same convention: 1=attend, 0=pad
+            if self.warmup_mode:
+                # Warmup: PRICE (Q) attends to LLM (K/V) at n_embd dim
+                llm_proj = self.llm_proj_down(llm_hidden_states.float())  # [B, T_plan, n_embd]
+                for block in self.warmup_cross_attn_blocks:
+                    filtering_output = block(filtering_output, llm_proj, llm_attention_mask)
+                # filtering_output is updated; LLM unchanged → updated_llm stays None
+            else:
+                # Normal: LLM (Q) attends to PRICE (K/V) at LLM dim
+                price_proj = self.price_proj_up(filtering_output.float())  # [B, T_stats, D_llm]
+                price_mask = masks2
 
-            llm_tokens = llm_hidden_states.float()  # [B, T_plan, D_llm]
-            for block in self.cross_attn_blocks:
-                llm_tokens = block(llm_tokens, price_proj, price_mask)
+                llm_tokens = llm_hidden_states.float()  # [B, T_plan, D_llm]
+                for block in self.cross_attn_blocks:
+                    llm_tokens = block(llm_tokens, price_proj, price_mask)
 
-            updated_llm = llm_tokens  # [B, T_plan, D_llm]
+                updated_llm = llm_tokens  # [B, T_plan, D_llm]
 
-        # CLS token extraction (PRICE path — unmodified by cross-attention)
+        # CLS token extraction
         query_output = filtering_output[:, 0, :]
 
         # Length features
@@ -702,7 +724,7 @@ class ReverseCrossAttentionPRICEEmbedder(nn.Module):
         query_output = self.elu(query_output)
         query_output = F.dropout(query_output, p=self.dropout_rate, training=self.training)
 
-        return query_output, updated_llm, llm_attention_mask  # [B, 512], [B, T, D_llm], [B, T]
+        return query_output, updated_llm, llm_attention_mask
 
 
 class ReverseCrossAttentionLLMPriceModel(nn.Module):

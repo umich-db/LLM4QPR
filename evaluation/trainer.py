@@ -755,6 +755,12 @@ def train(model, train_loader, val_loader, \
         _llm_frozen = True
         print(f"[StagedUnfreeze] Froze {len(_llm_params)} LLM params for epochs 0-{_freeze_llm_until-1}")
 
+    # Set initial warmup_mode for ReverseCrossAttn (Mode 13)
+    if hasattr(model, 'price') and hasattr(model.price, 'warmup_mode'):
+        model.price.warmup_mode = (start_epoch < _freeze_llm_until)
+        _dir = "PRICE→LLM (warmup)" if model.price.warmup_mode else "LLM→PRICE (normal)"
+        print(f"[RevCrossAttn] Initial direction: {_dir}")
+
     for epoch in range(start_epoch, epochs):
         # Unfreeze LLM at the designated epoch
         if _llm_frozen and epoch >= _freeze_llm_until:
@@ -762,6 +768,14 @@ def train(model, train_loader, val_loader, \
                 p.requires_grad = True
             _llm_frozen = False
             print(f"[StagedUnfreeze] Unfroze {len(_llm_params)} LLM params at epoch {epoch}")
+
+        # Toggle warmup_mode for ReverseCrossAttn (Mode 13)
+        if hasattr(model, 'price') and hasattr(model.price, 'warmup_mode'):
+            _new_warmup = (epoch < _freeze_llm_until)
+            if model.price.warmup_mode != _new_warmup:
+                model.price.warmup_mode = _new_warmup
+                _dir = "PRICE→LLM (warmup)" if _new_warmup else "LLM→PRICE (normal)"
+                print(f"[RevCrossAttn] Switched to {_dir} at epoch {epoch}")
 
         epoch_start = timer()
         model.train()

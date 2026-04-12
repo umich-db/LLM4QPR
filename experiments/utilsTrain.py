@@ -235,7 +235,7 @@ def setup_loggers(main_log_path, inf_log_path=None):
     main_logger = logging.getLogger("main_logger")
     main_logger.setLevel(logging.INFO)
     main_logger.propagate = False
-    main_handler = logging.FileHandler(main_log_path, mode="w")  # overwrite each run
+    main_handler = logging.FileHandler(main_log_path, mode="a")  # append each run
     main_fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
     main_handler.setFormatter(main_fmt)
     main_logger.addHandler(main_handler)

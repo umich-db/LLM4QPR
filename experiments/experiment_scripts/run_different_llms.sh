@@ -27,6 +27,7 @@ CLI_FT_NUM_EPOCH=""
 CLI_CHECKPOINT_INTERVAL=""
 CLI_PRICE_LR=""
 CLI_PRICE_N_LAYERS=""
+CLI_PRICE_FFN_RATIO=""
 CLI_N_CROSS_LAYERS=""
 CLI_CROSS_ATTN_LR=""
 CLI_RETRAIN_MLP=""
@@ -61,6 +62,7 @@ while [[ $# -gt 0 ]]; do
         --price_s)          CLI_PRICE_S="true";        shift 1 ;;
         --price_random_init) CLI_PRICE_RANDOM_INIT="true"; shift 1 ;;
         --price_n_layers)   CLI_PRICE_N_LAYERS="$2";     shift 2 ;;
+        --price_ffn_ratio)  CLI_PRICE_FFN_RATIO="$2";    shift 2 ;;
         --n_cross_layers)   CLI_N_CROSS_LAYERS="$2";     shift 2 ;;
         --cross_attn_lr)    CLI_CROSS_ATTN_LR="$2";     shift 2 ;;
         --retrain_mlp)      CLI_RETRAIN_MLP="true";     shift 1 ;;
@@ -683,6 +685,9 @@ for SEED in "${seeds[@]}"; do
             fi
             if [[ -n "$CLI_PRICE_N_LAYERS" ]]; then
                 export PRICE_N_LAYERS="$CLI_PRICE_N_LAYERS"
+            fi
+            if [[ -n "$CLI_PRICE_FFN_RATIO" ]]; then
+                export PRICE_FFN_RATIO="$CLI_PRICE_FFN_RATIO"
             fi
             if [[ -n "$CLI_N_CROSS_LAYERS" ]]; then
                 export N_CROSS_LAYERS="$CLI_N_CROSS_LAYERS"

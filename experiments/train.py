@@ -95,10 +95,11 @@ if "llm" in argsP.algo:
         triple_concat_suffix = "_tripleConcat" if getattr(argsP, 'triple_concat', False) else ""
         rand_init_suffix = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
         n_layers_suffix = f"_pL{argsP.price_n_layers}" if getattr(argsP, 'price_n_layers', 6) != 6 else ""
+        ffn_ratio_suffix = f"_ffn{argsP.price_ffn_ratio:g}" if getattr(argsP, 'price_ffn_ratio', 4.0) != 4.0 else ""
         n_cross_suffix = f"_cx{argsP.n_cross_layers}" if pws in ("cross_attn_joint", "bi_cross_attn_joint", "reverse_cross_attn_joint") and getattr(argsP, 'n_cross_layers', 2) != 2 else ""
         ft_epochs = getattr(argsP, 'ft_num_epoch', 0)
         epoch_suffix = f"_e{ft_epochs}" if ft_epochs > 0 else ""
-        llm_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_m_suffix}{price_s_suffix}_llm_price{frozen_init_suffix}{gated_suffix}{cross_attn_suffix}{bi_cross_attn_suffix}{rev_cross_attn_suffix}{refined_pool_suffix}{triple_concat_suffix}{rand_init_suffix}{n_layers_suffix}{n_cross_suffix}{epoch_suffix}_llm.pt"
+        llm_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_m_suffix}{price_s_suffix}_llm_price{frozen_init_suffix}{gated_suffix}{cross_attn_suffix}{bi_cross_attn_suffix}{rev_cross_attn_suffix}{refined_pool_suffix}{triple_concat_suffix}{rand_init_suffix}{n_layers_suffix}{ffn_ratio_suffix}{n_cross_suffix}{epoch_suffix}_llm.pt"
       else:
         # Standalone LLM finetune: weights saved with _llm suffix
         llm_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}_llm.pt"
@@ -434,10 +435,11 @@ elif argsP.algo == "llm_price":
     refined_pool_suffix = "_refinedPool" if getattr(argsP, 'refined_pool', False) else ""
     triple_concat_suffix = "_tripleConcat" if getattr(argsP, 'triple_concat', False) else ""
     n_layers_suffix = f"_pL{argsP.price_n_layers}" if getattr(argsP, 'price_n_layers', 6) != 6 else ""
+    ffn_ratio_suffix = f"_ffn{argsP.price_ffn_ratio:g}" if getattr(argsP, 'price_ffn_ratio', 4.0) != 4.0 else ""
     n_cross_suffix = f"_cx{n_cross}" if n_cross != 2 else ""
     ft_epochs = getattr(argsP, 'ft_num_epoch', 0)
     epoch_suffix = f"_e{ft_epochs}" if ft_epochs > 0 else ""
-    weight_prefix = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_m_suffix}{price_s_suffix}_llm_price{attn_tag}{refined_pool_suffix}{triple_concat_suffix}{rand_init_suffix}{n_layers_suffix}{n_cross_suffix}{epoch_suffix}"
+    weight_prefix = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_m_suffix}{price_s_suffix}_llm_price{attn_tag}{refined_pool_suffix}{triple_concat_suffix}{rand_init_suffix}{n_layers_suffix}{ffn_ratio_suffix}{n_cross_suffix}{epoch_suffix}"
 
     price_sd = torch.load(f"{weight_prefix}_price.pt", map_location=device)
     model_comb.price.load_state_dict(price_sd)
@@ -828,8 +830,9 @@ if argsP.algo == "llm_price_finetune":
     _ps = "_priceS" if getattr(argsP, 'price_s', False) else ""
     _ri = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
     _nl = f"_pL{argsP.price_n_layers}" if getattr(argsP, 'price_n_layers', 6) != 6 else ""
+    _fr = f"_ffn{argsP.price_ffn_ratio:g}" if getattr(argsP, 'price_ffn_ratio', 4.0) != 4.0 else ""
     _nc = f"_cx{argsP.n_cross_layers}" if (getattr(argsP, 'use_cross_attention', False) or getattr(argsP, 'use_bi_cross_attention', False) or getattr(argsP, 'use_reverse_cross_attention', False)) and getattr(argsP, 'n_cross_layers', 2) != 2 else ""
-    _ckpt_prefix = f"{argsP.canonical_wl_prefix}_{_task}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{_pm}{_ps}_llm_price{_fi}{_ga}{_ca}{_bca}{_rca}{_rp}{_tc}{_ri}{_nl}{_nc}"
+    _ckpt_prefix = f"{argsP.canonical_wl_prefix}_{_task}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{_pm}{_ps}_llm_price{_fi}{_ga}{_ca}{_bca}{_rca}{_rp}{_tc}{_ri}{_nl}{_fr}{_nc}"
 elif argsP.algo == "price_finetune":
     _pm = "_priceM" if getattr(argsP, 'price_m', False) else ""
     _ps = "_priceS" if getattr(argsP, 'price_s', False) else ""
@@ -991,9 +994,10 @@ elif argsP.algo == "llm_price_finetune" and not getattr(argsP, '_cross_attn_infe
     price_s_suffix = "_priceS" if getattr(argsP, 'price_s', False) else ""
     rand_init_suffix = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
     n_layers_suffix = f"_pL{argsP.price_n_layers}" if getattr(argsP, 'price_n_layers', 6) != 6 else ""
-    n_cross_suffix = f"_cx{argsP.n_cross_layers}" if (getattr(argsP, 'use_cross_attention', False) or getattr(argsP, 'use_bi_cross_attention', False)) and getattr(argsP, 'n_cross_layers', 2) != 2 else ""
+    ffn_ratio_suffix = f"_ffn{argsP.price_ffn_ratio:g}" if getattr(argsP, 'price_ffn_ratio', 4.0) != 4.0 else ""
+    n_cross_suffix = f"_cx{argsP.n_cross_layers}" if (getattr(argsP, 'use_cross_attention', False) or getattr(argsP, 'use_bi_cross_attention', False) or getattr(argsP, 'use_reverse_cross_attention', False)) and getattr(argsP, 'n_cross_layers', 2) != 2 else ""
     epoch_suffix = f"_e{argsP.num_epoch}"
-    prefix = f"{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{price_m_suffix}{price_s_suffix}_llm_price{frozen_init_suffix}{gated_suffix}{cross_attn_suffix}{bi_cross_attn_suffix}{refined_pool_suffix}{triple_concat_suffix}{rand_init_suffix}{n_layers_suffix}{n_cross_suffix}{epoch_suffix}"
+    prefix = f"{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{price_m_suffix}{price_s_suffix}_llm_price{frozen_init_suffix}{gated_suffix}{cross_attn_suffix}{bi_cross_attn_suffix}{refined_pool_suffix}{triple_concat_suffix}{rand_init_suffix}{n_layers_suffix}{ffn_ratio_suffix}{n_cross_suffix}{epoch_suffix}"
 
     if not getattr(argsP, 'freeze_llm', False):
         llm_sd = trained_model.llm.model.state_dict()
@@ -1033,8 +1037,9 @@ elif argsP.algo == "price_finetune":
     price_s_suffix = "_priceS" if getattr(argsP, 'price_s', False) else ""
     rand_init_suffix = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
     n_layers_suffix = f"_pL{argsP.price_n_layers}" if getattr(argsP, 'price_n_layers', 6) != 6 else ""
+    ffn_ratio_suffix = f"_ffn{argsP.price_ffn_ratio:g}" if getattr(argsP, 'price_ffn_ratio', 4.0) != 4.0 else ""
     epoch_suffix = f"_e{argsP.num_epoch}"
-    price_out = os.path.join(save_path, f"{argsP.canonical_wl_prefix}_card_b{argsP.batch_size}{price_m_suffix}{price_s_suffix}{rand_init_suffix}{n_layers_suffix}{epoch_suffix}_price_separate.pt")
+    price_out = os.path.join(save_path, f"{argsP.canonical_wl_prefix}_card_b{argsP.batch_size}{price_m_suffix}{price_s_suffix}{rand_init_suffix}{n_layers_suffix}{ffn_ratio_suffix}{epoch_suffix}_price_separate.pt")
     torch.save(trained_model.model.state_dict(), price_out)
     print(f"Saved separately finetuned PRICE weights to {price_out}")
 else:

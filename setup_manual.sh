@@ -23,7 +23,7 @@ python -m pip install torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 \
   --index-url https://download.pytorch.org/whl/cu128
 
 # Core Python packages
-python -m pip install huggingface_hub wheel alive_progress seaborn
+python -m pip install huggingface_hub wheel alive_progress seaborn sqlglot scipy matplotlib psycopg2-binary
 python -m pip install transformers==4.55.2
 python -m pip install bitsandbytes==0.46.0
 python -m pip install pandas

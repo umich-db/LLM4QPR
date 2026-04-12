@@ -11,6 +11,16 @@ SEED=$7
 # Database engine (default: postgres, can be set to duckdb via DB_ENGINE env var)
 DB_ENGINE=${DB_ENGINE:-postgres}
 
+# PRICE model path: prefer bundled copy inside LLM4QPR, fall back to /root/PRICE
+SCRIPT_DIR_LLM="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+if [[ -z "${PRICE_MODEL_PATH:-}" ]]; then
+  if [[ -f "$SCRIPT_DIR_LLM/experiments/price_statistics/model/model_params.pth" ]]; then
+    PRICE_MODEL_PATH="$SCRIPT_DIR_LLM/experiments/price_statistics/model/model_params.pth"
+  else
+    PRICE_MODEL_PATH="/root/PRICE/results/model_params.pth"
+  fi
+fi
+
 # 2) build the parallel array of dat_paths:
 DAT_PATHS=()
 for wl in "${TRAIN_WLS[@]}"; do
@@ -552,7 +562,7 @@ if [ "$finetune" == "True" ]; then
 fi
 
 if [ "$finetune" == "JointPrice" ]; then
-  PRICE_MODEL_PATH=${PRICE_MODEL_PATH:-"/root/PRICE/results/model_params.pth"}
+  PRICE_MODEL_PATH=${PRICE_MODEL_PATH:-"$SCRIPT_DIR_LLM/experiments/price_statistics/model/model_params.pth"}
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
   # Check if finetuned JointPrice weights already exist
@@ -658,7 +668,7 @@ fi
 
 if [ "$finetune" == "PriceNoFT" ]; then
   #########################Case 1: LLM+PRICE, no finetune#########################
-  PRICE_MODEL_PATH=${PRICE_MODEL_PATH:-"/root/PRICE/results/model_params.pth"}
+  PRICE_MODEL_PATH=${PRICE_MODEL_PATH:-"$SCRIPT_DIR_LLM/experiments/price_statistics/model/model_params.pth"}
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
   algo=llm_price
@@ -703,7 +713,7 @@ fi
 
 if [ "$finetune" == "PriceLLMOnly" ]; then
   #########################Case 2: LLM finetuned, PRICE frozen#########################
-  PRICE_MODEL_PATH=${PRICE_MODEL_PATH:-"/root/PRICE/results/model_params.pth"}
+  PRICE_MODEL_PATH=${PRICE_MODEL_PATH:-"$SCRIPT_DIR_LLM/experiments/price_statistics/model/model_params.pth"}
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
   # Step 1: Finetune LLM (reuse existing llm_finetune logic)
@@ -797,7 +807,7 @@ fi
 
 if [ "$finetune" == "PricePRICEOnly" ]; then
   #########################Case 3: LLM frozen, PRICE finetuned on card#########################
-  PRICE_MODEL_PATH=${PRICE_MODEL_PATH:-"/root/PRICE/results/model_params.pth"}
+  PRICE_MODEL_PATH=${PRICE_MODEL_PATH:-"$SCRIPT_DIR_LLM/experiments/price_statistics/model/model_params.pth"}
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
   # Step 1: Finetune PRICE on cardinality
@@ -877,7 +887,7 @@ fi
 
 if [ "$finetune" == "PriceBothSep" ]; then
   #########################Case 4: Both finetuned separately#########################
-  PRICE_MODEL_PATH=${PRICE_MODEL_PATH:-"/root/PRICE/results/model_params.pth"}
+  PRICE_MODEL_PATH=${PRICE_MODEL_PATH:-"$SCRIPT_DIR_LLM/experiments/price_statistics/model/model_params.pth"}
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
   # Step 1: Finetune LLM
@@ -1004,7 +1014,7 @@ fi
 
 if [ "$finetune" == "PriceFTwithLLM" ]; then
   #########################Case 5: PRICE finetuned with frozen LLM embeddings#########################
-  PRICE_MODEL_PATH=${PRICE_MODEL_PATH:-"/root/PRICE/results/model_params.pth"}
+  PRICE_MODEL_PATH=${PRICE_MODEL_PATH:-"$SCRIPT_DIR_LLM/experiments/price_statistics/model/model_params.pth"}
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
   # Step 1: Finetune PRICE+MLP with frozen LLM
@@ -1090,7 +1100,7 @@ if [ "$finetune" == "PriceFTwithLLM" ]; then
 fi
 
 if [ "$finetune" == "GatedJointPrice" ]; then
-  PRICE_MODEL_PATH=${PRICE_MODEL_PATH:-"/root/PRICE/results/model_params.pth"}
+  PRICE_MODEL_PATH=${PRICE_MODEL_PATH:-"$SCRIPT_DIR_LLM/experiments/price_statistics/model/model_params.pth"}
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
   # Check if finetuned GatedJointPrice weights already exist
@@ -1182,7 +1192,7 @@ if [ "$finetune" == "GatedJointPrice" ]; then
 fi
 
 if [ "$finetune" == "CrossAttentionJoint" ]; then
-  PRICE_MODEL_PATH=${PRICE_MODEL_PATH:-"/root/PRICE/results/model_params.pth"}
+  PRICE_MODEL_PATH=${PRICE_MODEL_PATH:-"$SCRIPT_DIR_LLM/experiments/price_statistics/model/model_params.pth"}
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
   # Check if finetuned CrossAttentionJoint weights already exist
@@ -1297,7 +1307,7 @@ if [ "$finetune" == "CrossAttentionJoint" ]; then
 fi
 
 if [ "$finetune" == "BiCrossAttentionJoint" ]; then
-  PRICE_MODEL_PATH=${PRICE_MODEL_PATH:-"/root/PRICE/results/model_params.pth"}
+  PRICE_MODEL_PATH=${PRICE_MODEL_PATH:-"$SCRIPT_DIR_LLM/experiments/price_statistics/model/model_params.pth"}
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
   # Check if finetuned BiCrossAttentionJoint weights already exist
@@ -1417,7 +1427,7 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
 fi
 
 if [ "$finetune" == "ReverseCrossAttentionJoint" ]; then
-  PRICE_MODEL_PATH=${PRICE_MODEL_PATH:-"/root/PRICE/results/model_params.pth"}
+  PRICE_MODEL_PATH=${PRICE_MODEL_PATH:-"$SCRIPT_DIR_LLM/experiments/price_statistics/model/model_params.pth"}
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
   # Check if finetuned ReverseCrossAttentionJoint weights already exist
@@ -1525,7 +1535,7 @@ fi
 
 if [ "$finetune" == "PriceFTthenJoint" ]; then
   #########################Case 6: Frozen-init then joint (PriceFTthenJoint)#########################
-  PRICE_MODEL_PATH=${PRICE_MODEL_PATH:-"/root/PRICE/results/model_params.pth"}
+  PRICE_MODEL_PATH=${PRICE_MODEL_PATH:-"$SCRIPT_DIR_LLM/experiments/price_statistics/model/model_params.pth"}
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
   # Step 1: Finetune PRICE+MLP with frozen LLM (reuse PriceFTwithLLM step 1)

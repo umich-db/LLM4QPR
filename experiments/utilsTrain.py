@@ -160,6 +160,8 @@ def parse_args():
                         help="Learning rate schedule: step (StepLR), cosine (CosineAnnealingLR), or warmup_cosine (linear warmup + cosine)")
     parser.add_argument("--warmup_epochs", type=int, default=3,
                         help="Number of warmup epochs for warmup_cosine schedule (default 3)")
+    parser.add_argument("--price_warmup_epochs", type=int, default=10,
+                        help="Number of PRICE warmup epochs at high LR before dropping to finetune LR (default 10)")
     parser.add_argument("--price_lr_schedule", type=str, default=None, choices=["step", "cosine", "warmup_cosine"],
                         help="Separate LR schedule for PRICE optimizer (default: same as --lr_schedule)")
     parser.add_argument("--ft_batch_size", type=int, default=16,
@@ -181,6 +183,9 @@ def parse_args():
     # Bidirectional cross-attention fusion arguments (Mode 12)
     parser.add_argument("--use_bi_cross_attention", action="store_true", default=False,
                         help="Use bidirectional cross-attention fusion: PRICE<->LLM attend to each other")
+    # Reverse cross-attention fusion arguments (Mode 13)
+    parser.add_argument("--use_reverse_cross_attention", action="store_true", default=False,
+                        help="Use reverse cross-attention fusion: LLM tokens attend to PRICE tokens")
     parser.add_argument("--n_cross_layers", type=int, default=2,
                         help="Number of cross-attention layers (default 2)")
     parser.add_argument("--cross_attn_lr", type=float, default=None,

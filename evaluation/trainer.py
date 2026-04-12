@@ -687,13 +687,14 @@ def train(model, train_loader, val_loader, \
                 return fn
 
         if args.algo == "llm_price_finetune" and getattr(args, 'price_random_init', False):
-            # Random init: PRICE group uses 1e-3 base lr, drops to 2e-5 in last 10 epochs
+            # Random init: PRICE group uses 1e-3 base lr, drops to 2e-5 after warmup
             # Other groups (LLM, MLP, gate) use their regular schedule
             _raw_price_lr = getattr(args, 'price_lr', None)
             _price_lr_eff = _raw_price_lr if _raw_price_lr is not None else 1e-3
             _finetune_lr = 2e-5
-            def _price_random_fn(epoch, _plr=_price_lr_eff, _flr=_finetune_lr, _total=epochs):
-                if epoch < 10:
+            _price_warmup = getattr(args, 'price_warmup_epochs', 10)
+            def _price_random_fn(epoch, _plr=_price_lr_eff, _flr=_finetune_lr, _pw=_price_warmup):
+                if epoch < _pw:
                     return 1.0
                 else:
                     return _flr / _plr
@@ -702,7 +703,7 @@ def train(model, train_loader, val_loader, \
             # group 0=LLM, group 1=PRICE, group 2=MLP [, group 3=gate]
             lambdas = [regular_fn, _price_random_fn] + [regular_fn] * (n_groups - 2)
             scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambdas)
-            print(f"[Scheduler] Random init: PRICE lr={_price_lr_eff} for first 10 epochs, then {_finetune_lr}, others={lr_schedule}")
+            print(f"[Scheduler] Random init: PRICE lr={_price_lr_eff} for first {_price_warmup} epochs, then {_finetune_lr}, others={lr_schedule}")
         elif args.algo == "llm_price_finetune" and price_lr_schedule != lr_schedule:
             # Separate schedules: group 0=LLM, group 1=PRICE, group 2=MLP [, group 3=gate]
             llm_fn = make_lambda(lr_schedule)

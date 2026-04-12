@@ -138,6 +138,13 @@ if [[ "$finetune" == "BiCrossAttentionJoint" ]]; then
   BI_CROSS_ATTN_ARG="--use_bi_cross_attention"
   BI_CROSS_ATTN_SUFFIX="_biCrossAttn"
 fi
+# Reverse cross-attention — set once, used by ReverseCrossAttentionJoint section
+REV_CROSS_ATTN_ARG=""
+REV_CROSS_ATTN_SUFFIX=""
+if [[ "$finetune" == "ReverseCrossAttentionJoint" ]]; then
+  REV_CROSS_ATTN_ARG="--use_reverse_cross_attention"
+  REV_CROSS_ATTN_SUFFIX="_revCrossAttn"
+fi
 if [[ -n "${N_CROSS_LAYERS:-}" ]] && [[ "$N_CROSS_LAYERS" -ne 2 ]]; then
   N_CROSS_LAYERS_ARG="--n_cross_layers $N_CROSS_LAYERS"
   N_CROSS_LAYERS_SUFFIX="_cx${N_CROSS_LAYERS}"
@@ -181,6 +188,10 @@ fi
 FREEZE_LLM_ARG=""
 if [[ -n "${FREEZE_LLM_UNTIL_EPOCH:-}" ]] && [[ "$FREEZE_LLM_UNTIL_EPOCH" -gt 0 ]]; then
   FREEZE_LLM_ARG="--freeze_llm_until_epoch $FREEZE_LLM_UNTIL_EPOCH"
+fi
+PRICE_WARMUP_ARG=""
+if [[ -n "${PRICE_WARMUP_EPOCHS:-}" ]] && [[ "$PRICE_WARMUP_EPOCHS" -ne 10 ]]; then
+  PRICE_WARMUP_ARG="--price_warmup_epochs $PRICE_WARMUP_EPOCHS"
 fi
 
 # Epoch suffix for finetuned weight files
@@ -1264,7 +1275,8 @@ if [ "$finetune" == "CrossAttentionJoint" ]; then
                                       $REFINED_POOL_FLAG \
                                       $TRIPLE_CONCAT_FLAG \
                                       $EARLY_STOP_ARG \
-                                      $FREEZE_LLM_ARG
+                                      $FREEZE_LLM_ARG \
+                                      $PRICE_WARMUP_ARG
 fi
 
 if [ "$finetune" == "BiCrossAttentionJoint" ]; then
@@ -1328,7 +1340,8 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
                                         $REFINED_POOL_FLAG \
                                       $TRIPLE_CONCAT_FLAG \
                                       $EARLY_STOP_ARG \
-                                      $FREEZE_LLM_ARG
+                                      $FREEZE_LLM_ARG \
+                                      $PRICE_WARMUP_ARG
   fi
 
   #########################inference: pre-trained BiCrossAttentionJoint#########################
@@ -1380,7 +1393,113 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
                                       $REFINED_POOL_FLAG \
                                       $TRIPLE_CONCAT_FLAG \
                                       $EARLY_STOP_ARG \
-                                      $FREEZE_LLM_ARG
+                                      $FREEZE_LLM_ARG \
+                                      $PRICE_WARMUP_ARG
+fi
+
+if [ "$finetune" == "ReverseCrossAttentionJoint" ]; then
+  PRICE_MODEL_PATH=${PRICE_MODEL_PATH:-"/root/PRICE/results/model_params.pth"}
+  PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
+
+  # Check if finetuned ReverseCrossAttentionJoint weights already exist
+  REV_CROSS_ATTN_JOINT_PREFIX="finetuned_models/${DB_ENGINE}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}_llm_price${REV_CROSS_ATTN_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${EPOCH_SUFFIX}"
+  if [ -f "${REV_CROSS_ATTN_JOINT_PREFIX}_llm.pt" ] && [ -f "${REV_CROSS_ATTN_JOINT_PREFIX}_price.pt" ]; then
+    echo "Finetuned ReverseCrossAttentionJoint weights already exist, skipping finetune:"
+    echo "  LLM:   ${REV_CROSS_ATTN_JOINT_PREFIX}_llm.pt"
+    echo "  PRICE: ${REV_CROSS_ATTN_JOINT_PREFIX}_price.pt"
+  else
+    #########################Reverse Cross-Attention Joint LLM+PRICE finetune#########################
+    algo=llm_price_finetune
+    hid_units=2048
+    lr=0.0001
+    price_lr=${PRICE_LR:-$PRICE_LR_DEFAULT}
+    batch_size=$FT_BATCH_SIZE
+    grad_accum_steps=${GRAD_ACCUM_STEPS:-1}
+
+    echo "finetuning: ReverseCrossAttentionJoint LLM+PRICE (time)"
+
+    setup_args_and_suffixes
+
+    python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
+                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_revCrossAttn_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${EPOCH_SUFFIX}.log \
+                                        --db $DB_ENGINE \
+                                        --workloads_train "${TRAIN_WLS[@]}" \
+                                        --workload_test ${WORKLOAD_TEST} \
+                                        --algo ${algo} \
+                                        --learning_rate $lr \
+                                        --price_lr $price_lr \
+                                        --batch_size $batch_size \
+                                        --hid_units $hid_units \
+                                        --model_name $model_name \
+                                        --train_ratio $train_ratio \
+                                        --llm_mode lora \
+                                        --use_reverse_cross_attention \
+                                        --num_epoch $FT_NUM_EPOCH \
+                                        --seed $SEED \
+                                        --price_model_path $PRICE_MODEL_PATH \
+                                        --price_bin_size $PRICE_BIN_SIZE \
+                                        $BUCKETIZE_ARG \
+                                        $QUANTIFICATION_ARG \
+                                        $REMOVED_FIELDS_ARG \
+                                        $PRICE_M_ARG $PRICE_S_ARG \
+                                        $PRICE_RANDOM_INIT_FLAG \
+                                        $CHECKPOINT_INTERVAL_ARG \
+                                        $GRAD_ACCUM_ARG \
+                                        $PRICE_N_LAYERS_ARG \
+                                        $N_CROSS_LAYERS_ARG \
+                                        $CROSS_ATTN_LR_ARG \
+                                        $EARLY_STOP_ARG \
+                                        $FREEZE_LLM_ARG \
+                                      $PRICE_WARMUP_ARG
+  fi
+
+  #########################inference: pre-trained ReverseCrossAttentionJoint#########################
+  algo=llm_price
+  embed_size=${EMBED_SIZE:-1000}
+  hid_units=2048
+  lr=0.0001
+  batch_size=64
+
+  echo "inference: pre-trained ReverseCrossAttentionJoint"
+
+  setup_args_and_suffixes
+
+  python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
+                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_revCrossAttn_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${RETRAIN_MLP_SUFFIX}${EPOCH_SUFFIX}.log \
+                                      --output_dir_qerror ${RESULTS_DIR}/time_${algo}_revCrossAttn_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${RETRAIN_MLP_SUFFIX}${EPOCH_SUFFIX}.csv \
+                                      --db $DB_ENGINE \
+                                      --workloads_train "${TRAIN_WLS[@]}" \
+                                      --workload_test ${WORKLOAD_TEST} \
+                                      --algo ${algo} \
+                                      --learning_rate $lr \
+                                      --batch_size $batch_size \
+                                      --hid_units $hid_units \
+                                      --model_name $model_name \
+                                      --embed_size $embed_size \
+                                      --train_ratio 1.0 \
+                                      --llm_mode inference \
+                                      --num_epoch 100 \
+                                      --llm_pretrained lora \
+                                      --llm_pretrained_task $llm_pretrained_task \
+                                      --price_model_path $PRICE_MODEL_PATH \
+                                      --price_bin_size $PRICE_BIN_SIZE \
+                                      --price_weights_source reverse_cross_attn_joint \
+                                      --use_reverse_cross_attention \
+                                      --seed $SEED \
+                                      --ft_batch_size $FT_BATCH_SIZE \
+                                      --ft_num_epoch $FT_NUM_EPOCH \
+                                      $BUCKETIZE_ARG \
+                                      $QUANTIFICATION_ARG \
+                                      $EMBEDDINGS_ARG \
+                                      $REMOVED_FIELDS_ARG \
+                                      $PRICE_M_ARG $PRICE_S_ARG \
+                                      $PRICE_RANDOM_INIT_FLAG \
+                                      $PRICE_N_LAYERS_ARG \
+                                      $N_CROSS_LAYERS_ARG \
+                                      $RETRAIN_MLP_FLAG \
+                                      $EARLY_STOP_ARG \
+                                      $FREEZE_LLM_ARG \
+                                      $PRICE_WARMUP_ARG
 fi
 
 if [ "$finetune" == "PriceFTthenJoint" ]; then

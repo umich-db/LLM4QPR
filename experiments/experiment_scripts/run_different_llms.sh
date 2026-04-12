@@ -35,6 +35,7 @@ CLI_TRIPLE_CONCAT=""
 CLI_EARLY_STOP_PATIENCE=""
 CLI_EARLY_STOP_AFTER_EPOCH=""
 CLI_FREEZE_LLM_UNTIL_EPOCH=""
+CLI_PRICE_WARMUP_EPOCHS=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -68,6 +69,7 @@ while [[ $# -gt 0 ]]; do
         --early_stop_patience) CLI_EARLY_STOP_PATIENCE="$2"; shift 2 ;;
         --early_stop_after_epoch) CLI_EARLY_STOP_AFTER_EPOCH="$2"; shift 2 ;;
         --freeze_llm_until_epoch) CLI_FREEZE_LLM_UNTIL_EPOCH="$2"; shift 2 ;;
+        --price_warmup_epochs) CLI_PRICE_WARMUP_EPOCHS="$2"; shift 2 ;;
         *)
             echo "Unknown flag: $1"
             exit 1
@@ -369,6 +371,7 @@ _resolve_finetune_mode() {
         10) echo "GatedJointPrice" ;;
         11) echo "CrossAttentionJoint" ;;
         12) echo "BiCrossAttentionJoint" ;;
+        13) echo "ReverseCrossAttentionJoint" ;;
         *)  echo "$1" ;;  # already a name string
     esac
 }
@@ -390,7 +393,8 @@ else
     echo "10. LLM+PRICE: Gated joint (GatedJointPrice)"
     echo "11. LLM+PRICE: Cross-attention joint (CrossAttentionJoint)"
     echo "12. LLM+PRICE: Bidirectional cross-attention joint (BiCrossAttentionJoint)"
-    echo "Enter choice (1-12):"
+    echo "13. LLM+PRICE: Reverse cross-attention joint (ReverseCrossAttentionJoint)"
+    echo "Enter choice (1-13):"
     read -r finetune_choice
 
     FINETUNE_MODE="False"
@@ -416,6 +420,8 @@ else
         FINETUNE_MODE="CrossAttentionJoint"
     elif [[ "$finetune_choice" == "12" ]]; then
         FINETUNE_MODE="BiCrossAttentionJoint"
+    elif [[ "$finetune_choice" == "13" ]]; then
+        FINETUNE_MODE="ReverseCrossAttentionJoint"
     fi
 fi
 
@@ -701,6 +707,9 @@ for SEED in "${seeds[@]}"; do
             fi
             if [[ -n "$CLI_FREEZE_LLM_UNTIL_EPOCH" ]]; then
                 export FREEZE_LLM_UNTIL_EPOCH="$CLI_FREEZE_LLM_UNTIL_EPOCH"
+            fi
+            if [[ -n "$CLI_PRICE_WARMUP_EPOCHS" ]]; then
+                export PRICE_WARMUP_EPOCHS="$CLI_PRICE_WARMUP_EPOCHS"
             fi
             export FINETUNE_RUN_LAST="$FINETUNE_RUN_LAST"
             export FINETUNE_RUN_LORA="$FINETUNE_RUN_LORA"

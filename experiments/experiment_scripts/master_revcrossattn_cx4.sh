@@ -31,7 +31,7 @@ COMMON=(
     --freeze_llm_until_epoch "5"
     --price_warmup_epochs "5"
     --early_stop_patience "5"
-    --early_stop_after_epoch "5"
+    --early_stop_after_epoch "15"
 )
 
 WORKLOADS=("stats" "job" "jobm")

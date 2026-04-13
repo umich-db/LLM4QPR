@@ -840,6 +840,8 @@ class InflatedBiCrossAttentionPRICEEmbedder(nn.Module):
         self.inflated_linear = nn.Linear(llm_hidden_dim + 16, llm_hidden_dim)
         self.elu = nn.ELU()
 
+        self.warmup_mode = False  # skip odd layers during warmup
+
     def cross_attn_parameters(self):
         """Return parameters belonging to cross-attention layers."""
         yield from self.price_proj_up.parameters()
@@ -898,11 +900,12 @@ class InflatedBiCrossAttentionPRICEEmbedder(nn.Module):
                 if i % 2 == 0:
                     # Even: PRICE (Q) attends to LLM (K/V)
                     price_tokens = block(price_tokens, llm_tokens, llm_attention_mask)
-                else:
-                    # Odd: LLM (Q) attends to PRICE (K/V)
+                elif not self.warmup_mode:
+                    # Odd: LLM (Q) attends to PRICE (K/V) — skipped during warmup
                     llm_tokens = block(llm_tokens, price_tokens, price_mask)
 
-            updated_llm = llm_tokens  # [B, T_plan, llm_dim]
+            if not self.warmup_mode:
+                updated_llm = llm_tokens  # [B, T_plan, llm_dim]
 
         # PRICE output: CLS token at LLM dim
         price_cls = price_tokens[:, 0, :]  # [B, llm_dim]

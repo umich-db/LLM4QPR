@@ -755,11 +755,11 @@ def train(model, train_loader, val_loader, \
         _llm_frozen = True
         print(f"[StagedUnfreeze] Froze {len(_llm_params)} LLM params for epochs 0-{_freeze_llm_until-1}")
 
-    # Set initial warmup_mode for ReverseCrossAttn (Mode 13)
+    # Set initial warmup_mode for dual-direction cross-attn (Mode 13 / Mode 12+inflate)
     if hasattr(model, 'price') and hasattr(model.price, 'warmup_mode'):
         model.price.warmup_mode = (start_epoch < _freeze_llm_until)
-        _dir = "PRICE→LLM (warmup)" if model.price.warmup_mode else "LLM→PRICE (normal)"
-        print(f"[RevCrossAttn] Initial direction: {_dir}")
+        _dir = "PRICE→LLM only (warmup)" if model.price.warmup_mode else "bidirectional (normal)"
+        print(f"[CrossAttn] Initial direction: {_dir}")
 
     # Freeze odd cross-attn layers during warmup (InflatedBiCrossAttn)
     _odd_layers_frozen = False
@@ -787,13 +787,13 @@ def train(model, train_loader, val_loader, \
             _odd_layers_frozen = False
             print(f"[StagedUnfreeze] Unfroze {len(_odd_layer_params)} odd-layer (LLM→PRICE) cross-attn params at epoch {epoch}")
 
-        # Toggle warmup_mode for ReverseCrossAttn (Mode 13)
+        # Toggle warmup_mode for dual-direction cross-attn (Mode 13 / Mode 12+inflate)
         if hasattr(model, 'price') and hasattr(model.price, 'warmup_mode'):
             _new_warmup = (epoch < _freeze_llm_until)
             if model.price.warmup_mode != _new_warmup:
                 model.price.warmup_mode = _new_warmup
-                _dir = "PRICE→LLM (warmup)" if _new_warmup else "LLM→PRICE (normal)"
-                print(f"[RevCrossAttn] Switched to {_dir} at epoch {epoch}")
+                _dir = "PRICE→LLM only (warmup)" if _new_warmup else "bidirectional (normal)"
+                print(f"[CrossAttn] Switched to {_dir} at epoch {epoch}")
 
         epoch_start = timer()
         model.train()

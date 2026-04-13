@@ -761,6 +761,17 @@ def train(model, train_loader, val_loader, \
         _dir = "PRICE→LLM (warmup)" if model.price.warmup_mode else "LLM→PRICE (normal)"
         print(f"[RevCrossAttn] Initial direction: {_dir}")
 
+    # Freeze odd cross-attn layers during warmup (InflatedBiCrossAttn)
+    _odd_layers_frozen = False
+    _odd_layer_params = []
+    if _freeze_llm_until > 0 and start_epoch < _freeze_llm_until and hasattr(model, 'price') and hasattr(model.price, 'odd_layer_parameters'):
+        for p in model.price.odd_layer_parameters():
+            if p.requires_grad:
+                _odd_layer_params.append(p)
+                p.requires_grad = False
+        _odd_layers_frozen = True
+        print(f"[StagedUnfreeze] Froze {len(_odd_layer_params)} odd-layer (LLM→PRICE) cross-attn params for epochs 0-{_freeze_llm_until-1}")
+
     for epoch in range(start_epoch, epochs):
         # Unfreeze LLM at the designated epoch
         if _llm_frozen and epoch >= _freeze_llm_until:
@@ -768,6 +779,13 @@ def train(model, train_loader, val_loader, \
                 p.requires_grad = True
             _llm_frozen = False
             print(f"[StagedUnfreeze] Unfroze {len(_llm_params)} LLM params at epoch {epoch}")
+
+        # Unfreeze odd cross-attn layers at the same epoch
+        if _odd_layers_frozen and epoch >= _freeze_llm_until:
+            for p in _odd_layer_params:
+                p.requires_grad = True
+            _odd_layers_frozen = False
+            print(f"[StagedUnfreeze] Unfroze {len(_odd_layer_params)} odd-layer (LLM→PRICE) cross-attn params at epoch {epoch}")
 
         # Toggle warmup_mode for ReverseCrossAttn (Mode 13)
         if hasattr(model, 'price') and hasattr(model.price, 'warmup_mode'):

@@ -33,6 +33,7 @@ CLI_CROSS_ATTN_LR=""
 CLI_RETRAIN_MLP=""
 CLI_REFINED_POOL=""
 CLI_TRIPLE_CONCAT=""
+CLI_INFLATE_PRICE=""
 CLI_EARLY_STOP_PATIENCE=""
 CLI_EARLY_STOP_AFTER_EPOCH=""
 CLI_FREEZE_LLM_UNTIL_EPOCH=""
@@ -68,6 +69,7 @@ while [[ $# -gt 0 ]]; do
         --retrain_mlp)      CLI_RETRAIN_MLP="true";     shift 1 ;;
         --refined_pool)     CLI_REFINED_POOL="true";    shift 1 ;;
         --triple_concat)   CLI_TRIPLE_CONCAT="true";   shift 1 ;;
+        --inflate_price)   CLI_INFLATE_PRICE="true";   shift 1 ;;
         --early_stop_patience) CLI_EARLY_STOP_PATIENCE="$2"; shift 2 ;;
         --early_stop_after_epoch) CLI_EARLY_STOP_AFTER_EPOCH="$2"; shift 2 ;;
         --freeze_llm_until_epoch) CLI_FREEZE_LLM_UNTIL_EPOCH="$2"; shift 2 ;;
@@ -703,6 +705,9 @@ for SEED in "${seeds[@]}"; do
             fi
             if [[ -n "$CLI_TRIPLE_CONCAT" ]]; then
                 export TRIPLE_CONCAT="$CLI_TRIPLE_CONCAT"
+            fi
+            if [[ -n "$CLI_INFLATE_PRICE" ]]; then
+                export INFLATE_PRICE="$CLI_INFLATE_PRICE"
             fi
             if [[ -n "$CLI_EARLY_STOP_PATIENCE" ]]; then
                 export EARLY_STOP_PATIENCE="$CLI_EARLY_STOP_PATIENCE"

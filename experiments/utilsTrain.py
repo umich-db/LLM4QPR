@@ -196,6 +196,8 @@ def parse_args():
                         help="Use refined (cross-attn enriched) LLM pooled embedding instead of original")
     parser.add_argument("--triple_concat", action="store_true", default=False,
                         help="Concatenate original LLM + refined LLM + PRICE embeddings (BiCross only)")
+    parser.add_argument("--inflate_price", action="store_true", default=False,
+                        help="Project PRICE up to LLM dim for BiCross; output = concat(updated_LLM, updated_PRICE) at 2*LLM_dim")
 
     args = parser.parse_args()
 

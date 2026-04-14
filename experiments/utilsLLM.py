@@ -1333,7 +1333,7 @@ class QueryPlanPredictor(nn.Module):
         
         # Process windows in sub-batches to avoid OOM on long sequences
         if all_windows:
-            window_batch_size = max(1, int(os.environ.get("WINDOW_BATCH_SIZE", "1")))
+            window_batch_size = max(1, int(os.environ.get("WINDOW_BATCH_SIZE", "32")))
             emb_parts = []
             for i in range(0, len(all_windows), window_batch_size):
                 chunk = all_windows[i : i + window_batch_size]

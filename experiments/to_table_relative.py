@@ -71,8 +71,17 @@ def extract_display_name(col_name):
             if pl_match:
                 display_name += f"_pL{pl_match.group(1)}"
 
+            # Extract FFN ratio (e.g., _ffn2)
+            ffn_match = re.search(r'_ffn([\d.]+)', col_name)
+            if ffn_match:
+                display_name += f"_ffn{ffn_match.group(1)}"
+
             # Extract cross-attention suffix
-            if '_crossAttn' in col_name:
+            if '_biCrossAttn' in col_name:
+                display_name += '_biCrossAttn'
+            elif '_revCrossAttn' in col_name:
+                display_name += '_revCrossAttn'
+            elif '_crossAttn' in col_name:
                 display_name += '_crossAttn'
 
             # Extract cross-attention layer count (e.g., _cx4)
@@ -80,11 +89,13 @@ def extract_display_name(col_name):
             if cx_match:
                 display_name += f"_cx{cx_match.group(1)}"
 
-            # Extract refinedPool / tripleConcat flag
+            # Extract refinedPool / tripleConcat / inflatePRICE flag
             if '_refinedPool' in col_name:
                 display_name += '_refinedPool'
             if '_tripleConcat' in col_name:
                 display_name += '_tripleConcat'
+            if '_inflatePRICE' in col_name:
+                display_name += '_inflatePRICE'
 
             # Extract finetune epoch count (e.g., _e20, _e30)
             ft_epoch_match = re.search(r'_e(\d+)_ftb', col_name)

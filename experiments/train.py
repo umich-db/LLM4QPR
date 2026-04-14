@@ -296,8 +296,18 @@ if _retrain_mlp_cache_hit:
   argsP.embed_size = combined_dim
   print(f"[retrain_mlp] Fast path: skipped LLM/data loading ({argsP.num_epoch} MLP epochs)")
 
-  # Set dummy variables expected by the rest of the script
+  # Reconstruct ds_info with cost_norm from cache (or fall back to label range)
   ds_info = dat_dict['ds_info']
+  from utils import Normalizer
+  _cost_norm_data = _cached.get("cost_norm", None)
+  if _cost_norm_data:
+      ds_info.cost_norm = Normalizer(mini=_cost_norm_data["mini"], maxi=_cost_norm_data["maxi"])
+      print(f"[retrain_mlp] Loaded cost_norm from cache: mini={ds_info.cost_norm.mini:.4f}, maxi={ds_info.cost_norm.maxi:.4f}")
+  else:
+      # Old cache without cost_norm — use label range as approximation
+      _all_labels_np = all_labels["train"].numpy().flatten()
+      ds_info.cost_norm = Normalizer(mini=float(_all_labels_np.min()), maxi=float(_all_labels_np.max()))
+      print(f"[retrain_mlp] WARNING: Old cache without cost_norm, using label range: mini={ds_info.cost_norm.mini:.4f}, maxi={ds_info.cost_norm.maxi:.4f}")
   test_lengths = test_templates = None
   train_roots = train_js_nodes = train_costs = None
   val_roots = val_js_nodes = val_costs_raw = None
@@ -846,8 +856,9 @@ if getattr(argsP, '_retrain_mlp_active', False):
             all_labels[split_name] = torch.cat(lab_list, dim=0)
             print(f"  {split_name}: {all_embeddings[split_name].shape[0]} samples, embed_dim={all_embeddings[split_name].shape[1]}")
 
-        # Save cache
-        torch.save({"embeddings": all_embeddings, "labels": all_labels}, _retrain_cache_path)
+        # Save cache (include cost_norm for fast-path reconstruction)
+        _cost_norm_data = {"mini": ds_info.cost_norm.mini, "maxi": ds_info.cost_norm.maxi} if ds_info.cost_norm else None
+        torch.save({"embeddings": all_embeddings, "labels": all_labels, "cost_norm": _cost_norm_data}, _retrain_cache_path)
         print(f"[retrain_mlp] Cached embeddings to {_retrain_cache_path}")
 
         # Free the full model from GPU

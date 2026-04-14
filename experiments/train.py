@@ -59,9 +59,43 @@ if argsP.algo not in ("llm_finetune", "llm_price_finetune", "price_finetune"):
     output_dir = os.path.dirname(argsP.output_dir_qerror)
     if not os.path.exists(output_dir):
         os.makedirs(output_dir, exist_ok=True)
+# ─── Early retrain_mlp cache check: skip LLM/data loading if embeddings cached ──
+_retrain_mlp_cache_hit = False
+if (argsP.algo == "llm_price" and getattr(argsP, 'retrain_mlp', False) and
+    getattr(argsP, 'price_weights_source', 'pretrained') in ("cross_attn_joint", "bi_cross_attn_joint", "reverse_cross_attn_joint")):
+    # Compute the cache path from args alone (same logic as the model construction section)
+    _pws = argsP.price_weights_source
+    _ft_bs = getattr(argsP, 'ft_batch_size', 16)
+    _task_str = "card" if argsP.card else "time"
+    _pm = "_priceM" if getattr(argsP, 'price_m', False) else ""
+    _ps = "_priceS" if getattr(argsP, 'price_s', False) else ""
+    _ri = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
+    _rp = "_refinedPool" if getattr(argsP, 'refined_pool', False) else ""
+    _tc = "_tripleConcat" if getattr(argsP, 'triple_concat', False) else ""
+    _ip = "_inflatePRICE" if getattr(argsP, 'inflate_price', False) else ""
+    _nl = f"_pL{argsP.price_n_layers}" if getattr(argsP, 'price_n_layers', 6) != 6 else ""
+    _fr = f"_ffn{argsP.price_ffn_ratio:g}" if getattr(argsP, 'price_ffn_ratio', 4.0) != 4.0 else ""
+    _n_cross = getattr(argsP, 'n_cross_layers', 2)
+    _nc = f"_cx{_n_cross}" if _n_cross != 2 else ""
+    _ft_epochs = getattr(argsP, 'ft_num_epoch', 0)
+    _es = f"_e{_ft_epochs}" if _ft_epochs > 0 else ""
+    if _pws == "bi_cross_attn_joint":
+        _attn = "_biCrossAttn"
+    elif _pws == "reverse_cross_attn_joint":
+        _attn = "_revCrossAttn"
+    else:
+        _attn = "_crossAttn"
+    _weight_prefix = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{_task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{_ft_bs}{_pm}{_ps}_llm_price{_attn}{_rp}{_tc}{_ip}{_ri}{_nl}{_fr}{_nc}{_es}"
+    _test_tag = f"_test-{argsP.workload_test}" if getattr(argsP, 'workload_test', '') else ""
+    _early_cache_path = f"{_weight_prefix}{_test_tag}_retrainMLP_embeddings.pt"
+    if os.path.exists(_early_cache_path):
+        print(f"[retrain_mlp] Embedding cache exists: {_early_cache_path}")
+        print(f"[retrain_mlp] Skipping LLM loading, data loading, and model construction")
+        _retrain_mlp_cache_hit = True
+
 # Print CUDA availability (optional, for verification)
 print(f"Cuda available? {torch.cuda.is_available()}")
-if "llm" in argsP.algo:
+if "llm" in argsP.algo and not _retrain_mlp_cache_hit:
   if not argsP.embeddings_exist:
     from utilsLLM import QueryPlanDataset, QueryPlanPredictor, get_llm_ds_from_csv
     
@@ -226,7 +260,56 @@ def frozen_llm_price_collate(batch):
     nfcs = torch.tensor(nfc, dtype=torch.float32, device=device).unsqueeze(1)
     return (llm_embs_tensor, price_feats, pad_masks, njcs, nfos, ntbs, nfcs), labels_tensor
 
-if argsP.algo == "price_finetune":
+if _retrain_mlp_cache_hit:
+  # Skip all data loading and model construction — go straight to retrain_mlp
+  from trainer import *
+  device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+  argsP.device = device
+  torch.manual_seed(argsP.seed)
+  torch.cuda.manual_seed_all(argsP.seed)
+  torch.backends.cudnn.deterministic = True
+  torch.backends.cudnn.benchmark = False
+
+  # Load cached embeddings
+  print(f"[retrain_mlp] Loading cached embeddings from {_early_cache_path}")
+  _cached = torch.load(_early_cache_path, map_location="cpu")
+  all_embeddings = _cached["embeddings"]
+  all_labels = _cached["labels"]
+  for split_name in ("train", "val", "test"):
+      print(f"  {split_name}: {all_embeddings[split_name].shape[0]} samples, embed_dim={all_embeddings[split_name].shape[1]}")
+
+  # Build fresh MLP and loaders
+  combined_dim = all_embeddings["train"].shape[1]
+  model_comb = Prediction(combined_dim, argsP.hid_units)
+  print(f"[retrain_mlp] Fresh MLP: input_dim={combined_dim}, hid_units={argsP.hid_units}")
+
+  ds = TensorDataset(all_embeddings["train"], all_labels["train"])
+  val_ds = TensorDataset(all_embeddings["val"], all_labels["val"])
+  test_ds = TensorDataset(all_embeddings["test"], all_labels["test"])
+
+  train_loader = DataLoader(ds, batch_size=argsP.batch_size, shuffle=True,
+                            generator=torch.Generator().manual_seed(argsP.seed))
+  val_loader = DataLoader(val_ds, batch_size=argsP.batch_size, shuffle=False)
+  test_loader = DataLoader(test_ds, batch_size=1, shuffle=False)
+
+  argsP.algo = "llm_price"
+  argsP.embed_size = combined_dim
+  print(f"[retrain_mlp] Fast path: skipped LLM/data loading ({argsP.num_epoch} MLP epochs)")
+
+  # Set dummy variables expected by the rest of the script
+  ds_info = dat_dict['ds_info']
+  test_lengths = test_templates = None
+  train_roots = train_js_nodes = train_costs = None
+  val_roots = val_js_nodes = val_costs_raw = None
+  test_roots = test_js_nodes = test_costs_raw = None
+  crit = nn.MSELoss()
+  price_finetune_optimizer = None
+  price_finetune_scheduler = None
+  _ckpt_prefix = None
+  argsP.checkpoint_prefix = None
+  start_epoch = 0
+
+elif argsP.algo == "price_finetune":
   from utilsLLM import get_price_only_ds_from_csv
   ds, val_ds, test_ds, val_costs, test_costs = get_price_only_ds_from_csv(
       dat_paths_train_list, dat_path_test, dat_dict['ds_info'], argsP

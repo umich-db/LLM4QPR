@@ -727,7 +727,8 @@ elif argsP.algo == "price_finetune":
 # ─── Retrain MLP: pre-compute frozen cross-attn embeddings ─────────────
 if getattr(argsP, '_retrain_mlp_active', False):
     # Cache path derived from the finetuned weight prefix (set during cross-attn model construction)
-    _retrain_cache_path = f"{weight_prefix}_retrainMLP_embeddings.pt"
+    _test_tag = f"_test-{argsP.workload_test}" if getattr(argsP, 'workload_test', '') else ""
+    _retrain_cache_path = f"{weight_prefix}{_test_tag}_retrainMLP_embeddings.pt"
     _cache_hit = os.path.exists(_retrain_cache_path)
 
     if _cache_hit:

@@ -1955,6 +1955,9 @@ def _find_actual_total_time(root_node, db='postgres'):
         if "latency" not in root_node:
             raise KeyError("'latency' not found in root (DuckDB)")
         return float(root_node["latency"])
+    if db == 'spark':
+        # Spark: already extracted as float during text parsing
+        return float(root_node)
     # Postgres: Actual Total Time in milliseconds
     if "Actual Total Time" not in root_node:
         raise KeyError("'Actual Total Time' not found in root")
@@ -1967,6 +1970,9 @@ def _find_actual_rows(root_node, db='postgres'):
         if "rows_returned" not in root_node:
             raise KeyError("'rows_returned' not found in root (DuckDB)")
         return float(root_node["rows_returned"])
+    if db == 'spark':
+        # Spark: already extracted as float during text parsing
+        return float(root_node)
     # Postgres: Actual Rows
     if "Actual Rows" not in root_node:
         raise KeyError("'Actual Rows' not found in root")
@@ -2513,13 +2519,19 @@ def read_json_and_clean(predictor, ds_info, dat_path, argsP, all=False):
         inject_stat_tokens_into_cleaned_plan = _inject
 
     raw_jsons = df["json"]
-    plan_jsons = [json.loads(raw) for raw in raw_jsons]
 
-    # Cache original roots for costs/cards before any bucketization
-    original_roots = [
-        _extract_root(p) if isinstance(p, dict) else p
-        for p in plan_jsons
-    ]
+    # Spark plans are plain text, not JSON
+    _is_spark = (db == 'spark')
+    if _is_spark:
+        plan_jsons = list(raw_jsons)  # keep as strings
+        original_roots = plan_jsons   # not used for spark (costs parsed separately)
+    else:
+        plan_jsons = [json.loads(raw) for raw in raw_jsons]
+        # Cache original roots for costs/cards before any bucketization
+        original_roots = [
+            _extract_root(p) if isinstance(p, dict) else p
+            for p in plan_jsons
+        ]
 
     if argsP.bucketize_input == "separate":
         plan_jsons = bucketize_plans(plan_jsons)
@@ -2536,28 +2548,43 @@ def read_json_and_clean(predictor, ds_info, dat_path, argsP, all=False):
         token_log_file.write(f"Index\tToken_Count\n")
 
     for idx, plan_json in enumerate(plan_jsons):
-        if "failed" in plan_json:
+        if isinstance(plan_json, str) and "failed" in plan_json:
+            continue
+        elif isinstance(plan_json, dict) and "failed" in plan_json:
             continue
         print("*", end='', flush=True)
-        root = _extract_root(plan_json)
-        # Use pre-bucketized root for costs/cards
-        orig_root = original_roots[idx]
-        costs.append(_find_actual_total_time(orig_root, db))
-        cards.append(_find_actual_rows(orig_root, db))
-        cleaned_root = _clean_node(root, fields_to_remove, field_cats)
-        if getattr(argsP, "stats_token_inject", False) and stats_mem is not None:
-            token_mode = getattr(argsP, "stats_token_mode", "per_column")
-            cleaned_root, stat_vecs = inject_stat_tokens_into_cleaned_plan(
-                cleaned_root,
-                ds_info,
-                stats_mem,
-                token_str=token_str,
-                token_mode=token_mode,
-            )
-            stats_vecs_list.append(stat_vecs)
-        else:
+
+        if _is_spark:
+            # Spark: parse cost/card from first two lines, use plan text as-is
+            lines = plan_json.strip().split('\n')
+            import re as _re
+            _cost_match = _re.search(r'time cost:\s*([\d.]+)\s*ms', lines[0]) if len(lines) > 0 else None
+            _card_match = _re.search(r'actual cardinality:\s*([\d.]+)', lines[1]) if len(lines) > 1 else None
+            costs.append(float(_cost_match.group(1)) if _cost_match else 0.0)
+            cards.append(float(_card_match.group(1)) if _card_match else 0.0)
             stats_vecs_list.append([])
-        txt = json.dumps(cleaned_root)
+            # Use the full plan text (already clean)
+            txt = plan_json.strip()
+        else:
+            root = _extract_root(plan_json)
+            # Use pre-bucketized root for costs/cards
+            orig_root = original_roots[idx]
+            costs.append(_find_actual_total_time(orig_root, db))
+            cards.append(_find_actual_rows(orig_root, db))
+            cleaned_root = _clean_node(root, fields_to_remove, field_cats)
+            if getattr(argsP, "stats_token_inject", False) and stats_mem is not None:
+                token_mode = getattr(argsP, "stats_token_mode", "per_column")
+                cleaned_root, stat_vecs = inject_stat_tokens_into_cleaned_plan(
+                    cleaned_root,
+                    ds_info,
+                    stats_mem,
+                    token_str=token_str,
+                    token_mode=token_mode,
+                )
+                stats_vecs_list.append(stat_vecs)
+            else:
+                stats_vecs_list.append([])
+            txt = json.dumps(cleaned_root)
         
         # Log token count before truncation if needed
         if token_log_file is not None:

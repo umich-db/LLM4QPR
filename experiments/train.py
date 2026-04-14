@@ -1253,11 +1253,12 @@ else:
 
   if argsP.algo in ("llm", "llm_price"):
     output_dir_lvq = argsP.output_dir_qerror.replace("cdf", "length_vs_qerror")
-    with open(output_dir_lvq, "w") as f:
-        w = csv.writer(f)
-        w.writerow(["plan_length", "q_error"])
-        for L, Q in zip(test_lengths, q_errors_dist):
-            w.writerow([L, Q])
+    if test_lengths is not None:
+        with open(output_dir_lvq, "w") as f:
+            w = csv.writer(f)
+            w.writerow(["plan_length", "q_error"])
+            for L, Q in zip(test_lengths, q_errors_dist):
+                w.writerow([L, Q])
 
   print("\nTest Results:")
   print("Q Errors:", q_errors)

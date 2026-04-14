@@ -450,7 +450,7 @@ elif argsP.algo == "llm_stats":
     print("AutoGluon does not support llm_stats; using MLP instead.")
   MLP = Prediction(input_dim, argsP.hid_units)
   model_comb = MLP
-elif argsP.algo == "llm_price":
+elif argsP.algo == "llm_price" and not _retrain_mlp_cache_hit:
   pws = getattr(argsP, 'price_weights_source', 'pretrained')
   if pws in ("cross_attn_joint", "bi_cross_attn_joint", "reverse_cross_attn_joint"):
     # Cross-attention / bidirectional / reverse cross-attention inference: build full model, load weights, evaluate directly

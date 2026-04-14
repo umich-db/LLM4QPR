@@ -382,7 +382,8 @@ elif argsP.algo == "llm_price":
     from model.encoder import RegressionModel
     from models.llm_price_model import (CrossAttentionPRICEEmbedder, CrossAttentionLLMPriceModel,
                                          BiCrossAttentionPRICEEmbedder, BiCrossAttentionLLMPriceModel,
-                                         ReverseCrossAttentionPRICEEmbedder, ReverseCrossAttentionLLMPriceModel)
+                                         ReverseCrossAttentionPRICEEmbedder, ReverseCrossAttentionLLMPriceModel,
+                                         InflatedBiCrossAttentionPRICEEmbedder, InflatedBiCrossAttentionLLMPriceModel)
 
     # Build PRICE model
     max_njc = argsP.price_max_n_join_col

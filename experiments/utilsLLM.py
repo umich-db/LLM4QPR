@@ -3955,8 +3955,8 @@ def get_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_
         already_price_format=is_cross_wl_test,
     )
 
-    # ---- Step 4: Extract pg_est_card (only for CSV-format data) ----
-    if not is_cross_wl_test:
+    # ---- Step 4: Extract pg_est_card (only for CSV-format data, not Spark) ----
+    if not is_cross_wl_test and db != 'spark':
         print(f"[LLM+PRICE] Step 4/6: Extracting pg_est_card from plan JSONs...", flush=True)
         df_test = pd.read_csv(dat_path_test)
         pg_est_cards = []
@@ -3966,7 +3966,7 @@ def get_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_
             except Exception:
                 pg_est_cards.append(1.0)
     else:
-        print(f"[LLM+PRICE] Step 4/6: Skipping pg_est_card (cross-workload JSON)...", flush=True)
+        print(f"[LLM+PRICE] Step 4/6: Skipping pg_est_card ({('Spark text plans' if db == 'spark' else 'cross-workload JSON')})...", flush=True)
 
     # ---- Step 5: Split train/val/test and pad with unified max dims ----
     print(f"[LLM+PRICE] Step 5/6: Splitting train/val/test...", flush=True)

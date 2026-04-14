@@ -272,7 +272,7 @@ if _retrain_mlp_cache_hit:
 
   # Load cached embeddings
   print(f"[retrain_mlp] Loading cached embeddings from {_early_cache_path}")
-  _cached = torch.load(_early_cache_path, map_location="cpu")
+  _cached = torch.load(_early_cache_path, map_location="cpu", weights_only=False)
   all_embeddings = _cached["embeddings"]
   all_labels = _cached["labels"]
   for split_name in ("train", "val", "test"):
@@ -826,7 +826,7 @@ if getattr(argsP, '_retrain_mlp_active', False):
 
     if _cache_hit:
         print(f"[retrain_mlp] Loading cached embeddings from {_retrain_cache_path}")
-        _cached = torch.load(_retrain_cache_path, map_location="cpu")
+        _cached = torch.load(_retrain_cache_path, map_location="cpu", weights_only=False)
         all_embeddings = _cached["embeddings"]
         all_labels = _cached["labels"]
         for split_name in ("train", "val", "test"):

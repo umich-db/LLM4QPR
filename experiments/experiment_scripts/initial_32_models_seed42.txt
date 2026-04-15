@@ -1,0 +1,35 @@
+# 32 initial models selected by ConstrainedModelSearch with random_state=42
+# Algorithm: KMeans clustering (k=32) on model metadata; pick closest to each centroid
+# rank  model  non_embedding_params  avg_ms
+1	google/bert_uncased_L-10_H-768_A-12	36327168	16.09
+2	sentence-transformers/paraphrase-MiniLM-L6-v2	5560704	14.02
+3	HuggingFaceTB/SmolLM-135M-Instruct	53580096	36.89
+4	microsoft/deberta-v3-large	152104960	78.18
+5	facebook/opt-125m	44457984	16.89
+6	Qwen/Qwen2.5-Coder-0.5B	179525504	83.12
+7	google/bert_uncased_L-8_H-128_A-2	849280	14.70
+8	albert/albert-xxlarge-v1	117371136	132.45
+9	EleutherAI/pythia-70m-deduped	9871360	12.34
+10	google-bert/bert-base-multilingual-cased	43474176	18.05
+11	google/electra-base-generator	4760320	18.79
+12	distilbert/distilroberta-base	22033152	11.74
+13	HuggingFaceTB/SmolLM-360M	158168000	45.74
+14	microsoft/mdeberta-v3-base	42885120	37.16
+15	albert/albert-xlarge-v1	29325568	69.46
+16	EleutherAI/pythia-410m-deduped	154462208	36.84
+17	Qwen/Qwen2-0.5B-Instruct	179525504	84.82
+18	sentence-transformers/multi-qa-mpnet-base-cos-v1	43474560	19.01
+19	albert/albert-large-v1	7322880	30.39
+20	EleutherAI/pythia-31m	2576384	12.12
+21	Qwen/Qwen2-0.5B	179525504	85.50
+22	microsoft/deberta-v3-small	21444096	21.23
+23	sentence-transformers/paraphrase-albert-small-v2	4115968	12.36
+24	sentence-transformers/multi-qa-distilbert-cos-v1	21442560	10.13
+25	google/bert_uncased_L-6_H-512_A-8	9839104	12.75
+26	HuggingFaceTB/SmolLM-135M	53580096	36.78
+27	google/mobilebert-uncased	10590464	47.89
+28	HuggingFaceTB/SmolLM-360M-Instruct	158168000	45.70
+29	google/electra-large-discriminator	152102912	31.86
+30	distilbert/distilbert-base-multilingual-cased	21442560	11.30
+31	FacebookAI/xlm-roberta-large	153152512	28.57
+32	answerdotai/ModernBERT-base	49432320	36.38

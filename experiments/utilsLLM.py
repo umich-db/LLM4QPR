@@ -2555,7 +2555,8 @@ def read_json_and_clean(predictor, ds_info, dat_path, argsP, all=False):
         print("*", end='', flush=True)
 
         if _is_spark:
-            # Spark: parse cost/card from first two lines, use plan text as-is
+            # Spark: parse cost/card from first two lines, then STRIP them from the
+            # text fed to the LLM to avoid label leakage.
             lines = plan_json.strip().split('\n')
             import re as _re
             _cost_match = _re.search(r'time cost:\s*([\d.]+)\s*ms', lines[0]) if len(lines) > 0 else None
@@ -2563,8 +2564,14 @@ def read_json_and_clean(predictor, ds_info, dat_path, argsP, all=False):
             costs.append(float(_cost_match.group(1)) if _cost_match else 0.0)
             cards.append(float(_card_match.group(1)) if _card_match else 0.0)
             stats_vecs_list.append([])
-            # Use the full plan text (already clean)
-            txt = plan_json.strip()
+
+            # Drop the two leaking header lines; the remainder starts with
+            # "query plan:\n<tree>\n\nstatsOutput:\n<estimates>"
+            remaining = lines[2:]
+            # Also drop a bare "query plan:" header if present — it adds no signal.
+            if remaining and remaining[0].strip().lower().rstrip(':') == 'query plan':
+                remaining = remaining[1:]
+            txt = '\n'.join(remaining).strip()
         else:
             root = _extract_root(plan_json)
             # Use pre-bucketized root for costs/cards

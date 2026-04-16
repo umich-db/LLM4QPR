@@ -21,36 +21,46 @@ parser.add_argument("--special_set1", action="store_true",
 args = parser.parse_args()
 
 def _matches_special_set1(filename):
-    """True if filename matches one of the 4 setups from master_cross_engine_comparison.sh.
-    The 4 setups are:
+    """True if filename matches one of the 4 setups from master_cross_engine_comparison.sh:
       1) Mode 1: pretrained-None (no finetune, no price)
       2) Mode 2: pretrained-lora (LoRA LLM finetune, no price)
-      3) Mode 7: pretrained-lora + priceS + no crossAttn/inflatePRICE/randInit variants  (JointPrice with pretrained PRICE)
+      3) Mode 7: pretrained-lora + priceS (JointPrice with pretrained PRICE, no randInit)
       4) Mode 12 inflatePRICE: biCrossAttn + inflatePRICE + randInit + cx4
     """
-    # Exclude clutter
-    for bad in ("crossAttn", "biCrossAttn", "revCrossAttn", "tripleConcat", "refinedPool",
-                "CrossAttnJoint", "BiCrossAttnJoint", "RevCrossAttnJoint", "gated",
-                "priceNoFT", "priceLLMOnly", "priceM", "retrainMLP",
-                "_pL", "_ffn", "_statTok", "maxq-", "frozenInit",
-                "length_vs_qerror"):
-        if bad in filename:
-            # Mode 12 inflatePRICE needs biCrossAttn+inflatePRICE, so don't filter that case here
-            if bad in ("biCrossAttn", "BiCrossAttnJoint") and "inflatePRICE" in filename:
-                continue
-            return False
+    # Length-vs-qerror files are side-products (not CDFs).
+    if "length_vs_qerror" in filename:
+        return False
 
-    # Mode 12 inflatePRICE: biCrossAttn + inflatePRICE + randInit + cx4
+    # --- Check Mode 12 inflatePRICE FIRST, before other cross-attn filters ---
     if "inflatePRICE" in filename:
         return ("randInit" in filename
                 and "cx4" in filename
-                and ("biCrossAttn" in filename or "BiCrossAttnJoint" in filename))
+                and ("biCrossAttn" in filename or "priceBiCrossAttnJoint" in filename))
+
+    # Reject other cross-attention variants (but inflatePRICE already handled).
+    if any(x in filename for x in (
+        "CrossAttnJoint", "RevCrossAttnJoint",  # matches Bi/Rev results
+        "revCrossAttn", "biCrossAttn",          # lowercase finetune-log suffixes
+        "tripleConcat", "refinedPool", "gated",
+    )):
+        return False
+
+    # Reject other price/auxiliary variants.
+    if any(x in filename for x in (
+        "priceNoFT", "priceLLMOnly", "priceM", "retrainMLP",
+        "_statTok", "frozenInit",
+    )):
+        return False
+
+    # Reject hyperparameter variants (non-default PRICE config or max_queries).
+    if any(x in filename for x in ("_pL", "_ffn", "maxq-")):
+        return False
 
     # Mode 1: pretrained-None (no price)
     if "pretrained-None" in filename and "price" not in filename:
         return True
 
-    # Mode 2: pretrained-lora (no price, no inflatePRICE/cross-attn)
+    # Mode 2: pretrained-lora (no price)
     if "pretrained-lora" in filename and "price" not in filename:
         return True
 

@@ -20,27 +20,37 @@ args = parser.parse_args()
 
 
 def _matches_special_set1(filename):
-    """True if filename matches one of the 4 setups from master_cross_engine_comparison.sh.
-    The 4 setups are:
+    """True if filename matches one of the 4 setups from master_cross_engine_comparison.sh:
       1) Mode 1: pretrained-None (no finetune, no price)
       2) Mode 2: pretrained-lora (LoRA LLM finetune, no price)
-      3) Mode 7: pretrained-lora + priceS + no crossAttn/inflatePRICE/randInit variants
+      3) Mode 7: pretrained-lora + priceS (JointPrice with pretrained PRICE, no randInit)
       4) Mode 12 inflatePRICE: biCrossAttn + inflatePRICE + randInit + cx4
     """
-    for bad in ("crossAttn", "biCrossAttn", "revCrossAttn", "tripleConcat", "refinedPool",
-                "CrossAttnJoint", "BiCrossAttnJoint", "RevCrossAttnJoint", "gated",
-                "priceNoFT", "priceLLMOnly", "priceM", "retrainMLP",
-                "_pL", "_ffn", "_statTok", "maxq-", "frozenInit",
-                "length_vs_qerror"):
-        if bad in filename:
-            if bad in ("biCrossAttn", "BiCrossAttnJoint") and "inflatePRICE" in filename:
-                continue
-            return False
+    if "length_vs_qerror" in filename:
+        return False
 
+    # Mode 12 inflatePRICE must be checked BEFORE cross-attn rejection,
+    # because the filename contains "BiCrossAttnJoint" (which has "CrossAttnJoint" as substring).
     if "inflatePRICE" in filename:
         return ("randInit" in filename
                 and "cx4" in filename
-                and ("biCrossAttn" in filename or "BiCrossAttnJoint" in filename))
+                and ("biCrossAttn" in filename or "priceBiCrossAttnJoint" in filename))
+
+    if any(x in filename for x in (
+        "CrossAttnJoint", "RevCrossAttnJoint",
+        "revCrossAttn", "biCrossAttn",
+        "tripleConcat", "refinedPool", "gated",
+    )):
+        return False
+
+    if any(x in filename for x in (
+        "priceNoFT", "priceLLMOnly", "priceM", "retrainMLP",
+        "_statTok", "frozenInit",
+    )):
+        return False
+
+    if any(x in filename for x in ("_pL", "_ffn", "maxq-")):
+        return False
 
     if "pretrained-None" in filename and "price" not in filename:
         return True

@@ -753,3 +753,292 @@ def traversePlanDuckDB(root, level=0):
         root_node.children.append(child_node)
 
     return root_node
+
+
+# ────────────────────────────────────────────────────────────────────────
+#  Spark plan parsing
+# ────────────────────────────────────────────────────────────────────────
+# Spark plan text format (first 2 lines = labels, stripped upstream):
+#
+#     time cost: <ms> ms
+#     actual cardinality: <n>
+#     query plan:
+#     Join Inner, (UserId#118 = Id#0)
+#     :- Filter isnotnull(UserId#118)
+#     :  +- Relation spark_catalog.stats.badges[Id#117,UserId#118,Date#119] parquet
+#     +- Filter ((isnotnull(UpVotes#4) AND (UpVotes#4 >= 0)) AND isnotnull(Id#0))
+#        +- Relation spark_catalog.stats.users[Id#0,Reputation#1,CreationDate#2,Views#3,UpVotes#4,DownVotes#5] parquet
+#
+#     statsOutput:
+#     Join estimated row count: 92306, size in bytes: 4799912
+#     Filter estimated row count: 79851, size in bytes: 5552960
+#     ...
+#
+# Tree structure uses 3-char-per-level indentation with ':- ' / '+- ' markers.
+# statsOutput lines are in preorder traversal of the plan tree.
+
+
+SPARK_TO_PG_NODE_TYPE = {
+    # Joins
+    'Join': 'Hash Join',
+    'BroadcastHashJoin': 'Hash Join',
+    'ShuffledHashJoin': 'Hash Join',
+    'SortMergeJoin': 'Merge Join',
+    'BroadcastNestedLoopJoin': 'Nested Loop',
+    'CartesianProduct': 'Nested Loop',
+    # Scans
+    'Relation': 'Seq Scan',
+    'LogicalRelation': 'Seq Scan',
+    'FileScan': 'Seq Scan',
+    'BatchScan': 'Seq Scan',
+    # Filters / projects / aggs
+    'Filter': 'Filter',
+    'Project': 'Result',
+    'Aggregate': 'Aggregate',
+    'HashAggregate': 'HashAggregate',
+    'SortAggregate': 'Aggregate',
+    # Sort / limit / window
+    'Sort': 'Sort',
+    'Limit': 'Limit',
+    'GlobalLimit': 'Limit',
+    'LocalLimit': 'Limit',
+    'Window': 'WindowAgg',
+    'TakeOrderedAndProject': 'Sort',
+    # Union / exchange
+    'Union': 'Append',
+    'Exchange': 'Gather',
+    # Generator / subquery
+    'Generate': 'Result',
+}
+
+
+def _parse_spark_operator_line(op_line):
+    """Extract (operator_type, table, filters, join) from a Spark operator text line.
+
+    op_line examples:
+        "Join Inner, (UserId#118 = Id#0)"
+        "Filter isnotnull(UserId#118)"
+        "Relation spark_catalog.stats.badges[Id#117,UserId#118,Date#119] parquet"
+        "Project [Id#0]"
+        "Aggregate [Id#0], [count(1) AS cnt#100L]"
+    """
+    op_line = op_line.strip()
+    if not op_line:
+        return {'nodeType': 'Unknown', 'table': None, 'alias': None,
+                'filters': '', 'join': '', 'join_type': None}
+
+    first_word = op_line.split()[0]
+    pg_name = SPARK_TO_PG_NODE_TYPE.get(first_word, first_word)
+
+    table = None
+    alias = None
+    filters = ''
+    join = ''
+    join_type = None
+
+    if first_word in ('Relation', 'LogicalRelation', 'FileScan', 'BatchScan'):
+        # Extract table from "<Rel>  spark_catalog.db.table[cols] parquet"
+        import re as _re
+        m = _re.search(r'\b([\w_]+)\[', op_line)
+        if m:
+            full_name = m.group(1)
+            # Strip catalog/db prefix if present (split by ".")
+            # The captured group may be just the table; try the wider pattern too
+            m2 = _re.search(r'(?:(?:\w+)\.)*([\w_]+)\s*\[', op_line)
+            if m2:
+                table = m2.group(1)
+                alias = table
+    elif first_word == 'Filter':
+        filters = op_line[len('Filter'):].strip()
+    elif first_word == 'Join' or first_word.endswith('Join'):
+        # "Join Inner, (cond)" or "SortMergeJoin Inner, (cond)"
+        import re as _re
+        m = _re.match(r'\w+\s+(\w+)(?:,\s*(.*))?', op_line)
+        if m:
+            join_type = m.group(1).lower()
+            join = (m.group(2) or '').strip()
+
+    return {'nodeType': pg_name, 'table': table, 'alias': alias,
+            'filters': filters, 'join': join, 'join_type': join_type}
+
+
+def _parse_spark_stats_output(stats_lines):
+    """Parse statsOutput lines into a list of {'estimated_rows', 'size_bytes'} in preorder."""
+    import re as _re
+    out = []
+    for line in stats_lines:
+        line = line.strip()
+        if not line:
+            continue
+        m = _re.search(r'estimated row count:\s*([\d.]+),?\s*size in bytes:\s*([\d.]+)', line)
+        if m:
+            try:
+                out.append({'estimated_rows': float(m.group(1)),
+                            'size_bytes': float(m.group(2))})
+            except ValueError:
+                out.append({'estimated_rows': 0.0, 'size_bytes': 0.0})
+        else:
+            out.append({'estimated_rows': 0.0, 'size_bytes': 0.0})
+    return out
+
+
+def _parse_spark_plan_tree(plan_text):
+    """Parse the indented Spark plan text into a nested dict tree.
+
+    Returns dict with: {'op_line': str, 'children': [dict, ...]}
+    or None on failure.
+    """
+    import re as _re
+    lines = [l for l in plan_text.split('\n') if l.strip()]
+    if not lines:
+        return None
+
+    root = {'op_line': lines[0].strip(), 'children': [], 'depth': 0}
+    # Stack of (depth, node) from root (depth 0) downward.
+    stack = [root]
+
+    for line in lines[1:]:
+        m = _re.search(r'[+:]-\s', line)
+        if not m:
+            continue
+        marker_pos = m.start()
+        depth = marker_pos // 3 + 1
+        content = line[marker_pos + 3:].strip()
+
+        node = {'op_line': content, 'children': [], 'depth': depth}
+
+        # Pop the stack until we find a parent at depth-1.
+        while stack and stack[-1]['depth'] >= depth:
+            stack.pop()
+        if not stack:
+            break
+        stack[-1]['children'].append(node)
+        stack.append(node)
+
+    return root
+
+
+def _preorder_nodes(tree):
+    """Yield nodes in preorder (parent, then children left-to-right)."""
+    if tree is None:
+        return
+    yield tree
+    for c in tree.get('children', []):
+        yield from _preorder_nodes(c)
+
+
+def _attach_spark_stats(tree, stats_list):
+    """Attach stats_list entries to tree nodes in preorder."""
+    if tree is None:
+        return
+    for node, stats in zip(_preorder_nodes(tree), stats_list):
+        node['stats'] = stats
+    # Nodes past the end of stats_list just get no stats.
+
+
+def extractNodeSpark(node):
+    """Convert a parsed Spark tree node dict into a TreeNode-compatible dict."""
+    parsed = _parse_spark_operator_line(node['op_line'])
+    stats = node.get('stats') or {}
+    est_rows = stats.get('estimated_rows', 0.0)
+    size_bytes = stats.get('size_bytes', 0.0)
+    width = (size_bytes / est_rows) if est_rows > 0 else 0.0
+
+    d = {
+        'nodeType': parsed['nodeType'],
+        'card': 0,            # Spark provides actual card at root only
+        'card_est': est_rows,
+        'nodeParallel': parsed['nodeType'] + '_False',
+        'width': width,
+        'alias': parsed['alias'],
+        'filters': parsed['filters'],
+        'join': parsed['join'],
+        'cost': 0,            # per-operator timing not exposed
+        'cost_est': 0,
+        'startup_cost': 0,
+        'table': parsed['table'],
+    }
+    if parsed['table'] is not None:
+        d['index'] = None
+    if parsed['join_type']:
+        d['join_type'] = parsed['join_type']
+    return d
+
+
+def parse_spark_plan(plan_text):
+    """Top-level Spark plan parser. Takes the raw CSV cell text.
+
+    Returns a synthetic node dict:
+        {
+          'time_cost_ms': float,       # actual total time (label)
+          'actual_rows': float,        # actual rows returned (label)
+          'tree': {op_line, stats, children[]}  # parsed tree with stats attached
+        }
+    """
+    import re as _re
+    text = plan_text.strip()
+    lines = text.split('\n')
+
+    # Line 1: time cost
+    time_cost_ms = 0.0
+    if lines:
+        m = _re.search(r'time cost:\s*([\d.]+)\s*ms', lines[0])
+        if m:
+            time_cost_ms = float(m.group(1))
+
+    # Line 2: actual cardinality
+    actual_rows = 0.0
+    if len(lines) > 1:
+        m = _re.search(r'actual cardinality:\s*([\d.]+)', lines[1])
+        if m:
+            actual_rows = float(m.group(1))
+
+    # Split into plan body and statsOutput.
+    plan_body_lines = []
+    stats_lines = []
+    in_stats = False
+    for line in lines[2:]:
+        stripped = line.strip()
+        if stripped.lower() == 'query plan:':
+            continue
+        if stripped.lower() == 'statsoutput:':
+            in_stats = True
+            continue
+        if in_stats:
+            stats_lines.append(line)
+        else:
+            plan_body_lines.append(line)
+
+    tree = _parse_spark_plan_tree('\n'.join(plan_body_lines))
+    stats_list = _parse_spark_stats_output(stats_lines)
+    _attach_spark_stats(tree, stats_list)
+
+    return {
+        'time_cost_ms': time_cost_ms,
+        'actual_rows': actual_rows,
+        'tree': tree,
+    }
+
+
+def traversePlanSpark(root, level=0):
+    """Build a TreeNode tree from a parsed Spark plan.
+
+    `root` is the dict returned by parse_spark_plan() (top-level), OR a nested
+    tree node dict during recursion.
+    """
+    # Top-level wrapper
+    if 'tree' in root and 'op_line' not in root:
+        if root['tree'] is None:
+            # Empty plan — synthesize a dummy root
+            dummy = {'op_line': 'Unknown', 'children': [], 'depth': 0, 'stats': {}}
+            return traversePlanSpark(dummy, level)
+        return traversePlanSpark(root['tree'], level)
+
+    d = extractNodeSpark(root)
+    node = TreeNode(d)
+    node.level = level
+    for child in root.get('children', []):
+        child_node = traversePlanSpark(child, level + 1)
+        child_node.parent = node
+        node.children.append(child_node)
+    return node

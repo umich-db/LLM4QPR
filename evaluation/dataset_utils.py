@@ -8,7 +8,7 @@ import os
 import sys
 sys.path.append('../evaluation/')
 
-from feature_extractor import traversePlan, traversePlanDuckDB, DatasetInfo, extractNode
+from feature_extractor import traversePlan, traversePlanDuckDB, traversePlanSpark, parse_spark_plan, DatasetInfo, extractNode
 
 def save_error_cdf(errors, save_path, error_type='Qerror'):
     errors = np.array(errors)
@@ -56,6 +56,14 @@ def get_col_min_max(minmax_df):
 
 def get_costs(js_nodes, card=False, db='postgres'):
     costs = []
+    if db == 'spark':
+        for js_node in js_nodes:
+            if not card:
+                # Spark synthetic node: {'time_cost_ms': ..., 'actual_rows': ..., 'tree': ...}
+                costs.append(float(js_node.get('time_cost_ms', 0.0)))
+            else:
+                costs.append(float(js_node.get('actual_rows', 0.0)))
+        return costs
     if db == 'duckdb':
         for js_node in js_nodes:
             if not card:
@@ -118,7 +126,6 @@ def df2nodes(df, db='postgres'):
     idxs = []
     roots = []
     js_nodes = []
-    traverse_fn = traversePlanDuckDB if db == 'duckdb' else traversePlan
     for i, row in df.iterrows():
         if 'id' in row:
             idx = row['id']
@@ -129,12 +136,23 @@ def df2nodes(df, db='postgres'):
 
         if js_str == 'failed':
             continue
-        js_node = json.loads(js_str)
-        js_nodes.append(js_node)
-        root = traverse_fn(js_node)
+
+        if db == 'spark':
+            # Spark plans are plain text; parse into a synthetic node dict.
+            js_node = parse_spark_plan(js_str)
+            js_nodes.append(js_node)
+            root = traversePlanSpark(js_node)
+        elif db == 'duckdb':
+            js_node = json.loads(js_str)
+            js_nodes.append(js_node)
+            root = traversePlanDuckDB(js_node)
+        else:
+            js_node = json.loads(js_str)
+            js_nodes.append(js_node)
+            root = traversePlan(js_node)
         roots.append(root)
         idxs.append(idx)
-    if db != 'duckdb':
+    if db not in ('duckdb', 'spark'):
         print(f"Number of aliases 'None': {extractNode.none_counter}")
         print(f"Number of aliases '<temporary>': {extractNode.temporary_counter}")
     return roots, js_nodes, idxs

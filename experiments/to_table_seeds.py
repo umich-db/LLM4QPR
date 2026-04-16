@@ -31,6 +31,10 @@ def _matches_special_set1(filename):
     if "length_vs_qerror" in filename:
         return False
 
+    # Reject retrainMLP variants from all modes (upfront, before mode-specific checks).
+    if "retrainMLP" in filename:
+        return False
+
     # --- Check Mode 12 inflatePRICE FIRST, before other cross-attn filters ---
     if "inflatePRICE" in filename:
         return ("randInit" in filename

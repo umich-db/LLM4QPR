@@ -29,6 +29,10 @@ def _matches_special_set1(filename):
     if "length_vs_qerror" in filename:
         return False
 
+    # Reject retrainMLP variants from all modes.
+    if "retrainMLP" in filename:
+        return False
+
     # Mode 12 inflatePRICE must be checked BEFORE cross-attn rejection,
     # because the filename contains "BiCrossAttnJoint" (which has "CrossAttnJoint" as substring).
     if "inflatePRICE" in filename:

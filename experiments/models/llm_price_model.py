@@ -836,6 +836,18 @@ class InflatedBiCrossAttentionPRICEEmbedder(nn.Module):
             for _ in range(n_cross_layers)
         ])
 
+        # Zero-init the residual-output projections of ODD (LLM→PRICE) layers so
+        # that when they activate post-warmup, their output is 0 → residual pass-through.
+        # This keeps the MLP's LLM-side input distribution consistent across the
+        # warmup boundary, avoiding the catastrophic jump when odd layers turn on.
+        for i, block in enumerate(self.cross_attn_blocks):
+            if i % 2 == 1:
+                nn.init.zeros_(block.cross_attn.projection.weight)
+                nn.init.zeros_(block.cross_attn.projection.bias)
+                # Final FFN Linear (the one that writes into the residual stream)
+                nn.init.zeros_(block.feed_forward[-1].weight)
+                nn.init.zeros_(block.feed_forward[-1].bias)
+
         # PRICE output: CLS at LLM dim + len_features → LLM dim
         self.inflated_linear = nn.Linear(llm_hidden_dim + 16, llm_hidden_dim)
         self.elu = nn.ELU()

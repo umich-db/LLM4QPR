@@ -21,7 +21,8 @@ COMMON=(
     --seeds "42 43 44"
 )
 
-WORKLOADS=("stats" "job" "jobm")
+WORKLOADS=("job" "jobm")
+# WORKLOADS=("stats" "job" "jobm")
 
 run() {
     local desc="$1"; shift
@@ -32,20 +33,20 @@ run() {
     bash "$RUN_SCRIPT" "${COMMON[@]}" "$@"
 }
 
-# ═══════════════════════════════════════════════════════════════════════
-#  DuckDB — only Mode 12 inflatePRICE needed (modes 1, 2, 7 exist)
-# ═══════════════════════════════════════════════════════════════════════
+# # ═══════════════════════════════════════════════════════════════════════
+# #  DuckDB — only Mode 12 inflatePRICE needed (modes 1, 2, 7 exist)
+# # ═══════════════════════════════════════════════════════════════════════
 
-for wl in "${WORKLOADS[@]}"; do
-    run "Mode 12 inflatePRICE cx4 | duckdb | $wl" \
-        --db "duckdb" \
-        --ft_batch_size "24" --ft_num_epoch "30" \
-        --price_s --price_random_init --inflate_price \
-        --n_cross_layers "4" --checkpoint_interval "5" \
-        --freeze_llm_until_epoch "5" --price_warmup_epochs "5" \
-        --early_stop_patience "5" --early_stop_after_epoch "15" \
-        --workloads "$wl" --finetune_mode "12" --finetune_method "lora"
-done
+# for wl in "${WORKLOADS[@]}"; do
+#     run "Mode 12 inflatePRICE cx4 | duckdb | $wl" \
+#         --db "duckdb" \
+#         --ft_batch_size "24" --ft_num_epoch "30" \
+#         --price_s --price_random_init --inflate_price \
+#         --n_cross_layers "4" --checkpoint_interval "5" \
+#         --freeze_llm_until_epoch "5" --price_warmup_epochs "5" \
+#         --early_stop_patience "5" --early_stop_after_epoch "15" \
+#         --workloads "$wl" --finetune_mode "12" --finetune_method "lora"
+# done
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Spark — all 4 modes needed
@@ -58,28 +59,28 @@ for wl in "${WORKLOADS[@]}"; do
         --ft_batch_size "32" \
         --workloads "$wl" --finetune_mode "1" --finetune_method "lora"
 
-    # Mode 2: LLM LoRA finetune
-    run "Mode 2 LoRA finetune | spark | $wl" \
-        --db "spark" \
-        --ft_batch_size "32" --ft_num_epoch "30" \
-        --workloads "$wl" --finetune_mode "2" --finetune_method "lora"
+    # # Mode 2: LLM LoRA finetune
+    # run "Mode 2 LoRA finetune | spark | $wl" \
+    #     --db "spark" \
+    #     --ft_batch_size "32" --ft_num_epoch "30" \
+    #     --workloads "$wl" --finetune_mode "2" --finetune_method "lora"
 
-    # Mode 7: JointPrice with pretrained PRICE
-    run "Mode 7 JointPrice priceS | spark | $wl" \
-        --db "spark" \
-        --ft_batch_size "32" --ft_num_epoch "30" \
-        --price_s \
-        --workloads "$wl" --finetune_mode "7" --finetune_method "lora"
+    # # Mode 7: JointPrice with pretrained PRICE
+    # run "Mode 7 JointPrice priceS | spark | $wl" \
+    #     --db "spark" \
+    #     --ft_batch_size "32" --ft_num_epoch "30" \
+    #     --price_s \
+    #     --workloads "$wl" --finetune_mode "7" --finetune_method "lora"
 
-    # Mode 12: BiCrossAttn inflatePRICE cx4 randInit
-    run "Mode 12 inflatePRICE cx4 | spark | $wl" \
-        --db "spark" \
-        --ft_batch_size "24" --ft_num_epoch "30" \
-        --price_s --price_random_init --inflate_price \
-        --n_cross_layers "4" --checkpoint_interval "5" \
-        --freeze_llm_until_epoch "5" --price_warmup_epochs "5" \
-        --early_stop_patience "5" --early_stop_after_epoch "15" \
-        --workloads "$wl" --finetune_mode "12" --finetune_method "lora"
+    # # Mode 12: BiCrossAttn inflatePRICE cx4 randInit
+    # run "Mode 12 inflatePRICE cx4 | spark | $wl" \
+    #     --db "spark" \
+    #     --ft_batch_size "24" --ft_num_epoch "30" \
+    #     --price_s --price_random_init --inflate_price \
+    #     --n_cross_layers "4" --checkpoint_interval "5" \
+    #     --freeze_llm_until_epoch "5" --price_warmup_epochs "5" \
+    #     --early_stop_patience "5" --early_stop_after_epoch "15" \
+    #     --workloads "$wl" --finetune_mode "12" --finetune_method "lora"
 done
 
 echo ""

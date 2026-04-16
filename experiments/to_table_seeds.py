@@ -14,7 +14,51 @@ parser.add_argument("--dir", type=str)
 parser.add_argument("--task", type=str)
 parser.add_argument("--sentbert_only", action="store_true",
                     help="Only show sentBert-all_quant variants (plus non-LLM baselines) in .png")
+parser.add_argument("--special_set1", action="store_true",
+                    help="Special set 1: only the 4 setups from master_cross_engine_comparison.sh spark section "
+                         "(Mode 1 pretrained, Mode 2 LoRA, Mode 7 JointPrice priceS, Mode 12 inflatePRICE cx4) "
+                         "plus non-LLM baselines.")
 args = parser.parse_args()
+
+def _matches_special_set1(filename):
+    """True if filename matches one of the 4 setups from master_cross_engine_comparison.sh.
+    The 4 setups are:
+      1) Mode 1: pretrained-None (no finetune, no price)
+      2) Mode 2: pretrained-lora (LoRA LLM finetune, no price)
+      3) Mode 7: pretrained-lora + priceS + no crossAttn/inflatePRICE/randInit variants  (JointPrice with pretrained PRICE)
+      4) Mode 12 inflatePRICE: biCrossAttn + inflatePRICE + randInit + cx4
+    """
+    # Exclude clutter
+    for bad in ("crossAttn", "biCrossAttn", "revCrossAttn", "tripleConcat", "refinedPool",
+                "CrossAttnJoint", "BiCrossAttnJoint", "RevCrossAttnJoint", "gated",
+                "priceNoFT", "priceLLMOnly", "priceM", "retrainMLP",
+                "_pL", "_ffn", "_statTok", "maxq-", "frozenInit",
+                "length_vs_qerror"):
+        if bad in filename:
+            # Mode 12 inflatePRICE needs biCrossAttn+inflatePRICE, so don't filter that case here
+            if bad in ("biCrossAttn", "BiCrossAttnJoint") and "inflatePRICE" in filename:
+                continue
+            return False
+
+    # Mode 12 inflatePRICE: biCrossAttn + inflatePRICE + randInit + cx4
+    if "inflatePRICE" in filename:
+        return ("randInit" in filename
+                and "cx4" in filename
+                and ("biCrossAttn" in filename or "BiCrossAttnJoint" in filename))
+
+    # Mode 1: pretrained-None (no price)
+    if "pretrained-None" in filename and "price" not in filename:
+        return True
+
+    # Mode 2: pretrained-lora (no price, no inflatePRICE/cross-attn)
+    if "pretrained-lora" in filename and "price" not in filename:
+        return True
+
+    # Mode 7: JointPrice with pretrained PRICE → pretrained-lora + priceS + no randInit
+    if "pretrained-lora" in filename and "priceS" in filename and "randInit" not in filename:
+        return True
+
+    return False
 
 def strip_seed(filename):
     """Removes seed information to group files with same prefix"""
@@ -149,6 +193,11 @@ def build_quantile_table(csv_folder, quantiles=[50, 75, 90, 99]):
             continue
         if "trueEmb" in filename:
             continue
+        if args.special_set1:
+            # Keep non-LLM baselines (aimai, bao, e2e_cost, qf, postgres) + 4 set1 LLM setups
+            is_llm = "llm" in filename
+            if is_llm and not _matches_special_set1(filename):
+                continue
         filtered_paths.append(path)
     csv_paths = filtered_paths
 

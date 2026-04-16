@@ -12,7 +12,46 @@ parser.add_argument("--dirs", type=str, nargs="+", required=True,
 parser.add_argument("--task", type=str, default="time")
 parser.add_argument("--sentbert_only", action="store_true",
                     help="Only show sentBert-all_quant variants (plus non-LLM baselines) in .png")
+parser.add_argument("--special_set1", action="store_true",
+                    help="Special set 1: only the 4 setups from master_cross_engine_comparison.sh spark section "
+                         "(Mode 1 pretrained, Mode 2 LoRA, Mode 7 JointPrice priceS, Mode 12 inflatePRICE cx4) "
+                         "plus non-LLM baselines.")
 args = parser.parse_args()
+
+
+def _matches_special_set1(filename):
+    """True if filename matches one of the 4 setups from master_cross_engine_comparison.sh.
+    The 4 setups are:
+      1) Mode 1: pretrained-None (no finetune, no price)
+      2) Mode 2: pretrained-lora (LoRA LLM finetune, no price)
+      3) Mode 7: pretrained-lora + priceS + no crossAttn/inflatePRICE/randInit variants
+      4) Mode 12 inflatePRICE: biCrossAttn + inflatePRICE + randInit + cx4
+    """
+    for bad in ("crossAttn", "biCrossAttn", "revCrossAttn", "tripleConcat", "refinedPool",
+                "CrossAttnJoint", "BiCrossAttnJoint", "RevCrossAttnJoint", "gated",
+                "priceNoFT", "priceLLMOnly", "priceM", "retrainMLP",
+                "_pL", "_ffn", "_statTok", "maxq-", "frozenInit",
+                "length_vs_qerror"):
+        if bad in filename:
+            if bad in ("biCrossAttn", "BiCrossAttnJoint") and "inflatePRICE" in filename:
+                continue
+            return False
+
+    if "inflatePRICE" in filename:
+        return ("randInit" in filename
+                and "cx4" in filename
+                and ("biCrossAttn" in filename or "BiCrossAttnJoint" in filename))
+
+    if "pretrained-None" in filename and "price" not in filename:
+        return True
+
+    if "pretrained-lora" in filename and "price" not in filename:
+        return True
+
+    if "pretrained-lora" in filename and "priceS" in filename and "randInit" not in filename:
+        return True
+
+    return False
 
 
 def strip_seed(filename):
@@ -132,6 +171,10 @@ def build_quantile_table(csv_folder, task, quantiles=[50, 90, 95]):
         filename = os.path.basename(path)
         if "_rm-" in filename or "downstream" in filename or "trueEmb" in filename:
             continue
+        if args.special_set1:
+            is_llm = "llm" in filename
+            if is_llm and not _matches_special_set1(filename):
+                continue
         filtered_paths.append(path)
     csv_paths = filtered_paths
 

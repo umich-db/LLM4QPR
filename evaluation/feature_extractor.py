@@ -852,11 +852,18 @@ def _parse_spark_operator_line(op_line):
         filters = op_line[len('Filter'):].strip()
     elif first_word == 'Join' or first_word.endswith('Join'):
         # "Join Inner, (cond)" or "SortMergeJoin Inner, (cond)"
+        # Simplify the full condition (possibly a boolean combination) into
+        # a single "col = col" form for e2e_cost/qf compatibility; fall back to ''.
         import re as _re
         m = _re.match(r'\w+\s+(\w+)(?:,\s*(.*))?', op_line)
         if m:
             join_type = m.group(1).lower()
-            join = (m.group(2) or '').strip()
+            raw_cond = (m.group(2) or '').strip()
+            # Extract the first "(col#id = col#id)" pattern (strip col#id → col)
+            m2 = _re.search(r'\(([A-Za-z_]\w*)#\d+\s*=\s*([A-Za-z_]\w*)#\d+\)', raw_cond)
+            if m2:
+                join = f"{m2.group(1)} = {m2.group(2)}"
+            # else: leave as '' (will become 'NA' downstream)
 
     return {'nodeType': pg_name, 'table': table, 'alias': alias,
             'filters': filters, 'join': join, 'join_type': join_type}
@@ -936,6 +943,42 @@ def _attach_spark_stats(tree, stats_list):
     # Nodes past the end of stats_list just get no stats.
 
 
+def _parse_spark_filter_to_tuples(raw_filter, raw_text=None):
+    """Parse a Spark filter string into a list of [col, op, val] tuples.
+
+    Spark filter examples:
+        "isnotnull(col)"                    → skipped (unary)
+        "(col = value)"                     → [['col', '=', value]]
+        "(col > 2005)"                      → [['col', '>', 2005]]
+        "((col1 >= 0) AND (col2 <= 10))"    → 2 filters
+        "Contains(col, value)"              → skipped
+
+    We strip Spark's col#<id> attribute refs and only keep simple binary ops.
+    Returns [] for unsupported shapes so algorithms can treat them uniformly.
+    """
+    if not raw_filter:
+        return []
+    import re as _re
+    out = []
+    # Find binary comparisons inside parentheses. Spark uses col#<id> for refs.
+    # We match patterns like `col#123 = 5`, `col#123 > 2005`, etc.
+    for m in _re.finditer(
+        r'\(\s*([A-Za-z_]\w*)#\d+\s*(=|!=|<>|<=|>=|<|>)\s*([^()]+?)\s*\)',
+        raw_filter,
+    ):
+        col = m.group(1)
+        op = m.group(2)
+        val_raw = m.group(3).strip()
+        # Try numeric value
+        try:
+            val = float(val_raw)
+        except ValueError:
+            # Strip common suffixes (e.g., "2014-09-04 23:10:09", strings)
+            val = val_raw
+        out.append([col, op, val])
+    return out
+
+
 def extractNodeSpark(node):
     """Convert a parsed Spark tree node dict into a TreeNode-compatible dict."""
     parsed = _parse_spark_operator_line(node['op_line'])
@@ -944,6 +987,10 @@ def extractNodeSpark(node):
     size_bytes = stats.get('size_bytes', 0.0)
     width = (size_bytes / est_rows) if est_rows > 0 else 0.0
 
+    # Parse filter string into [col, op, val] tuples for QueryFormer/AIMAI compatibility.
+    # Postgres's format is a list (possibly empty); Spark must match.
+    filters_list = _parse_spark_filter_to_tuples(parsed['filters'])
+
     d = {
         'nodeType': parsed['nodeType'],
         'card': 0,            # Spark provides actual card at root only
@@ -951,8 +998,8 @@ def extractNodeSpark(node):
         'nodeParallel': parsed['nodeType'] + '_False',
         'width': width,
         'alias': parsed['alias'],
-        'filters': parsed['filters'],
-        'join': parsed['join'],
+        'filters': filters_list,
+        'join': parsed['join'] if parsed['join'] else 'NA',
         'cost': 0,            # per-operator timing not exposed
         'cost_est': 0,
         'startup_cost': 0,

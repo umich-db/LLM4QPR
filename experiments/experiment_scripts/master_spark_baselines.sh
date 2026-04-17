@@ -10,6 +10,9 @@ EXPERIMENTS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 export DB_ENGINE="spark"
 export VERBOSE_INFO="false"
+# Early stop: stop if val p90 hasn't improved for 5 epochs, active after epoch 10.
+export EARLY_STOP_PATIENCE="5"
+export EARLY_STOP_AFTER_EPOCH="10"
 
 ALGORITHMS=("qf" "bao" "aimai" "e2e_cost")
 WORKLOADS=("stats" "job" "jobm")

@@ -76,6 +76,15 @@ if [[ "$VERBOSE_INFO" == "true" || "$VERBOSE_INFO" == "True" ]]; then
   VERBOSE_ARG="--verbose_info"
 fi
 
+# Early-stop passthrough (from EARLY_STOP_PATIENCE / EARLY_STOP_AFTER_EPOCH env vars).
+EARLY_STOP_ARG=""
+if [[ -n "${EARLY_STOP_PATIENCE:-}" ]] && [[ "$EARLY_STOP_PATIENCE" -gt 0 ]]; then
+  EARLY_STOP_ARG="--early_stop_patience $EARLY_STOP_PATIENCE"
+  if [[ -n "${EARLY_STOP_AFTER_EPOCH:-}" ]] && [[ "$EARLY_STOP_AFTER_EPOCH" -gt 0 ]]; then
+    EARLY_STOP_ARG="$EARLY_STOP_ARG --early_stop_after_epoch $EARLY_STOP_AFTER_EPOCH"
+  fi
+fi
+
 # Output directories namespaced by database engine (matches run_llm_time.sh)
 RESULTS_DIR="results/${DB_ENGINE}"
 LOGS_DIR="logs/${DB_ENGINE}"
@@ -99,7 +108,8 @@ if [[ "$TASK" == "card" ]]; then
                                     --train_ratio $train_ratio \
                                     --card \
                                     --seed $SEED \
-                                    $VERBOSE_ARG
+                                    $VERBOSE_ARG \
+                                    $EARLY_STOP_ARG
 else
     python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
                                     --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS[*]}"_Test_"$WORKLOAD_TEST"_ours/${base_name}.csv \
@@ -114,5 +124,6 @@ else
                                     --batch_size $batch_size \
                                     --train_ratio $train_ratio \
                                     --seed $SEED \
-                                    $VERBOSE_ARG
+                                    $VERBOSE_ARG \
+                                    $EARLY_STOP_ARG
 fi

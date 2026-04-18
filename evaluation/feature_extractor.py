@@ -1072,14 +1072,22 @@ def traversePlanSpark(root, level=0):
 
     `root` is the dict returned by parse_spark_plan() (top-level), OR a nested
     tree node dict during recursion.
+
+    Spark only exposes actual cost/card at the QUERY level, not per-operator.
+    On the top-level wrapper, we copy `time_cost_ms`/`actual_rows` into the root
+    TreeNode's `cost`/`card` so that DatasetInfo's min/max sweep picks them up.
     """
     # Top-level wrapper
     if 'tree' in root and 'op_line' not in root:
         if root['tree'] is None:
-            # Empty plan — synthesize a dummy root
             dummy = {'op_line': 'Unknown', 'children': [], 'depth': 0, 'stats': {}}
-            return traversePlanSpark(dummy, level)
-        return traversePlanSpark(root['tree'], level)
+            tn = traversePlanSpark(dummy, level)
+        else:
+            tn = traversePlanSpark(root['tree'], level)
+        # Attach query-level actuals to the root so DatasetInfo sees real values.
+        tn.cost = float(root.get('time_cost_ms', 0.0) or 0.0)
+        tn.card = float(root.get('actual_rows', 0.0) or 0.0)
+        return tn
 
     d = extractNodeSpark(root)
     node = TreeNode(d)

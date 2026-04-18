@@ -100,8 +100,8 @@ def print_qerror(ps, ls, prints=True,data_sec = "unknown"):
         if data_sec == "val":
             tag = _TRAINING_SESSION.get('tag')
             st = _TRAINING_SESSION.get('start_time')
-            elapsed = (time.time() - st) if st else 0.0
-            print(f"[val] model={tag} elapsed={elapsed:.1f}s")
+            elapsed_hours = ((time.time() - st) / 3600.0) if st else 0.0
+            print(f"[val] model={tag} elapsed={elapsed_hours:.3f}h")
         print(f"Data section:       {data_sec}")
         print(f"Median:             {e50}")
         print(f"90th percentile:    {e90}")

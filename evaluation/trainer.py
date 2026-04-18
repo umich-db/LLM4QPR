@@ -18,6 +18,10 @@ import logging
 # perf_counter gives you sub-microsecond resolution
 timer = time.perf_counter
 
+# Training-session state used by print_qerror to annotate val output.
+# Set by train() at entry; read by print_qerror(..., data_sec="val").
+_TRAINING_SESSION = {'tag': None, 'start_time': None}
+
 
 
 ## cost prediction MLP model
@@ -93,6 +97,11 @@ def print_qerror(ps, ls, prints=True,data_sec = "unknown"):
 
     if prints:
         # stdout
+        if data_sec == "val":
+            tag = _TRAINING_SESSION.get('tag')
+            st = _TRAINING_SESSION.get('start_time')
+            elapsed = (time.time() - st) if st else 0.0
+            print(f"[val] model={tag} elapsed={elapsed:.1f}s")
         print(f"Data section:       {data_sec}")
         print(f"Median:             {e50}")
         print(f"90th percentile:    {e90}")
@@ -725,6 +734,11 @@ def train(model, train_loader, val_loader, \
         crit = torch.nn.MSELoss()
 
     t0 = time.time()
+
+    # Record session tag + start time for print_qerror val annotations.
+    _tag = getattr(args, 'model_name', None) or getattr(args, 'algo', 'Unknown')
+    _TRAINING_SESSION['tag'] = _tag
+    _TRAINING_SESSION['start_time'] = t0
 
     best_prev = 999999
 

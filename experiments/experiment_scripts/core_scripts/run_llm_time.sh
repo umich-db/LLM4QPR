@@ -344,6 +344,15 @@ setup_args_and_suffixes() {
   fi
 }
 
+# Subdir tag (e.g. "model_selection") inserted into log/result/weight paths.
+# When set, files go under .../<existing_path>/${SUBDIR_TAG}/
+SUBDIR_PART=""
+SUBDIR_ARG=""
+if [[ -n "${SUBDIR_TAG:-}" ]]; then
+  SUBDIR_PART="/${SUBDIR_TAG}"
+  SUBDIR_ARG="--subdir_tag ${SUBDIR_TAG}"
+fi
+
 if [ "$finetune" == "False" ]; then
   #########################inference: no pre-train#########################
   algo=llm
@@ -357,9 +366,9 @@ if [ "$finetune" == "False" ]; then
   setup_args_and_suffixes
   
   python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-None_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}${MAX_QUERIES_SUFFIX}_seed${SEED}.csv \
-                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-None_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}${MAX_QUERIES_SUFFIX}_seed${SEED}_abs.txt \
-                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-None_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}${MAX_QUERIES_SUFFIX}_seed${SEED}.log \
+                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-None_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}${MAX_QUERIES_SUFFIX}_seed${SEED}.csv \
+                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-None_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}${MAX_QUERIES_SUFFIX}_seed${SEED}_abs.txt \
+                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-None_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}${MAX_QUERIES_SUFFIX}_seed${SEED}.log \
                                       --db $DB_ENGINE \
                                       --workloads_train "${TRAIN_WLS[@]}" \
                                       --workload_test ${WORKLOAD_TEST} \
@@ -427,7 +436,7 @@ if [ "$finetune" == "True" ]; then
       setup_args_and_suffixes
       
       python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                          --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_last_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}.log \
+                                          --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_last_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}.log \
                                           --db $DB_ENGINE \
                                           --workloads_train "${TRAIN_WLS[@]}" \
                                           --workload_test ${WORKLOAD_TEST} \
@@ -462,7 +471,7 @@ if [ "$finetune" == "True" ]; then
       setup_args_and_suffixes
       
       python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                          --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_lora_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}.log \
+                                          --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_lora_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}.log \
                                           --db $DB_ENGINE \
                                           --workloads_train "${TRAIN_WLS[@]}" \
                                           --workload_test ${WORKLOAD_TEST} \
@@ -499,9 +508,9 @@ if [ "$finetune" == "True" ]; then
     setup_args_and_suffixes
     
     python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                        --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}_ftb${FT_BATCH_SIZE}_seed${SEED}.csv \
-                                        --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}_ftb${FT_BATCH_SIZE}_seed${SEED}_abs.txt \
-                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}_ftb${FT_BATCH_SIZE}_seed${SEED}.log \
+                                        --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}_ftb${FT_BATCH_SIZE}_seed${SEED}.csv \
+                                        --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}_ftb${FT_BATCH_SIZE}_seed${SEED}_abs.txt \
+                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}_ftb${FT_BATCH_SIZE}_seed${SEED}.log \
                                         --db $DB_ENGINE \
                                         --workloads_train "${TRAIN_WLS[@]}" \
                                         --workload_test ${WORKLOAD_TEST} \
@@ -536,9 +545,9 @@ if [ "$finetune" == "True" ]; then
     setup_args_and_suffixes
 
     python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                        --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}_ftb${FT_BATCH_SIZE}_seed${SEED}.csv \
-                                        --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}_ftb${FT_BATCH_SIZE}_seed${SEED}_abs.txt \
-                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}_ftb${FT_BATCH_SIZE}_seed${SEED}.log \
+                                        --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}_ftb${FT_BATCH_SIZE}_seed${SEED}.csv \
+                                        --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}_ftb${FT_BATCH_SIZE}_seed${SEED}_abs.txt \
+                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}_ftb${FT_BATCH_SIZE}_seed${SEED}.log \
                                         --db $DB_ENGINE \
                                         --workloads_train "${TRAIN_WLS[@]}" \
                                         --workload_test ${WORKLOAD_TEST} \
@@ -598,7 +607,7 @@ if [ "$finetune" == "JointPrice" ]; then
     setup_args_and_suffixes
 
     python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_lora_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${EPOCH_SUFFIX}.log \
+                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_lora_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${EPOCH_SUFFIX}.log \
                                         --db $DB_ENGINE \
                                         --workloads_train "${TRAIN_WLS[@]}" \
                                         --workload_test ${WORKLOAD_TEST} \
@@ -638,9 +647,9 @@ if [ "$finetune" == "JointPrice" ]; then
   setup_args_and_suffixes
 
   python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.csv \
-                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}_abs.txt \
-                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.log \
+                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.csv \
+                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}_abs.txt \
+                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.log \
                                       --db $DB_ENGINE \
                                       --workloads_train "${TRAIN_WLS[@]}" \
                                       --workload_test ${WORKLOAD_TEST} \
@@ -688,9 +697,9 @@ if [ "$finetune" == "PriceNoFT" ]; then
   setup_args_and_suffixes
 
   python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-None_priceNoFT_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}_seed${SEED}.csv \
-                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-None_priceNoFT_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}_seed${SEED}_abs.txt \
-                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-None_priceNoFT_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}_seed${SEED}.log \
+                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-None_priceNoFT_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}_seed${SEED}.csv \
+                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-None_priceNoFT_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}_seed${SEED}_abs.txt \
+                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-None_priceNoFT_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}_seed${SEED}.log \
                                       --db $DB_ENGINE \
                                       --workloads_train "${TRAIN_WLS[@]}" \
                                       --workload_test ${WORKLOAD_TEST} \
@@ -748,7 +757,7 @@ if [ "$finetune" == "PriceLLMOnly" ]; then
     setup_args_and_suffixes
 
     python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_lora_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}.log \
+                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_lora_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}.log \
                                         --db $DB_ENGINE \
                                         --workloads_train "${TRAIN_WLS[@]}" \
                                         --workload_test ${WORKLOAD_TEST} \
@@ -779,9 +788,9 @@ if [ "$finetune" == "PriceLLMOnly" ]; then
   setup_args_and_suffixes
 
   python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceLLMOnly_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}_ftb${FT_BATCH_SIZE}_seed${SEED}.csv \
-                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceLLMOnly_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}_ftb${FT_BATCH_SIZE}_seed${SEED}_abs.txt \
-                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceLLMOnly_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}_ftb${FT_BATCH_SIZE}_seed${SEED}.log \
+                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_priceLLMOnly_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}_ftb${FT_BATCH_SIZE}_seed${SEED}.csv \
+                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_priceLLMOnly_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}_ftb${FT_BATCH_SIZE}_seed${SEED}_abs.txt \
+                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_priceLLMOnly_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}_ftb${FT_BATCH_SIZE}_seed${SEED}.log \
                                       --db $DB_ENGINE \
                                       --workloads_train "${TRAIN_WLS[@]}" \
                                       --workload_test ${WORKLOAD_TEST} \
@@ -830,7 +839,7 @@ if [ "$finetune" == "PricePRICEOnly" ]; then
     setup_args_and_suffixes
 
     python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_${DB_ENGINE}_${price_lr}_b${batch_size}_${model_name1}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}.log \
+                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_${DB_ENGINE}_${price_lr}_b${batch_size}_${model_name1}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}.log \
                                         --db $DB_ENGINE \
                                         --workloads_train "${TRAIN_WLS[@]}" \
                                         --workload_test ${WORKLOAD_TEST} \
@@ -862,9 +871,9 @@ if [ "$finetune" == "PricePRICEOnly" ]; then
   setup_args_and_suffixes
 
   python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-None_pricePRICEOnly_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.csv \
-                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-None_pricePRICEOnly_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}_abs.txt \
-                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-None_pricePRICEOnly_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.log \
+                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-None_pricePRICEOnly_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.csv \
+                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-None_pricePRICEOnly_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}_abs.txt \
+                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-None_pricePRICEOnly_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.log \
                                       --db $DB_ENGINE \
                                       --workloads_train "${TRAIN_WLS[@]}" \
                                       --workload_test ${WORKLOAD_TEST} \
@@ -922,7 +931,7 @@ if [ "$finetune" == "PriceBothSep" ]; then
     setup_args_and_suffixes
 
     python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_lora_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}.log \
+                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_lora_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}.log \
                                         --db $DB_ENGINE \
                                         --workloads_train "${TRAIN_WLS[@]}" \
                                         --workload_test ${WORKLOAD_TEST} \
@@ -955,7 +964,7 @@ if [ "$finetune" == "PriceBothSep" ]; then
     setup_args_and_suffixes
 
     python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_${DB_ENGINE}_${price_lr}_b${batch_size}_${model_name1}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}.log \
+                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_${DB_ENGINE}_${price_lr}_b${batch_size}_${model_name1}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}.log \
                                         --db $DB_ENGINE \
                                         --workloads_train "${TRAIN_WLS[@]}" \
                                         --workload_test ${WORKLOAD_TEST} \
@@ -987,9 +996,9 @@ if [ "$finetune" == "PriceBothSep" ]; then
   setup_args_and_suffixes
 
   python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceBothSep_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.csv \
-                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceBothSep_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}_abs.txt \
-                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceBothSep_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.log \
+                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_priceBothSep_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.csv \
+                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_priceBothSep_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}_abs.txt \
+                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_priceBothSep_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.log \
                                       --db $DB_ENGINE \
                                       --workloads_train "${TRAIN_WLS[@]}" \
                                       --workload_test ${WORKLOAD_TEST} \
@@ -1039,7 +1048,7 @@ if [ "$finetune" == "PriceFTwithLLM" ]; then
     setup_args_and_suffixes
 
     python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_frozen_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}.log \
+                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_frozen_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}.log \
                                         --db $DB_ENGINE \
                                         --workloads_train "${TRAIN_WLS[@]}" \
                                         --workload_test ${WORKLOAD_TEST} \
@@ -1076,9 +1085,9 @@ if [ "$finetune" == "PriceFTwithLLM" ]; then
   setup_args_and_suffixes
 
   python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-None_priceFTwithLLM_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.csv \
-                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-None_priceFTwithLLM_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}_abs.txt \
-                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-None_priceFTwithLLM_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.log \
+                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-None_priceFTwithLLM_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.csv \
+                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-None_priceFTwithLLM_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}_abs.txt \
+                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-None_priceFTwithLLM_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.log \
                                       --db $DB_ENGINE \
                                       --workloads_train "${TRAIN_WLS[@]}" \
                                       --workload_test ${WORKLOAD_TEST} \
@@ -1129,7 +1138,7 @@ if [ "$finetune" == "GatedJointPrice" ]; then
     setup_args_and_suffixes
 
     python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_lora_gated_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}.log \
+                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_lora_gated_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}.log \
                                         --db $DB_ENGINE \
                                         --workloads_train "${TRAIN_WLS[@]}" \
                                         --workload_test ${WORKLOAD_TEST} \
@@ -1166,9 +1175,9 @@ if [ "$finetune" == "GatedJointPrice" ]; then
   setup_args_and_suffixes
 
   python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceGatedJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.csv \
-                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceGatedJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}_abs.txt \
-                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceGatedJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.log \
+                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_priceGatedJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.csv \
+                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_priceGatedJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}_abs.txt \
+                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_priceGatedJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.log \
                                       --db $DB_ENGINE \
                                       --workloads_train "${TRAIN_WLS[@]}" \
                                       --workload_test ${WORKLOAD_TEST} \
@@ -1228,7 +1237,7 @@ if [ "$finetune" == "CrossAttentionJoint" ]; then
     setup_args_and_suffixes
 
     python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_lora_crossAttn_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${EPOCH_SUFFIX}.log \
+                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_lora_crossAttn_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${EPOCH_SUFFIX}.log \
                                         --db $DB_ENGINE \
                                         --workloads_train "${TRAIN_WLS[@]}" \
                                         --workload_test ${WORKLOAD_TEST} \
@@ -1271,9 +1280,9 @@ if [ "$finetune" == "CrossAttentionJoint" ]; then
   setup_args_and_suffixes
 
   python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}.csv \
-                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}_abs.txt \
-                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}.log \
+                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_priceCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}.csv \
+                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_priceCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}_abs.txt \
+                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_priceCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}.log \
                                       --db $DB_ENGINE \
                                       --workloads_train "${TRAIN_WLS[@]}" \
                                       --workload_test ${WORKLOAD_TEST} \
@@ -1308,7 +1317,8 @@ if [ "$finetune" == "CrossAttentionJoint" ]; then
                                       $REFINED_POOL_FLAG \
                                       $TRIPLE_CONCAT_FLAG \
                                       $INFLATE_PRICE_FLAG \
-                                      $EARLY_STOP_ARG
+                                      $EARLY_STOP_ARG \
+                                      $SUBDIR_ARG
 fi
 
 if [ "$finetune" == "BiCrossAttentionJoint" ]; then
@@ -1342,7 +1352,7 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
     setup_args_and_suffixes
 
     python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_lora_biCrossAttn_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${EPOCH_SUFFIX}.log \
+                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_lora_biCrossAttn_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${EPOCH_SUFFIX}.log \
                                         --db $DB_ENGINE \
                                         --workloads_train "${TRAIN_WLS[@]}" \
                                         --workload_test ${WORKLOAD_TEST} \
@@ -1375,7 +1385,8 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
                                       $INFLATE_PRICE_FLAG \
                                       $EARLY_STOP_ARG \
                                       $FREEZE_LLM_ARG \
-                                      $PRICE_WARMUP_ARG
+                                      $PRICE_WARMUP_ARG \
+                                      $SUBDIR_ARG
   fi
 
   #########################inference: pre-trained BiCrossAttentionJoint#########################
@@ -1391,9 +1402,9 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
   setup_args_and_suffixes
 
   python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceBiCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}.csv \
-                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceBiCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}_abs.txt \
-                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceBiCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}.log \
+                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_priceBiCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}.csv \
+                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_priceBiCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}_abs.txt \
+                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_priceBiCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}.log \
                                       --db $DB_ENGINE \
                                       --workloads_train "${TRAIN_WLS[@]}" \
                                       --workload_test ${WORKLOAD_TEST} \
@@ -1428,7 +1439,8 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
                                       $REFINED_POOL_FLAG \
                                       $TRIPLE_CONCAT_FLAG \
                                       $INFLATE_PRICE_FLAG \
-                                      $EARLY_STOP_ARG
+                                      $EARLY_STOP_ARG \
+                                      $SUBDIR_ARG
 fi
 
 if [ "$finetune" == "ReverseCrossAttentionJoint" ]; then
@@ -1455,7 +1467,7 @@ if [ "$finetune" == "ReverseCrossAttentionJoint" ]; then
     setup_args_and_suffixes
 
     python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_revCrossAttn_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${EPOCH_SUFFIX}.log \
+                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_revCrossAttn_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${EPOCH_SUFFIX}.log \
                                         --db $DB_ENGINE \
                                         --workloads_train "${TRAIN_WLS[@]}" \
                                         --workload_test ${WORKLOAD_TEST} \
@@ -1485,7 +1497,8 @@ if [ "$finetune" == "ReverseCrossAttentionJoint" ]; then
                                         $CROSS_ATTN_LR_ARG \
                                         $EARLY_STOP_ARG \
                                         $FREEZE_LLM_ARG \
-                                      $PRICE_WARMUP_ARG
+                                      $PRICE_WARMUP_ARG \
+                                      $SUBDIR_ARG
   fi
 
   #########################inference: pre-trained ReverseCrossAttentionJoint#########################
@@ -1500,9 +1513,9 @@ if [ "$finetune" == "ReverseCrossAttentionJoint" ]; then
   setup_args_and_suffixes
 
   python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceRevCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}.csv \
-                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceRevCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}_abs.txt \
-                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceRevCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}.log \
+                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_priceRevCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}.csv \
+                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_priceRevCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}_abs.txt \
+                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_priceRevCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}.log \
                                       --db $DB_ENGINE \
                                       --workloads_train "${TRAIN_WLS[@]}" \
                                       --workload_test ${WORKLOAD_TEST} \
@@ -1534,7 +1547,8 @@ if [ "$finetune" == "ReverseCrossAttentionJoint" ]; then
                                       $PRICE_FFN_RATIO_ARG \
                                       $N_CROSS_LAYERS_ARG \
                                       $RETRAIN_MLP_FLAG \
-                                      $EARLY_STOP_ARG
+                                      $EARLY_STOP_ARG \
+                                      $SUBDIR_ARG
 fi
 
 if [ "$finetune" == "PriceFTthenJoint" ]; then
@@ -1558,7 +1572,7 @@ if [ "$finetune" == "PriceFTthenJoint" ]; then
     setup_args_and_suffixes
 
     python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_frozen_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}.log \
+                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_frozen_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}.log \
                                         --db $DB_ENGINE \
                                         --workloads_train "${TRAIN_WLS[@]}" \
                                         --workload_test ${WORKLOAD_TEST} \
@@ -1601,7 +1615,7 @@ if [ "$finetune" == "PriceFTthenJoint" ]; then
     setup_args_and_suffixes
 
     python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_lora_frozenInit_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}.log \
+                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_lora_frozenInit_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}.log \
                                         --db $DB_ENGINE \
                                         --workloads_train "${TRAIN_WLS[@]}" \
                                         --workload_test ${WORKLOAD_TEST} \
@@ -1638,9 +1652,9 @@ if [ "$finetune" == "PriceFTthenJoint" ]; then
   setup_args_and_suffixes
 
   python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceFTthenJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.csv \
-                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceFTthenJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}_abs.txt \
-                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours/time_${algo}_pretrained-lora_priceFTthenJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.log \
+                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_priceFTthenJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.csv \
+                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_priceFTthenJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}_abs.txt \
+                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_priceFTthenJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.log \
                                       --db $DB_ENGINE \
                                       --workloads_train "${TRAIN_WLS[@]}" \
                                       --workload_test ${WORKLOAD_TEST} \

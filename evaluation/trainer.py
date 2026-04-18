@@ -907,7 +907,9 @@ def train(model, train_loader, val_loader, \
         # Save checkpoint if requested (before val evaluation to avoid OOM loss)
         ckpt_interval = getattr(args, 'checkpoint_interval', 0)
         if ckpt_interval > 0 and (epoch + 1) % ckpt_interval == 0:
-            ckpt_dir = f"finetuned_models/{getattr(args, 'db', 'postgres')}/checkpoints"
+            _subdir_tag = getattr(args, 'subdir_tag', '') or ''
+            _sub_part = f"/{_subdir_tag}" if _subdir_tag else ""
+            ckpt_dir = f"finetuned_models/{getattr(args, 'db', 'postgres')}/checkpoints{_sub_part}"
             os.makedirs(ckpt_dir, exist_ok=True)
             ckpt_prefix = getattr(args, 'checkpoint_prefix', 'ckpt')
             ckpt_path = os.path.join(ckpt_dir, f"{ckpt_prefix}_epoch{epoch+1}.pt")

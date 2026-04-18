@@ -42,6 +42,7 @@ COMMON=(
     --checkpoint_interval "4"
     --freeze_llm_until_epoch "4"
     --price_warmup_epochs "4"
+    --subdir_tag "model_selection"
 )
 
 echo "============================================================"

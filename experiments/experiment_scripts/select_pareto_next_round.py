@@ -91,19 +91,20 @@ def log_path_for(
     hid_units: int,
     quant: str,
     tag: str,  # e.g. "priceS_inflatePRICE_randInit_cx4"
+    subdir: str = "model_selection",
 ) -> Path:
+    """Resolve the expected log path. Tries subdir first, then the top-level dir."""
     model_hyphen = model.replace("/", "-")
     fname = (
         f"time_llm_price_finetune_lora_biCrossAttn_{db}_{lr}_b{ft_batch_size}_"
         f"h{hid_units}_{model_hyphen}_quant-{quant}_{tag}_e{num_epoch}.log"
     )
-    return (
-        EXPERIMENTS_DIR
-        / "logs"
-        / db
-        / f"logs_Train_{train_wl}_Test_{test_wl}_ours"
-        / fname
-    )
+    base = EXPERIMENTS_DIR / "logs" / db / f"logs_Train_{train_wl}_Test_{test_wl}_ours"
+    if subdir:
+        p = base / subdir / fname
+        if p.exists():
+            return p
+    return base / fname
 
 
 _VAL_SECTION = re.compile(r"Data section:\s*val", re.IGNORECASE)
@@ -183,6 +184,9 @@ def main() -> int:
     ap.add_argument("--quant", default="4-bit")
     ap.add_argument("--tag", default="priceS_inflatePRICE_randInit_cx4",
                     help="Fixed suffix tying together the knobs you locked in this round.")
+    ap.add_argument("--subdir", default="model_selection",
+                    help="Subdir under logs/{db}/logs_Train_..._ours/ to search first "
+                         "(set to '' to only look in the top-level dir).")
     ap.add_argument("--profile_csv", default=str(DEFAULT_CSV))
     args = ap.parse_args()
 
@@ -200,7 +204,7 @@ def main() -> int:
         log_path = log_path_for(
             model, args.db, args.train_wl, args.test_wl,
             args.ft_batch_size, args.current_epoch, args.lr, args.hid_units,
-            args.quant, args.tag,
+            args.quant, args.tag, subdir=args.subdir,
         )
         p90, n_val = extract_final_val_p90(log_path)
         lat = latency_map.get(model)

@@ -154,6 +154,10 @@ def parse_args():
                         help="Freeze LLM LoRA params for the first N epochs, only train PRICE/cross-attn (0=disabled)")
     parser.add_argument("--checkpoint_interval", type=int, default=0,
                         help="Save checkpoint every N epochs during finetuning (0=no checkpoints)")
+    parser.add_argument("--subdir_tag", type=str, default="",
+                        help="When set, route weights/checkpoints into this subdir under the usual location "
+                             "(e.g. 'model_selection' → finetuned_models/{db}/model_selection/... and "
+                             "finetuned_models/{db}/checkpoints/model_selection/...).")
     parser.add_argument("--resume_checkpoint", type=str, default="",
                         help="Path to checkpoint file to resume finetuning from")
     parser.add_argument("--lr_schedule", type=str, default="step", choices=["step", "cosine", "warmup_cosine"],

@@ -974,7 +974,9 @@ start_epoch = 0
 _resumed_from_weights = False
 if not resume_ckpt and _ckpt_prefix and getattr(argsP, 'checkpoint_interval', 0) > 0:
     import glob as _glob
-    _ckpt_dir = f"finetuned_models/{argsP.db}/checkpoints"
+    _subdir_tag = getattr(argsP, 'subdir_tag', '') or ''
+    _sub_part = f"/{_subdir_tag}" if _subdir_tag else ""
+    _ckpt_dir = f"finetuned_models/{argsP.db}/checkpoints{_sub_part}"
     _pattern = os.path.join(_ckpt_dir, f"{_ckpt_prefix}_epoch*.pt")
     _ckpts = sorted(_glob.glob(_pattern), key=lambda p: int(re.search(r'_epoch(\d+)', p).group(1)))
     if _ckpts:
@@ -1105,7 +1107,9 @@ if argsP.algo == "llm_finetune":
     print(f"🔖  Saved LLM weights to {llm_out}")
 elif argsP.algo == "llm_price_finetune" and not getattr(argsP, '_cross_attn_inference', False):
     # Save components: LLM (if not frozen), PRICE, MLP
-    save_path = f"finetuned_models/{argsP.db}/"
+    _subdir_tag = getattr(argsP, 'subdir_tag', '') or ''
+    _sub_part = f"{_subdir_tag}/" if _subdir_tag else ""
+    save_path = f"finetuned_models/{argsP.db}/{_sub_part}"
     os.makedirs(save_path, exist_ok=True)
 
     task_str = "card" if argsP.card else "time"

@@ -38,6 +38,7 @@ CLI_EARLY_STOP_PATIENCE=""
 CLI_EARLY_STOP_AFTER_EPOCH=""
 CLI_FREEZE_LLM_UNTIL_EPOCH=""
 CLI_PRICE_WARMUP_EPOCHS=""
+CLI_SUBDIR_TAG=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -74,6 +75,7 @@ while [[ $# -gt 0 ]]; do
         --early_stop_after_epoch) CLI_EARLY_STOP_AFTER_EPOCH="$2"; shift 2 ;;
         --freeze_llm_until_epoch) CLI_FREEZE_LLM_UNTIL_EPOCH="$2"; shift 2 ;;
         --price_warmup_epochs) CLI_PRICE_WARMUP_EPOCHS="$2"; shift 2 ;;
+        --subdir_tag)       CLI_SUBDIR_TAG="$2";         shift 2 ;;
         *)
             echo "Unknown flag: $1"
             exit 1
@@ -720,6 +722,9 @@ for SEED in "${seeds[@]}"; do
             fi
             if [[ -n "$CLI_PRICE_WARMUP_EPOCHS" ]]; then
                 export PRICE_WARMUP_EPOCHS="$CLI_PRICE_WARMUP_EPOCHS"
+            fi
+            if [[ -n "$CLI_SUBDIR_TAG" ]]; then
+                export SUBDIR_TAG="$CLI_SUBDIR_TAG"
             fi
             export FINETUNE_RUN_LAST="$FINETUNE_RUN_LAST"
             export FINETUNE_RUN_LORA="$FINETUNE_RUN_LORA"

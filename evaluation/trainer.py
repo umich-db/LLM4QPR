@@ -736,7 +736,12 @@ def train(model, train_loader, val_loader, \
     t0 = time.time()
 
     # Record session tag + start time for print_qerror val annotations.
-    _tag = getattr(args, 'model_name', None) or getattr(args, 'algo', 'Unknown')
+    # Use algo for non-LLM algorithms; use model_name for LLM-based ones.
+    _algo = getattr(args, 'algo', 'Unknown')
+    if 'llm' in _algo:
+        _tag = getattr(args, 'model_name', None) or _algo
+    else:
+        _tag = _algo
     _TRAINING_SESSION['tag'] = _tag
     _TRAINING_SESSION['start_time'] = t0
 

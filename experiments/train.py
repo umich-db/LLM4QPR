@@ -21,6 +21,10 @@ import numpy as np
 import csv
 
 argsP = utilsTrain.parse_args()
+
+# Global subdir component: inserted into every finetuned_models/{db}/<_GSUB>/... path
+# when --subdir_tag is set (e.g. "model_selection"). Empty string otherwise.
+_GSUB = f"/{argsP.subdir_tag}" if getattr(argsP, 'subdir_tag', '') else ""
 log_dir = os.path.dirname(argsP.log_file)
 os.makedirs(log_dir, exist_ok=True)
 
@@ -85,7 +89,7 @@ if (argsP.algo == "llm_price" and getattr(argsP, 'retrain_mlp', False) and
         _attn = "_revCrossAttn"
     else:
         _attn = "_crossAttn"
-    _weight_prefix = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{_task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{_ft_bs}{_pm}{_ps}_llm_price{_attn}{_rp}{_tc}{_ip}{_ri}{_nl}{_fr}{_nc}{_es}"
+    _weight_prefix = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{_task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{_ft_bs}{_pm}{_ps}_llm_price{_attn}{_rp}{_tc}{_ip}{_ri}{_nl}{_fr}{_nc}{_es}"
     _test_tag = f"_test-{argsP.workload_test}" if getattr(argsP, 'workload_test', '') else ""
     _early_cache_path = f"{_weight_prefix}{_test_tag}_retrainMLP_embeddings.pt"
     if os.path.exists(_early_cache_path):
@@ -134,10 +138,10 @@ if "llm" in argsP.algo and not _retrain_mlp_cache_hit:
         n_cross_suffix = f"_cx{argsP.n_cross_layers}" if pws in ("cross_attn_joint", "bi_cross_attn_joint", "reverse_cross_attn_joint") and getattr(argsP, 'n_cross_layers', 2) != 2 else ""
         ft_epochs = getattr(argsP, 'ft_num_epoch', 0)
         epoch_suffix = f"_e{ft_epochs}" if ft_epochs > 0 else ""
-        llm_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_m_suffix}{price_s_suffix}_llm_price{frozen_init_suffix}{gated_suffix}{cross_attn_suffix}{bi_cross_attn_suffix}{rev_cross_attn_suffix}{refined_pool_suffix}{triple_concat_suffix}{inflate_price_suffix}{rand_init_suffix}{n_layers_suffix}{ffn_ratio_suffix}{n_cross_suffix}{epoch_suffix}_llm.pt"
+        llm_path = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_m_suffix}{price_s_suffix}_llm_price{frozen_init_suffix}{gated_suffix}{cross_attn_suffix}{bi_cross_attn_suffix}{rev_cross_attn_suffix}{refined_pool_suffix}{triple_concat_suffix}{inflate_price_suffix}{rand_init_suffix}{n_layers_suffix}{ffn_ratio_suffix}{n_cross_suffix}{epoch_suffix}_llm.pt"
       else:
         # Standalone LLM finetune: weights saved with _llm suffix
-        llm_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}_llm.pt"
+        llm_path = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}_llm.pt"
       state_dict = torch.load(llm_path, map_location=device)
       try:
         result = LLM.model.load_state_dict(state_dict, strict=False)
@@ -160,7 +164,7 @@ if "llm" in argsP.algo and not _retrain_mlp_cache_hit:
         stats_mode = getattr(argsP, "stats_token_mode", "per_column")
         stats_suffix = f"_statTok-{stats_mode}"
       ft_bs = getattr(argsP, 'ft_batch_size', 16)
-      llm_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{argsP.llm_pretrained_task}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{stats_suffix}_llm.pt"
+      llm_path = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{argsP.llm_pretrained_task}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{stats_suffix}_llm.pt"
       state_dict = torch.load(llm_path, map_location=device)
       try:
         result = LLM.model.load_state_dict(state_dict, strict=False)
@@ -542,7 +546,7 @@ elif argsP.algo == "llm_price" and not _retrain_mlp_cache_hit:
     n_cross_suffix = f"_cx{n_cross}" if n_cross != 2 else ""
     ft_epochs = getattr(argsP, 'ft_num_epoch', 0)
     epoch_suffix = f"_e{ft_epochs}" if ft_epochs > 0 else ""
-    weight_prefix = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_m_suffix}{price_s_suffix}_llm_price{attn_tag}{refined_pool_suffix}{triple_concat_suffix}{inflate_price_suffix}{rand_init_suffix}{n_layers_suffix}{ffn_ratio_suffix}{n_cross_suffix}{epoch_suffix}"
+    weight_prefix = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_m_suffix}{price_s_suffix}_llm_price{attn_tag}{refined_pool_suffix}{triple_concat_suffix}{inflate_price_suffix}{rand_init_suffix}{n_layers_suffix}{ffn_ratio_suffix}{n_cross_suffix}{epoch_suffix}"
 
     price_sd = torch.load(f"{weight_prefix}_price.pt", map_location=device)
     model_comb.price.load_state_dict(price_sd)
@@ -639,7 +643,7 @@ elif argsP.algo == "llm_price_finetune":
     task_str = "card" if argsP.card else "time"
     price_m_suffix = "_priceM" if getattr(argsP, 'price_m', False) else ""
     price_s_suffix = "_priceS" if getattr(argsP, 'price_s', False) else ""
-    frozen_price_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_inference_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{price_m_suffix}{price_s_suffix}_llm_price_price.pt"
+    frozen_price_path = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{task_str}_inference_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{price_m_suffix}{price_s_suffix}_llm_price_price.pt"
     frozen_sd = torch.load(frozen_price_path, map_location=device)
     _load_price_sd(price_model, frozen_sd, f"Loaded frozen-joint PRICE weights from {frozen_price_path}")
   else:
@@ -974,9 +978,8 @@ start_epoch = 0
 _resumed_from_weights = False
 if not resume_ckpt and _ckpt_prefix and getattr(argsP, 'checkpoint_interval', 0) > 0:
     import glob as _glob
-    _subdir_tag = getattr(argsP, 'subdir_tag', '') or ''
-    _sub_part = f"/{_subdir_tag}" if _subdir_tag else ""
-    _ckpt_dir = f"finetuned_models/{argsP.db}/checkpoints{_sub_part}"
+    # Checkpoints live under .../checkpoints/{subdir}/ (subdir AFTER "checkpoints").
+    _ckpt_dir = f"finetuned_models/{argsP.db}/checkpoints{_GSUB}"
     _pattern = os.path.join(_ckpt_dir, f"{_ckpt_prefix}_epoch*.pt")
     _ckpts = sorted(_glob.glob(_pattern), key=lambda p: int(re.search(r'_epoch(\d+)', p).group(1)))
     if _ckpts:
@@ -985,7 +988,7 @@ if not resume_ckpt and _ckpt_prefix and getattr(argsP, 'checkpoint_interval', 0)
     else:
         # Fallback: look for final weight files from a previous epoch count
         # These are separate files (llm.pt, price.pt, mlp.pt) saved after training
-        _weight_dir = f"finetuned_models/{argsP.db}"
+        _weight_dir = f"finetuned_models/{argsP.db}{_GSUB}"
         _weight_pattern = os.path.join(_weight_dir, f"{_ckpt_prefix}_e*_llm.pt")
         _weight_files = _glob.glob(_weight_pattern)
         if _weight_files:
@@ -1050,7 +1053,7 @@ if resume_ckpt and os.path.exists(resume_ckpt) and not _resumed_from_weights:
 # Check for cached baseline model
 _baseline_cached = False
 if argsP.algo in ("aimai", "qf", "e2e_cost"):
-    _cache_dir = f"finetuned_models/{argsP.db}/"
+    _cache_dir = f"finetuned_models/{argsP.db}{_GSUB}/"
     _task_str = "card" if argsP.card else "time"
     _prefix = f"long_raw_{argsP.db}_"
     _data_names = []
@@ -1086,7 +1089,7 @@ else:
 
 if argsP.algo == "llm_finetune":
     # Create save directory
-    save_path = f"finetuned_models/{argsP.db}/"
+    save_path = f"finetuned_models/{argsP.db}{_GSUB}/"
     if not os.path.exists(save_path):
         os.makedirs(save_path)
     save_dir = os.path.dirname(save_path)
@@ -1107,9 +1110,7 @@ if argsP.algo == "llm_finetune":
     print(f"🔖  Saved LLM weights to {llm_out}")
 elif argsP.algo == "llm_price_finetune" and not getattr(argsP, '_cross_attn_inference', False):
     # Save components: LLM (if not frozen), PRICE, MLP
-    _subdir_tag = getattr(argsP, 'subdir_tag', '') or ''
-    _sub_part = f"{_subdir_tag}/" if _subdir_tag else ""
-    save_path = f"finetuned_models/{argsP.db}/{_sub_part}"
+    save_path = f"finetuned_models/{argsP.db}{_GSUB}/"
     os.makedirs(save_path, exist_ok=True)
 
     task_str = "card" if argsP.card else "time"
@@ -1161,7 +1162,7 @@ elif argsP.algo == "llm_price_finetune" and not getattr(argsP, '_cross_attn_infe
         print(f"Saved refined_llm_proj weights to {rlp_out}")
 elif argsP.algo == "price_finetune":
     # Save finetuned PRICE model (the inner RegressionModel state_dict)
-    save_path = f"finetuned_models/{argsP.db}/"
+    save_path = f"finetuned_models/{argsP.db}{_GSUB}/"
     os.makedirs(save_path, exist_ok=True)
 
     price_m_suffix = "_priceM" if getattr(argsP, 'price_m', False) else ""
@@ -1182,7 +1183,7 @@ else:
 
   # Save MLP weights for llm / llm_price inference (seed in filename)
   if argsP.algo in ("llm", "llm_price") and isinstance(trained_model, nn.Module):
-    save_path = f"finetuned_models/{argsP.db}/"
+    save_path = f"finetuned_models/{argsP.db}{_GSUB}/"
     os.makedirs(save_path, exist_ok=True)
     task_str = "card" if argsP.card else "time"
     pretrained_str = argsP.llm_pretrained or "None"

@@ -414,7 +414,7 @@ if [ "$finetune" == "True" ]; then
         stats_suffix="${stats_suffix}-${STATS_TOKEN_MODE}"
       fi
     fi
-    local model_file="finetuned_models/${DB_ENGINE}/${CANONICAL_TRAIN_HYPHEN}_time_${mode}_${model_name1}_b${FT_BATCH_SIZE}${stats_suffix}_llm.pt"
+    local model_file="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_${mode}_${model_name1}_b${FT_BATCH_SIZE}${stats_suffix}_llm.pt"
     if [ -f "$model_file" ]; then
       echo "✅  Finetuned model already exists: $model_file"
       echo "    Skipping finetuning step for mode: $mode"
@@ -581,7 +581,7 @@ if [ "$finetune" == "JointPrice" ]; then
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
   # Check if finetuned JointPrice weights already exist
-  JOINT_PRICE_PREFIX="finetuned_models/${DB_ENGINE}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}_llm_price${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${EPOCH_SUFFIX}"
+  JOINT_PRICE_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}_llm_price${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${EPOCH_SUFFIX}"
   if [ -f "${JOINT_PRICE_PREFIX}_llm.pt" ] && [ -f "${JOINT_PRICE_PREFIX}_price.pt" ]; then
     echo "Finetuned JointPrice weights already exist, skipping finetune:"
     echo "  LLM:   ${JOINT_PRICE_PREFIX}_llm.pt"
@@ -739,7 +739,7 @@ if [ "$finetune" == "PriceLLMOnly" ]; then
 
   check_model_exists_llm() {
     local mode=$1
-    local model_file="finetuned_models/${DB_ENGINE}/${CANONICAL_TRAIN_HYPHEN}_time_${mode}_${model_name1}_b${FT_BATCH_SIZE}_llm.pt"
+    local model_file="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_${mode}_${model_name1}_b${FT_BATCH_SIZE}_llm.pt"
     if [ -f "$model_file" ]; then
       echo "Finetuned LLM model already exists: $model_file"
       return 0
@@ -826,7 +826,7 @@ if [ "$finetune" == "PricePRICEOnly" ]; then
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
   # Step 1: Finetune PRICE on cardinality
-  PRICE_SEPARATE_FILE="finetuned_models/${DB_ENGINE}/${CANONICAL_TRAIN_HYPHEN}_card_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}_price_separate.pt"
+  PRICE_SEPARATE_FILE="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_card_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}_price_separate.pt"
   if [ -f "$PRICE_SEPARATE_FILE" ]; then
     echo "Separately finetuned PRICE weights already exist: $PRICE_SEPARATE_FILE"
   else
@@ -913,7 +913,7 @@ if [ "$finetune" == "PriceBothSep" ]; then
 
   check_model_exists_llm() {
     local mode=$1
-    local model_file="finetuned_models/${DB_ENGINE}/${CANONICAL_TRAIN_HYPHEN}_time_${mode}_${model_name1}_b${FT_BATCH_SIZE}_llm.pt"
+    local model_file="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_${mode}_${model_name1}_b${FT_BATCH_SIZE}_llm.pt"
     if [ -f "$model_file" ]; then
       echo "Finetuned LLM model already exists: $model_file"
       return 0
@@ -951,7 +951,7 @@ if [ "$finetune" == "PriceBothSep" ]; then
   fi
 
   # Step 2: Finetune PRICE on cardinality
-  PRICE_SEPARATE_FILE="finetuned_models/${DB_ENGINE}/${CANONICAL_TRAIN_HYPHEN}_card_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}_price_separate.pt"
+  PRICE_SEPARATE_FILE="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_card_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}_price_separate.pt"
   if [ -f "$PRICE_SEPARATE_FILE" ]; then
     echo "Separately finetuned PRICE weights already exist: $PRICE_SEPARATE_FILE"
   else
@@ -1033,7 +1033,7 @@ if [ "$finetune" == "PriceFTwithLLM" ]; then
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
   # Step 1: Finetune PRICE+MLP with frozen LLM
-  FROZEN_JOINT_FILE="finetuned_models/${DB_ENGINE}/${CANONICAL_TRAIN_HYPHEN}_time_inference_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}_llm_price${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}_price.pt"
+  FROZEN_JOINT_FILE="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_inference_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}_llm_price${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}_price.pt"
   if [ -f "$FROZEN_JOINT_FILE" ]; then
     echo "Frozen-joint finetuned PRICE weights already exist: $FROZEN_JOINT_FILE"
   else
@@ -1119,7 +1119,7 @@ if [ "$finetune" == "GatedJointPrice" ]; then
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
   # Check if finetuned GatedJointPrice weights already exist
-  GATED_JOINT_PREFIX="finetuned_models/${DB_ENGINE}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}_llm_price_gated${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}"
+  GATED_JOINT_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}_llm_price_gated${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}"
   if [ -f "${GATED_JOINT_PREFIX}_llm.pt" ] && [ -f "${GATED_JOINT_PREFIX}_price.pt" ] && [ -f "${GATED_JOINT_PREFIX}_gate.pt" ]; then
     echo "Finetuned GatedJointPrice weights already exist, skipping finetune:"
     echo "  LLM:   ${GATED_JOINT_PREFIX}_llm.pt"
@@ -1211,7 +1211,7 @@ if [ "$finetune" == "CrossAttentionJoint" ]; then
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
   # Check if finetuned CrossAttentionJoint weights already exist
-  CROSS_ATTN_JOINT_PREFIX="finetuned_models/${DB_ENGINE}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}_llm_price${CROSS_ATTN_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${EPOCH_SUFFIX}"
+  CROSS_ATTN_JOINT_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}_llm_price${CROSS_ATTN_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${EPOCH_SUFFIX}"
   if [ -f "${CROSS_ATTN_JOINT_PREFIX}_llm.pt" ] && [ -f "${CROSS_ATTN_JOINT_PREFIX}_price.pt" ]; then
     echo "Finetuned CrossAttentionJoint weights already exist, skipping finetune:"
     echo "  LLM:   ${CROSS_ATTN_JOINT_PREFIX}_llm.pt"
@@ -1326,7 +1326,7 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
   # Check if finetuned BiCrossAttentionJoint weights already exist
-  BI_CROSS_ATTN_JOINT_PREFIX="finetuned_models/${DB_ENGINE}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}_llm_price${BI_CROSS_ATTN_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${EPOCH_SUFFIX}"
+  BI_CROSS_ATTN_JOINT_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}_llm_price${BI_CROSS_ATTN_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${EPOCH_SUFFIX}"
   if [ -f "${BI_CROSS_ATTN_JOINT_PREFIX}_llm.pt" ] && [ -f "${BI_CROSS_ATTN_JOINT_PREFIX}_price.pt" ]; then
     echo "Finetuned BiCrossAttentionJoint weights already exist, skipping finetune:"
     echo "  LLM:   ${BI_CROSS_ATTN_JOINT_PREFIX}_llm.pt"
@@ -1448,7 +1448,7 @@ if [ "$finetune" == "ReverseCrossAttentionJoint" ]; then
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
   # Check if finetuned ReverseCrossAttentionJoint weights already exist
-  REV_CROSS_ATTN_JOINT_PREFIX="finetuned_models/${DB_ENGINE}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}_llm_price${REV_CROSS_ATTN_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${EPOCH_SUFFIX}"
+  REV_CROSS_ATTN_JOINT_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}_llm_price${REV_CROSS_ATTN_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${EPOCH_SUFFIX}"
   if [ -f "${REV_CROSS_ATTN_JOINT_PREFIX}_llm.pt" ] && [ -f "${REV_CROSS_ATTN_JOINT_PREFIX}_price.pt" ]; then
     echo "Finetuned ReverseCrossAttentionJoint weights already exist, skipping finetune:"
     echo "  LLM:   ${REV_CROSS_ATTN_JOINT_PREFIX}_llm.pt"
@@ -1557,7 +1557,7 @@ if [ "$finetune" == "PriceFTthenJoint" ]; then
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
   # Step 1: Finetune PRICE+MLP with frozen LLM (reuse PriceFTwithLLM step 1)
-  FROZEN_JOINT_FILE="finetuned_models/${DB_ENGINE}/${CANONICAL_TRAIN_HYPHEN}_time_inference_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}_llm_price${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}_price.pt"
+  FROZEN_JOINT_FILE="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_inference_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}_llm_price${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}_price.pt"
   if [ -f "$FROZEN_JOINT_FILE" ]; then
     echo "Frozen-joint finetuned PRICE weights already exist: $FROZEN_JOINT_FILE"
   else
@@ -1598,7 +1598,7 @@ if [ "$finetune" == "PriceFTthenJoint" ]; then
   fi
 
   # Step 2: Joint finetune with frozen-init PRICE
-  FROZEN_INIT_PREFIX="finetuned_models/${DB_ENGINE}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}_llm_price_frozenInit${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}"
+  FROZEN_INIT_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}_llm_price_frozenInit${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}"
   if [ -f "${FROZEN_INIT_PREFIX}_llm.pt" ] && [ -f "${FROZEN_INIT_PREFIX}_price.pt" ]; then
     echo "Frozen-init joint weights already exist, skipping finetune:"
     echo "  LLM:   ${FROZEN_INIT_PREFIX}_llm.pt"

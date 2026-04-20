@@ -46,7 +46,12 @@ def parse_args():
     parser.add_argument("--relative", type=str, choices=["pg", "min"], default=None,
                         help="Plot relative error. Use 'pg' for postgres baseline (current behavior) "
                              "or 'min' to use the smallest error as baseline.")
+    parser.add_argument("--midwest", action="store_true",
+                        help="Temporary override: label y-axis 'Average Q-Error' instead of 'Relative Q-Error'.")
     return parser.parse_args()
+
+
+_MIDWEST_LABEL = False
 
 
 def extract_model_size(model_name):
@@ -1148,6 +1153,8 @@ def create_scatter_plot(df, phase, metric, group_name, output_dir, all_llm_model
         # error_label = f'Relative Q-Error vs Min ({metric})'
     else:
         error_label = f'Q-Error ({metric})'
+    if _MIDWEST_LABEL:
+        error_label = 'Average Q-Error'
     ax.set_ylabel(error_label, fontsize=24, weight='bold')
     if relative_mode == 'pg':
         title_suffix = ' (Relative to Postgres)'
@@ -1230,7 +1237,8 @@ def create_scatter_plot(df, phase, metric, group_name, output_dir, all_llm_model
             task = group_name  # Fallback
     
     # Save figure with task in filename
-    output_path = Path(output_dir) / group_name / f'{task}_{phase}_{metric}{filename_suffix}.pdf'
+    _ext = 'png' if _MIDWEST_LABEL else 'pdf'
+    output_path = Path(output_dir) / group_name / f'{task}_{phase}_{metric}{filename_suffix}.{_ext}'
     output_path.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path, bbox_inches='tight')
     plt.close()
@@ -1427,7 +1435,8 @@ def create_legend_only(group_df, group_name, output_dir, all_llm_models_in_group
     
     # Save legend with small padding to ensure frame border is fully visible
     # pad_inches of 0.01 should be enough to include the 2.0 linewidth border
-    output_path = Path(output_dir) / group_name / f'{group_name}_legend.pdf'
+    _ext = 'png' if _MIDWEST_LABEL else 'pdf'
+    output_path = Path(output_dir) / group_name / f'{group_name}_legend.{_ext}'
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, bbox_inches='tight', pad_inches=0.01, facecolor='white')
     plt.close(fig)
@@ -1517,6 +1526,8 @@ def main():
     
     # If grouping by task only, automatically average across datasets
     relative_mode = args.relative
+    global _MIDWEST_LABEL
+    _MIDWEST_LABEL = bool(getattr(args, 'midwest', False))
 
     if args.group_by == "task":
         # If relative mode, calculate relative error for each dataset first, then average

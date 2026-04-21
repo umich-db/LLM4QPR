@@ -1145,7 +1145,8 @@ def create_scatter_plot(df, phase, metric, group_name, output_dir, all_llm_model
     # - Y-axis label: fontsize=16 (line below)
     # - Legend: fontsize=15 (see ax.legend below)
     # - Tick labels: fontsize=20 (configured in setup_mpl_params() at top of file)
-    ax.set_xlabel('Time (ms)', fontsize=24, weight='bold')
+    ax.set_xlabel('Inference Time (ms)' if _MIDWEST_LABEL else 'Time (ms)',
+                  fontsize=24, weight='bold')
     if relative_mode == 'pg':
         error_label = f'Relative Q-Error vs Postgres ({metric})'
     elif relative_mode == 'min':
@@ -1237,8 +1238,7 @@ def create_scatter_plot(df, phase, metric, group_name, output_dir, all_llm_model
             task = group_name  # Fallback
     
     # Save figure with task in filename
-    _ext = 'png' if _MIDWEST_LABEL else 'pdf'
-    output_path = Path(output_dir) / group_name / f'{task}_{phase}_{metric}{filename_suffix}.{_ext}'
+    output_path = Path(output_dir) / group_name / f'{task}_{phase}_{metric}{filename_suffix}.pdf'
     output_path.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path, bbox_inches='tight')
     plt.close()
@@ -1404,43 +1404,86 @@ def create_legend_only(group_df, group_name, output_dir, all_llm_models_in_group
                                   markerfacecolor=entry['color'], markersize=18, markeredgecolor='black', markeredgewidth=0.5, alpha=0.7))
         labels.append(label)
     
-    # Determine number of columns for legend
+    def _render_legend(hs, lbs, out_path, figsize):
+        fig = plt.figure(figsize=figsize)
+        ax = fig.add_subplot(111)
+        ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis('off')
+        legend = ax.legend(hs, lbs, loc='center', ncol=len(hs) if hs else 1,
+                           fontsize=20, frameon=True,
+                           handletextpad=0.3, labelspacing=0.4, columnspacing=0.5)
+        frm = legend.get_frame()
+        frm.set_facecolor('white'); frm.set_alpha(1.0)
+        plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
+        fig.canvas.draw()
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(out_path, bbox_inches='tight', pad_inches=0.01, facecolor='white')
+        plt.close(fig)
+
+    if _MIDWEST_LABEL:
+        # Split into 5 separate single-row legends by family.
+        baseline_hs, baseline_lbs = [], []
+        llama_hs, llama_lbs = [], []
+        gemma_hs, gemma_lbs = [], []
+        qwen_hs, qwen_lbs = [], []
+        bert_hs, bert_lbs = [], []
+
+        for h, lb in zip(handles, labels):
+            if lb in ('PostgreSQL', 'Bao', 'E2E-Cost', 'QueryFormer'):
+                baseline_hs.append(h); baseline_lbs.append(lb)
+                continue
+            orig = formatted_to_original.get(lb, lb)
+            ol = orig.lower()
+            if 'llama' in ol:
+                llama_hs.append(h); llama_lbs.append(lb)
+            elif 'gemma' in ol:
+                gemma_hs.append(h); gemma_lbs.append(lb)
+            elif 'qwen' in ol:
+                qwen_hs.append(h); qwen_lbs.append(lb)
+            elif 'sentence' in ol or 'bert' in ol:
+                bert_hs.append(h); bert_lbs.append(lb)
+
+        def _order_baselines(hs, lbs):
+            order = {'PostgreSQL': 0, 'Bao': 1, 'E2E-Cost': 2, 'QueryFormer': 3}
+            pairs = sorted(zip(hs, lbs), key=lambda p: order.get(p[1], 99))
+            return [p[0] for p in pairs], [p[1] for p in pairs]
+        baseline_hs, baseline_lbs = _order_baselines(baseline_hs, baseline_lbs)
+
+        subgroups = [
+            ('baselines', baseline_hs, baseline_lbs),
+            ('llama',     llama_hs,    llama_lbs),
+            ('gemma',     gemma_hs,    gemma_lbs),
+            ('qwen',      qwen_hs,     qwen_lbs),
+            ('bert',      bert_hs,     bert_lbs),
+        ]
+        for sub_name, hs, lbs in subgroups:
+            if not hs:
+                print(f"  Skipping empty legend: {group_name}_legend_{sub_name}")
+                continue
+            out_path = Path(output_dir) / group_name / f'{group_name}_legend_{sub_name}.svg'
+            _render_legend(hs, lbs, out_path, figsize=(max(4, 2 * len(hs)), 0.5))
+            print(f"  Created legend: {out_path}")
+        return
+
+    # Default: single combined legend (unchanged).
     total_entries = len(handles)
     if total_entries <= 8:
         ncol = total_entries
     else:
         ncol = 11
-    
-    # Create figure with just the legend
     fig = plt.figure(figsize=(12, 0.5))
     ax = fig.add_subplot(111)
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
-    ax.axis('off')  # Hide axes
-    
-    # Create legend with spacing between rows
+    ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis('off')
     legend = ax.legend(handles, labels, loc='center', ncol=ncol, fontsize=20, frameon=True,
                       handletextpad=0.3, labelspacing=0.4, columnspacing=0.5)
-    
-    # Ensure legend frame is visible (using default edge color and linewidth)
     legend_frame = legend.get_frame()
     legend_frame.set_facecolor('white')
-    legend_frame.set_alpha(1.0)  # Ensure fully opaque
-    
-    # Remove all margins and padding from subplot
+    legend_frame.set_alpha(1.0)
     plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
-    
-    # Render to ensure legend is drawn
     fig.canvas.draw()
-    
-    # Save legend with small padding to ensure frame border is fully visible
-    # pad_inches of 0.01 should be enough to include the 2.0 linewidth border
-    _ext = 'png' if _MIDWEST_LABEL else 'pdf'
-    output_path = Path(output_dir) / group_name / f'{group_name}_legend.{_ext}'
+    output_path = Path(output_dir) / group_name / f'{group_name}_legend.pdf'
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output_path, bbox_inches='tight', pad_inches=0.01, facecolor='white')
     plt.close(fig)
-    
     print(f"  Created legend: {output_path}")
 
 
@@ -1528,6 +1571,11 @@ def main():
     relative_mode = args.relative
     global _MIDWEST_LABEL
     _MIDWEST_LABEL = bool(getattr(args, 'midwest', False))
+
+    if _MIDWEST_LABEL:
+        before = len(df)
+        df = df[df['algo'] != 'aimai'].copy()
+        print(f"[midwest] Dropped {before - len(df)} AiMeetsAi rows")
 
     if args.group_by == "task":
         # If relative mode, calculate relative error for each dataset first, then average

@@ -20,7 +20,7 @@ timer = time.perf_counter
 
 # Training-session state used by print_qerror to annotate val output.
 # Set by train() at entry; read by print_qerror(..., data_sec="val").
-_TRAINING_SESSION = {'tag': None, 'start_time': None}
+_TRAINING_SESSION = {'tag': None, 'start_time': None, 'epoch': None}
 
 
 
@@ -100,8 +100,10 @@ def print_qerror(ps, ls, prints=True,data_sec = "unknown"):
         if data_sec == "val":
             tag = _TRAINING_SESSION.get('tag')
             st = _TRAINING_SESSION.get('start_time')
+            ep = _TRAINING_SESSION.get('epoch')
             elapsed_hours = ((time.time() - st) / 3600.0) if st else 0.0
-            print(f"[val] model={tag} elapsed={elapsed_hours:.3f}h")
+            ep_str = f" epoch={ep}" if ep is not None else ""
+            print(f"[val] model={tag}{ep_str} elapsed={elapsed_hours:.3f}h")
         print(f"Data section:       {data_sec}")
         print(f"Median:             {e50}")
         print(f"90th percentile:    {e90}")
@@ -930,6 +932,7 @@ def train(model, train_loader, val_loader, \
         ##############
         if record:
             if epoch >= 0:
+                _TRAINING_SESSION['epoch'] = epoch + 1
                 if not args.card:
                     val_qerrors, _, _, _ = evaluate(model, args, val_loader, ds_info.cost_norm, device, prints=True,data_sec = "val")
                 else:

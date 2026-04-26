@@ -103,6 +103,12 @@ class SearchConfig:
     # Initialization
     n_init_clusters: Optional[int] = None
     size_col: Optional[str] = "non_embedding_params"
+    # "kmeans" (default): metadata-diverse KMeans on continuous+categorical features.
+    # "stratified": split the feasible pool into `init_budget` latency-quantile
+    #   bins and pick one model uniformly per bin (seeded). Better Pareto-frontier
+    #   coverage when cost (latency) is the primary axis.
+    init_strategy: str = "kmeans"
+    latency_col: str = "avg_ms"
 
     # Ensemble surrogate
     ensemble_size: int = 12
@@ -249,7 +255,10 @@ class ConstrainedModelSearch:
     # --------------------------------------------------------
 
     def _initialize_seed_set(self) -> None:
-        init_ids = self._diverse_initialization_ids(self.config.init_budget)
+        if self.config.init_strategy == "stratified":
+            init_ids = self._stratified_initialization_ids(self.config.init_budget)
+        else:
+            init_ids = self._diverse_initialization_ids(self.config.init_budget)
         self._evaluate_ids(init_ids)
 
     def _fit_surrogates(self) -> None:
@@ -420,6 +429,41 @@ class ConstrainedModelSearch:
     # --------------------------------------------------------
     # Initialization helpers
     # --------------------------------------------------------
+
+    def _stratified_initialization_ids(self, budget: int) -> List[int]:
+        """Latency-stratified random init. Split the feasible pool into `budget`
+        equal-size latency-quantile bins and pick one model uniformly at random
+        per bin. Guarantees coverage of the cost axis, which is critical when
+        the final objective is a latency-accuracy Pareto frontier.
+        """
+        budget = min(budget, len(self.candidates))
+        lat_col = self.config.latency_col
+        if lat_col not in self.candidates.columns:
+            # Fallback: no latency column available → use the metadata KMeans path.
+            return self._diverse_initialization_ids(budget)
+
+        order = self.candidates[lat_col].to_numpy()
+        sort_idx = np.argsort(order)  # ascending by latency
+        n = len(sort_idx)
+        edges = np.linspace(0, n, budget + 1).astype(int)
+
+        chosen: List[int] = []
+        for b in range(budget):
+            lo, hi = int(edges[b]), int(edges[b + 1])
+            if lo == hi:
+                continue
+            bin_members = sort_idx[lo:hi]
+            pick = int(self.rng.choice(bin_members))
+            chosen.append(pick)
+
+        chosen = list(dict.fromkeys(chosen))
+        # If any bins were empty (duplicate latencies collapsing bins) fill from
+        # farthest-remaining metadata-distance to preserve diversity.
+        if len(chosen) < budget:
+            X = self._initialization_embedding(self.candidates)
+            extra = self._greedy_farthest_fill(X, chosen, budget - len(chosen))
+            chosen.extend(extra)
+        return chosen[:budget]
 
     def _diverse_initialization_ids(self, budget: int) -> List[int]:
         budget = min(budget, len(self.candidates))
@@ -881,6 +925,12 @@ def parse_args():
     # Search config
     p.add_argument("--latency_limit", type=float, required=True, help="Max inference latency (ms)")
     p.add_argument("--init_budget", type=int, default=24, help="Initial diverse evaluation budget")
+    p.add_argument("--init_strategy", type=str, default="kmeans",
+                   choices=["kmeans", "stratified"],
+                   help="First-round sampling: 'kmeans' (metadata-diverse, default) or "
+                        "'stratified' (one random pick per latency-quantile bin). "
+                        "'stratified' covers the cost axis better when the objective "
+                        "is a latency-accuracy Pareto frontier.")
     p.add_argument("--batch_size", type=int, default=4, help="Batch size per surrogate round")
     p.add_argument("--max_evals", type=int, default=80, help="Maximum total evaluations")
     p.add_argument("--random_state", type=int, default=42)
@@ -934,6 +984,7 @@ def main():
         batch_size=args.batch_size,
         max_evals=args.max_evals,
         random_state=args.random_state,
+        init_strategy=args.init_strategy,
     )
 
     # Build evaluator

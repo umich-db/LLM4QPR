@@ -840,6 +840,55 @@ def generate_fanouts(conn, abbrev, joins, col_types, histogram_data,
     return fanout_data
 
 
+# ---------------------------------------------------------------------------
+# Generate orphan_fraction (rule g) — nested inside fanout40.pkl
+# ---------------------------------------------------------------------------
+def generate_orphan_fractions(conn, abbrev, joins):
+    """Compute orphan_fraction per direction for each join pair.
+
+    For ((tL, cL), (tR, cR)):
+      orphan_LR = fraction of L rows whose key has zero matches in R
+      orphan_RL = fraction of R rows whose key has zero matches in L
+
+    Returns dict[(price_alias_L.cL, price_alias_R.cR)] -> (orphan_LR, orphan_RL).
+    """
+    out = {}
+    cur = conn.cursor()
+    for (tL, cL), (tR, cR) in sorted(joins):
+        if tL not in abbrev or tR not in abbrev:
+            continue
+        try:
+            cur.execute(f"""
+                WITH lc AS (
+                    SELECT "{cL}" AS k, COUNT(*) AS lcnt
+                    FROM "{tL}" WHERE "{cL}" IS NOT NULL GROUP BY 1
+                ),
+                rc AS (
+                    SELECT "{cR}" AS k, COUNT(*) AS rcnt
+                    FROM "{tR}" WHERE "{cR}" IS NOT NULL GROUP BY 1
+                ),
+                m AS (
+                    SELECT COALESCE(lc.k, rc.k) AS k,
+                           COALESCE(lc.lcnt, 0) AS lcnt,
+                           COALESCE(rc.rcnt, 0) AS rcnt
+                    FROM lc FULL OUTER JOIN rc USING (k)
+                )
+                SELECT
+                  COALESCE(SUM(CASE WHEN rcnt = 0 THEN lcnt ELSE 0 END)::float
+                           / NULLIF(SUM(lcnt), 0)::float, 0.0) AS orphan_lr,
+                  COALESCE(SUM(CASE WHEN lcnt = 0 THEN rcnt ELSE 0 END)::float
+                           / NULLIF(SUM(rcnt), 0)::float, 0.0) AS orphan_rl
+                FROM m
+            """)
+            o_lr, o_rl = cur.fetchone()
+            key = (f"{abbrev[tL]}.{cL}", f"{abbrev[tR]}.{cR}")
+            out[key] = (float(o_lr or 0.0), float(o_rl or 0.0))
+        except Exception as e:
+            print(f"    WARN orphan_fraction({tL}.{cL} \u2194 {tR}.{cR}): {e}")
+    cur.close()
+    return out
+
+
 def _compute_fanout_direction(conn, left_table, left_col, right_table, right_col,
                                bin_edges, table_col_dtypes, bin_size=BIN_SIZE):
     """Compute per-bin average fanout from left to right.
@@ -1229,6 +1278,14 @@ def generate_stats_for_db(db_name, price_n_filter=False, price_n_fanout=False,
     fanout_data = generate_fanouts(
         conn, abbrev, joins, col_types, histogram_data, table_col_dtypes
     )
+
+    orphan_fraction_data = {}
+    if price_n_fanout:
+        print()
+        print(f"    Computing orphan_fraction (rule g) ...")
+        orphan_fraction_data = generate_orphan_fractions(conn, abbrev, joins)
+        # Embed orphan info inside fanout_data so existing loaders see it on read.
+        fanout_data["__orphan__"] = orphan_fraction_data
 
     col_type_dict = build_col_type_dict(abbrev, col_types)
 

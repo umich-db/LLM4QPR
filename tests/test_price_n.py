@@ -56,3 +56,22 @@ def test_null_fraction_aggregate_produces_dict():
     assert isinstance(out, dict) and len(out) > 0
     for (t, c), frac in out.items():
         assert 0.0 <= frac <= 1.0, f"{t}.{c} → {frac} out of [0,1]"
+
+
+def test_orphan_fraction_aggregate_produces_dict():
+    """generate_orphan_fractions returns dict[(L_col, R_col)] -> (orphan_LR, orphan_RL),
+    each in [0, 1]."""
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from generate_price_stats_from_pg import (
+        get_connection, generate_orphan_fractions, DB_CONFIG,
+    )
+    pg_db, abbrev, _ = DB_CONFIG["tpch"]
+    conn = get_connection(pg_db)
+    # Use a single tpch join pair: lineitem.l_orderkey = orders.o_orderkey.
+    joins = {(("lineitem", "l_orderkey"), ("orders", "o_orderkey"))}
+    out = generate_orphan_fractions(conn, abbrev, joins)
+    conn.close()
+    key = ("tpch_l.l_orderkey", "tpch_o.o_orderkey")
+    assert key in out, f"missing key {key} in {list(out.keys())[:3]}"
+    o_lr, o_rl = out[key]
+    assert 0.0 <= o_lr <= 1.0 and 0.0 <= o_rl <= 1.0

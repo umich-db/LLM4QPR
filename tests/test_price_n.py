@@ -19,3 +19,18 @@ def test_imports_work():
     import sqlglot  # noqa: F401
     from setup.features_tool import Sql2Feature  # noqa: F401
     import price_data_utils  # noqa: F401
+
+
+def test_stats_generator_accepts_price_n_flags():
+    """The stats generator must accept the four PRICE_N flags + shorthand
+    via argparse without error (we don't actually run aggregates here)."""
+    import subprocess
+    result = subprocess.run(
+        ["python", "/root/LLM4QPR/experiments/generate_price_stats_from_pg.py",
+         "--db", "tpch", "--price_n", "--dry_run"],
+        capture_output=True, text=True,
+    )
+    # We expect the script to exit cleanly under --dry_run with the flags
+    # parsed but no DB work performed.
+    assert "unrecognized arguments" not in result.stderr, result.stderr
+    assert result.returncode == 0, f"stderr: {result.stderr}"

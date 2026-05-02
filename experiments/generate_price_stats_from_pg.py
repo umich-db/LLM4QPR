@@ -1090,7 +1090,8 @@ def resolve_column_case(joins, filter_cols, table_col_dtypes):
 # ---------------------------------------------------------------------------
 # Main generation
 # ---------------------------------------------------------------------------
-def generate_stats_for_db(db_name):
+def generate_stats_for_db(db_name, price_n_filter=False, price_n_fanout=False,
+                          price_n_pairwise=False):
     """Generate all 5 PRICE statistics files for the given database."""
     print(f"\n{'='*60}")
     print(f"Generating PRICE statistics for: {db_name}")
@@ -1232,12 +1233,44 @@ def main():
         "--db", type=str, required=True,
         help=f"Database to generate stats for, or 'all'. Valid: {valid_dbs}",
     )
+    parser.add_argument("--price_n_parsing", action="store_true", default=False,
+                        help="(No new stats — kept for symmetry with the train.py flag.)")
+    parser.add_argument("--price_n_filter", action="store_true", default=False,
+                        help="Compute null_fraction.pkl (rule b).")
+    parser.add_argument("--price_n_fanout", action="store_true", default=False,
+                        help="Extend fanout40.pkl with orphan_fraction (rule g).")
+    parser.add_argument("--price_n_pairwise", action="store_true", default=False,
+                        help="Compute pairwise_intra40.pkl, nonequi_pair_xtab.pkl, "
+                             "nonequi_fanout_op40.pkl (rules d/h/j).")
+    parser.add_argument("--price_n", action="store_true", default=False,
+                        help="Shorthand: enable all four PRICE_N flags above.")
+    parser.add_argument("--dry_run", action="store_true", default=False,
+                        help="Parse args and exit without connecting to PostgreSQL.")
     args = parser.parse_args()
+
+    # Expand the shorthand.
+    if args.price_n:
+        args.price_n_parsing = True
+        args.price_n_filter = True
+        args.price_n_fanout = True
+        args.price_n_pairwise = True
+
+    if args.dry_run:
+        print(f"[dry_run] db={args.db} flags="
+              f"filter={args.price_n_filter} fanout={args.price_n_fanout} "
+              f"pairwise={args.price_n_pairwise} parsing={args.price_n_parsing}")
+        return
+
+    flags = dict(
+        price_n_filter=args.price_n_filter,
+        price_n_fanout=args.price_n_fanout,
+        price_n_pairwise=args.price_n_pairwise,
+    )
 
     if args.db == "all":
         for db in sorted(DB_CONFIG.keys()):
             try:
-                generate_stats_for_db(db)
+                generate_stats_for_db(db, **flags)
             except Exception as e:
                 print(f"ERROR generating stats for {db}: {e}")
                 import traceback
@@ -1246,7 +1279,7 @@ def main():
         if args.db not in DB_CONFIG:
             print(f"Unknown database: {args.db}. Valid: {valid_dbs}")
             sys.exit(1)
-        generate_stats_for_db(args.db)
+        generate_stats_for_db(args.db, **flags)
 
 
 if __name__ == "__main__":

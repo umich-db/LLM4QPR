@@ -961,12 +961,18 @@ def generate_pairwise_intra(conn, pairs):
 # Generate nonequi_pair_xtab.pkl (rule h) — cross-table 2D joint histograms
 # ---------------------------------------------------------------------------
 def generate_pairwise_xtab(conn, pairs, sample_n=1_000_000):
-    """Compute cross-table 8x8 ordered joint histogram via uniform sampling.
+    """Compute cross-table 8x8 ordered joint histogram via independent uniform sampling.
+
+    The two columns come from different tables with no join key relating them
+    (e.g. TPC-DS q72: inv_quantity_on_hand < cs_quantity). The "joint" here is
+    computed under the independence assumption — equivalent to the outer product
+    of the two marginal sample histograms. This is what we want for predicates
+    that mix unrelated columns from unrelated tables.
 
     Args:
         conn: psycopg2 connection.
         pairs: iterable of (L_table, L_col, R_table, R_col).
-        sample_n: rows drawn from each table independently (default 1M).
+        sample_n: rows drawn from each side independently (default 1M).
 
     Returns dict[(L_table, L_col, R_table, R_col)] -> same schema as
     generate_pairwise_intra.
@@ -985,29 +991,46 @@ def generate_pairwise_xtab(conn, pairs, sample_n=1_000_000):
             y_lo, y_hi = cur.fetchone()
             if x_lo is None or y_lo is None or x_lo == x_hi or y_lo == y_hi:
                 continue
+
+            # Cast to float to avoid Decimal slow path (mirrors generate_pairwise_intra).
+            x_lo, x_hi = float(x_lo), float(x_hi)
+            y_lo, y_hi = float(y_lo), float(y_hi)
+
+            # --- Left marginal: 1D bucketed counts from an independent sample ---
             cur.execute(f"""
-                WITH ls AS (
+                WITH s AS (
                     SELECT "{cL}" AS x FROM "{tL}"
                     WHERE "{cL}" IS NOT NULL ORDER BY random() LIMIT %s
-                ),
-                rs AS (
+                )
+                SELECT width_bucket(x, %s, %s, 40) AS bx, COUNT(*) AS cnt
+                FROM s GROUP BY 1
+            """, (sample_n, x_lo, x_hi))
+            h_x = np.zeros(40, dtype=np.float64)
+            for bx, cnt in cur.fetchall():
+                if bx is None:
+                    continue
+                bx_i = max(1, min(40, int(bx))) - 1
+                h_x[bx_i] += cnt
+
+            # --- Right marginal: 1D bucketed counts from an independent sample ---
+            cur.execute(f"""
+                WITH s AS (
                     SELECT "{cR}" AS y FROM "{tR}"
                     WHERE "{cR}" IS NOT NULL ORDER BY random() LIMIT %s
                 )
-                SELECT
-                  width_bucket(ls.x, %s, %s, 40) AS bx,
-                  width_bucket(rs.y, %s, %s, 40) AS by,
-                  COUNT(*)
-                FROM ls CROSS JOIN rs
-                GROUP BY 1, 2
-            """, (sample_n, sample_n, x_lo, x_hi, y_lo, y_hi))
-            h40 = np.zeros((40, 40), dtype=np.float64)
-            for bx, by, cnt in cur.fetchall():
-                if bx is None or by is None:
+                SELECT width_bucket(y, %s, %s, 40) AS bx, COUNT(*) AS cnt
+                FROM s GROUP BY 1
+            """, (sample_n, y_lo, y_hi))
+            h_y = np.zeros(40, dtype=np.float64)
+            for by, cnt in cur.fetchall():
+                if by is None:
                     continue
-                bx_i = max(1, min(40, int(bx))) - 1
                 by_i = max(1, min(40, int(by))) - 1
-                h40[bx_i, by_i] += cnt
+                h_y[by_i] += cnt
+
+            # --- Outer product under the independence assumption ---
+            h40 = np.outer(h_x, h_y)
+
             h8 = _compress_40_to_8(h40)
             ordered = _order_8x8_into_regions(h8)
             total = ordered.sum() or 1.0

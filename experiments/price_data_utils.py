@@ -406,6 +406,71 @@ def _flatten_and(node, results):
         results.append(node)
 
 
+def _date_to_epoch_days(date_str):
+    """Parse 'YYYY-MM-DD' to days since 1970-01-01."""
+    import datetime
+    try:
+        d = datetime.date.fromisoformat(date_str)
+        return (d - datetime.date(1970, 1, 1)).days
+    except Exception:
+        return None
+
+
+def _normalize_date_literals(ast):
+    """Replace DATE/TIMESTAMP literals (and DATE +/- INTERVAL N DAY) on the
+    RHS of comparisons with the integer days-since-epoch they represent.
+
+    Mutates the AST in place.
+    """
+    if not HAS_SQLGLOT:
+        return
+
+    def _date_value_of(node):
+        """Return integer days, or None if the node isn't a recognized date."""
+        # DATE 'YYYY-MM-DD' literal — sqlglot wraps in Cast(to=DataType(DATE))
+        if isinstance(node, sqlglot_exp.Cast) and \
+           isinstance(node.to, sqlglot_exp.DataType) and \
+           node.to.this.value.upper() in ("DATE", "TIMESTAMP"):
+            inner = node.this
+            if isinstance(inner, sqlglot_exp.Literal) and inner.is_string:
+                return _date_to_epoch_days(str(inner.name))
+        # Bare string literal fallback
+        if isinstance(node, sqlglot_exp.Literal) and node.is_string:
+            return _date_to_epoch_days(str(node.name))
+        return None
+
+    def _interval_days(node):
+        """Return integer days for `INTERVAL 'N' DAY`-style nodes, else None."""
+        if isinstance(node, sqlglot_exp.Interval):
+            try:
+                n = int(str(node.this.name) if hasattr(node.this, "name")
+                        else str(node.this))
+                unit = str(node.unit).upper() if node.unit else ""
+                if unit.startswith("DAY"):
+                    return n
+            except Exception:
+                return None
+        return None
+
+    for cmp_cls in (sqlglot_exp.EQ, sqlglot_exp.NEQ,
+                    sqlglot_exp.LT, sqlglot_exp.LTE,
+                    sqlglot_exp.GT, sqlglot_exp.GTE):
+        for cmp in list(ast.find_all(cmp_cls)):
+            rhs = cmp.expression
+            replaced = None
+            v = _date_value_of(rhs)
+            if v is not None:
+                replaced = v
+            elif isinstance(rhs, (sqlglot_exp.Sub, sqlglot_exp.Add)):
+                base = _date_value_of(rhs.this)
+                offset = _interval_days(rhs.expression)
+                if base is not None and offset is not None:
+                    replaced = base + (offset if isinstance(rhs, sqlglot_exp.Add)
+                                       else -offset)
+            if replaced is not None:
+                cmp.set("expression", sqlglot_exp.Literal.number(replaced))
+
+
 def _push_not_to_nnf(ast):
     """Rewrite the AST so every Not wraps a leaf. De Morgan + operator flip.
 

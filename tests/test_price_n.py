@@ -320,3 +320,25 @@ def test_disjoint_or_keeps_mixed_columns():
     _rewrite_disjoint_or_to_in(ast)
     # Mixed columns must NOT be collapsed.
     assert " IN " not in ast.sql().upper()
+
+
+def test_normalize_date_literal_to_epoch_days():
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _normalize_date_literals
+    import sqlglot
+    ast = sqlglot.parse_one(
+        "SELECT * FROM t WHERE t.dt = DATE '1970-01-08'")
+    _normalize_date_literals(ast)
+    # 1970-01-08 = day 7 since epoch.
+    assert "=7" in ast.sql().replace(" ", "")
+
+
+def test_normalize_date_arith_literal():
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _normalize_date_literals
+    import sqlglot
+    ast = sqlglot.parse_one(
+        "SELECT * FROM t WHERE t.dt < DATE '1970-01-15' - INTERVAL '5' DAY")
+    _normalize_date_literals(ast)
+    # 1970-01-15 = day 14, minus 5 = 9.
+    assert "9" in ast.sql()

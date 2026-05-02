@@ -3306,9 +3306,13 @@ def _try_create_features(sql2feat, sql):
     return None
 
 
-def generate_price_features(workload, sql_list, db_name, bin_size=40, price_m=False, price_s=False, already_price_format=False):
+def generate_price_features(workload, sql_list, db_name, bin_size=40,
+                            price_m=False, price_s=False,
+                            price_n_parsing=False, price_n_filter=False,
+                            price_n_fanout=False, price_n_pairwise=False,
+                            already_price_format=False):
     """
-    Generate PRICE features for each SQL query using Sql2Feature (or Sql2FeatureM/S).
+    Generate PRICE features for each SQL query using Sql2Feature (or Sql2FeatureM/S/N).
 
     Transforms SQL to PRICE-compatible format before feature extraction.
     Handles single-table queries (no joins) with a dedicated feature generator.
@@ -3320,18 +3324,31 @@ def generate_price_features(workload, sql_list, db_name, bin_size=40, price_m=Fa
         bin_size: Histogram bin size (default 40)
         price_m: When True, use PRICE_M encoding (61-dim filters with IN/LIKE support)
         price_s: When True, use PRICE_S encoding (43-dim filters with IN/LIKE via bounding-box range)
+        price_n_parsing: When True, apply PRICE_N NNF/OR→IN/date-normalisation transforms.
+        price_n_filter: When True, use 75-dim PRICE_N filter encoding.
+        price_n_fanout: When True, use 42-dim extended fanout tokens with outer-join flags.
+        price_n_pairwise: When True, collect pairwise intra/xtab atoms and return 6-tuple.
         already_price_format: When True, SQL is already in PRICE alias format
             (from cross-workload plan reconstruction). Skip transform_sql_for_price()
             and most cleanup functions.
 
     Returns:
-        data_features: list of tuples (join_hist, fanout, table, filter) per query
-        n_join_cols: list of int
-        n_fanouts: list of int
-        n_tables: list of int
-        n_filter_cols: list of int
+        When price_n_pairwise=False (default):
+            data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols
+        When price_n_pairwise=True:
+            data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols, n_pairwise_intras
+        data_features is a list of 4-tuples (join_hist, fanout, table, filter) for
+        non-PRICE_N modes, or 5-tuples (join_hist, fanout, table, filter, pairwise) under
+        PRICE_N.
     """
-    mode_tag = "_m" if price_m else ("_s" if price_s else "")
+    parts = []
+    if price_s:           parts.append("s")
+    if price_m:           parts.append("m")
+    if price_n_filter:    parts.append("nflt")
+    if price_n_fanout:    parts.append("nfan")
+    if price_n_pairwise:  parts.append("npw")
+    if price_n_parsing:   parts.append("nprs")
+    mode_tag = ("_" + "_".join(parts)) if parts else ""
     xwl_tag = "_xwl" if already_price_format else ""
     cache_dir = os.path.join(os.path.dirname(__file__), "price_feature_cache")
     cache_key = f"{db_name}_bin{bin_size}{mode_tag}{xwl_tag}_{workload}_n{len(sql_list)}.pkl"
@@ -3341,18 +3358,40 @@ def generate_price_features(workload, sql_list, db_name, bin_size=40, price_m=Fa
         print(f"[PRICE{mode_tag.upper()}] Loading cached raw features from {cache_path} ({len(sql_list)} queries)")
         with open(cache_path, "rb") as f:
             cached = pickle.load(f)
+        if price_n_pairwise and "n_pairwise_intras" in cached:
+            return (cached["data_features"], cached["n_join_cols"],
+                    cached["n_fanouts"], cached["n_tables"], cached["n_filter_cols"],
+                    cached["n_pairwise_intras"])
         return (cached["data_features"], cached["n_join_cols"],
                 cached["n_fanouts"], cached["n_tables"], cached["n_filter_cols"])
 
-    if price_m:
+    use_price_n = any([price_n_parsing, price_n_filter, price_n_fanout, price_n_pairwise])
+    if use_price_n:
+        from setup.features_tool_n import Sql2FeatureN
+        sql2feat = Sql2FeatureN(db_name, bin_size, "finetune")
+        # Override filter_dim used elsewhere.
+        filter_dim = sql2feat.filter_dim_n if price_n_filter \
+                     else (bin_size + 21 if price_m else bin_size + 3)
+        fanout_dim = sql2feat.fanout_dim_n if price_n_fanout else bin_size
+        pairwise_dim = sql2feat.pairwise_dim_n if price_n_pairwise else 0
+    elif price_m:
         from setup.features_tool_m import Sql2FeatureM
         sql2feat = Sql2FeatureM(db_name, bin_size, "finetune")
+        filter_dim = bin_size + 21
+        fanout_dim = bin_size
+        pairwise_dim = 0
     elif price_s:
         from setup.features_tool_s import Sql2FeatureS
         sql2feat = Sql2FeatureS(db_name, bin_size, "finetune")
+        filter_dim = bin_size + 3
+        fanout_dim = bin_size
+        pairwise_dim = 0
     else:
         from setup.features_tool import Sql2Feature
         sql2feat = Sql2Feature(db_name, bin_size, "finetune")
+        filter_dim = bin_size + 3
+        fanout_dim = bin_size
+        pairwise_dim = 0
     _patch_self_join_stats(sql2feat)
 
     data_features = []
@@ -3360,14 +3399,13 @@ def generate_price_features(workload, sql_list, db_name, bin_size=40, price_m=Fa
     n_fanouts = []
     n_tables = []
     n_filter_cols = []
+    n_pairwise_intras = []
     success_count = 0
     single_table_count = 0
     fail_count = 0
 
     total = len(sql_list)
     log_interval = max(1, total // 20)  # ~5% increments
-
-    filter_dim = (bin_size + 21) if price_m else (bin_size + 3)
 
     for idx, sql in enumerate(sql_list):
         if idx % log_interval == 0:
@@ -3378,8 +3416,14 @@ def generate_price_features(workload, sql_list, db_name, bin_size=40, price_m=Fa
                 # Just apply lowercasing for safety
                 transformed_sql = _lower_except_quotes(sql)
             else:
-                # Transform SQL to PRICE format (PRICE_M/S preserves IN and LIKE)
-                transformed_sql = transform_sql_for_price(sql, db_name, price_m=price_m, price_s=price_s)
+                # Transform SQL to PRICE format (PRICE_N/M/S preserves appropriate predicates)
+                transformed_sql = transform_sql_for_price(
+                    sql, db_name,
+                    price_m=price_m, price_s=price_s,
+                    price_n_parsing=price_n_parsing,
+                    price_n_filter=price_n_filter,
+                    price_n_fanout=price_n_fanout,
+                    price_n_pairwise=price_n_pairwise)
                 # PRICE expects lowercase (except inside quotes)
                 transformed_sql = _lower_except_quotes(transformed_sql)
                 # Collapse self-join aliases (tpcds_dd2 → tpcds_dd) where only tautological joins
@@ -3402,8 +3446,8 @@ def generate_price_features(workload, sql_list, db_name, bin_size=40, price_m=Fa
                 transformed_sql = _strip_tautologies(transformed_sql)
 
             # Handle single-table queries specially (PRICE doesn't support them)
-            # PRICE_M/S handle single-table internally
-            if _is_single_table_query(transformed_sql) and not price_m and not price_s:
+            # PRICE_M/S/N handle single-table internally (they zero-pad join/fanout)
+            if _is_single_table_query(transformed_sql) and not price_m and not price_s and not use_price_n:
                 result = _create_single_table_features(sql2feat, transformed_sql, bin_size)
                 if result is None:
                     raise ValueError("single-table feature generation returned None")
@@ -3413,14 +3457,43 @@ def generate_price_features(workload, sql_list, db_name, bin_size=40, price_m=Fa
                 n_fanouts.append(n_fo)
                 n_tables.append(n_tb)
                 n_filter_cols.append(n_fc)
+                n_pairwise_intras.append(0)
                 single_table_count += 1
                 success_count += 1
                 continue
 
-            result = _try_create_features(sql2feat, transformed_sql)
+            if use_price_n:
+                try:
+                    import sqlglot as _sqlglot
+                    ast = _sqlglot.parse_one(transformed_sql)
+                except Exception:
+                    ast = None
+                atoms_meta = {
+                    "filter_atoms": _extract_filter_atoms(ast) if (ast and price_n_filter) else {},
+                    "pairwise_atoms": (
+                        _extract_pairwise_intra_atoms(ast) +
+                        [(a[0], a[1], a[1], a[2], a[3], a[4])
+                         for a in _extract_xtab_nonequi_atoms(ast)]
+                    ) if (ast and price_n_pairwise) else [],
+                    "join_sides": dict(
+                        ((l, r), s)
+                        for l, r, s in _PRICE_N_SIDE_CACHE.get(transformed_sql, [])
+                    ) if price_n_fanout else {},
+                }
+                result = sql2feat.create_sql_features(transformed_sql, atoms_meta=atoms_meta)
+            else:
+                result = _try_create_features(sql2feat, transformed_sql)
+
             if result is None:
                 raise ValueError(f"create_sql_features returned None for query {idx}")
-            feats, n_jc, n_fo, n_tb, n_fc = result
+
+            if use_price_n:
+                feats, n_jc, n_fo, n_tb, n_fc, n_pi = result
+                n_pairwise_intras.append(n_pi)
+            else:
+                feats, n_jc, n_fo, n_tb, n_fc = result
+                n_pairwise_intras.append(0)
+
             data_features.append(feats)
             n_join_cols.append(n_jc)
             n_fanouts.append(n_fo)
@@ -3438,25 +3511,36 @@ def generate_price_features(workload, sql_list, db_name, bin_size=40, price_m=Fa
             zero_fanout = torch.zeros(bin_size * 2)  # 2 fanout placeholder
             zero_table = torch.zeros(4)  # 1 table with 4 features
             zero_filter = torch.zeros(filter_dim)  # 1 filter placeholder
-            data_features.append((zero_join, zero_fanout, zero_table, zero_filter))
+            if use_price_n:
+                zero_pairwise = torch.zeros(0)
+                data_features.append((zero_join, zero_fanout, zero_table, zero_filter, zero_pairwise))
+            else:
+                data_features.append((zero_join, zero_fanout, zero_table, zero_filter))
             n_join_cols.append(1)
             n_fanouts.append(2)
             n_tables.append(1)
             n_filter_cols.append(1)
+            n_pairwise_intras.append(0)
 
     print(f"[PRICE{mode_tag.upper()}] Feature generation: {success_count} succeeded ({single_table_count} single-table), {fail_count} failed out of {len(sql_list)}")
 
     os.makedirs(cache_dir, exist_ok=True)
+    cache_dict = {
+        "data_features": data_features,
+        "n_join_cols": n_join_cols,
+        "n_fanouts": n_fanouts,
+        "n_tables": n_tables,
+        "n_filter_cols": n_filter_cols,
+    }
+    if price_n_pairwise:
+        cache_dict["n_pairwise_intras"] = n_pairwise_intras
     with open(cache_path, "wb") as f:
-        pickle.dump({
-            "data_features": data_features,
-            "n_join_cols": n_join_cols,
-            "n_fanouts": n_fanouts,
-            "n_tables": n_tables,
-            "n_filter_cols": n_filter_cols,
-        }, f)
+        pickle.dump(cache_dict, f)
     print(f"[PRICE{mode_tag.upper()}] Cached raw features to {cache_path}")
 
+    if price_n_pairwise:
+        return (data_features, n_join_cols, n_fanouts, n_tables,
+                n_filter_cols, n_pairwise_intras)
     return data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols
 
 

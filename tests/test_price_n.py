@@ -399,3 +399,21 @@ def test_transform_sql_with_price_n_parsing_runs_without_error():
         price_n_parsing=True, price_n_filter=True,
         price_n_fanout=False, price_n_pairwise=False)
     assert "NOT" not in out.upper().replace("NOT NULL", "").replace("IS NOT", "")
+
+
+def test_generate_price_features_returns_5_tuple_under_price_n():
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import generate_price_features
+    sqls = [
+        "SELECT count(*) FROM lineitem l, orders o "
+        "WHERE l.l_orderkey = o.o_orderkey AND l.l_quantity = 30",
+    ]
+    out = generate_price_features(
+        "tpch_smoke", sqls, "tpch",
+        price_n_parsing=True, price_n_filter=True,
+        price_n_fanout=True, price_n_pairwise=True)
+    # 6-tuple of lists when price_n_pairwise=True
+    assert len(out) == 6
+    data_features, *_ = out
+    assert len(data_features) == 1
+    assert len(data_features[0]) == 5  # 5-tuple per query

@@ -472,3 +472,35 @@ def test_regression_model_accepts_pairwise_intra_embedding_dim():
     out = rm(x, pg_est_card=pg_est_card,
              n_join_col=n_jc, n_fanout=n_fo, n_table=n_tb, n_filter_col=n_fc)
     assert out.shape == (2, 1)
+
+
+def test_partial_copy_filter_embedding_43_to_75():
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    import torch
+    from models.llm_price_model import _load_price_n_state_dict
+    # Build a fake "pretrained" PRICE state dict (filter_dim=43, fanout=40).
+    pretrained = {
+        "filter_embedding.filter_embeddings.weight": torch.randn(64, 43),
+        "filter_embedding.filter_embeddings.bias": torch.randn(64),
+        "scale_embedding.fanout_embeddings.weight": torch.randn(64, 41),
+        "scale_embedding.fanout_embeddings.bias": torch.randn(64),
+    }
+    # Build a target model with PRICE_N dims.
+    sys.path.insert(0, "/root/PRICE")
+    from model.encoder import RegressionModel
+    target = RegressionModel(
+        n_join_col=1, n_fanout=2, n_table=1, n_filter_col=1,
+        n_pairwise_intra=0,
+        hist_dim=40, table_dim=4, filter_dim=75,
+        fanout_dim=42, pairwise_intra_dim=0,
+        n_embd=64, n_layers=2, n_heads=4, dropout_rate=0.1,
+        query_hidden_dim=64,
+        final_hidden_dim=64, output_dim=1)
+    summary = _load_price_n_state_dict(target, pretrained)
+    # Verify the first 43 dims of filter_embedding match the pretrained values.
+    target_w = target.filter_embedding.filter_embeddings.weight
+    src_w = pretrained["filter_embedding.filter_embeddings.weight"]
+    assert torch.allclose(target_w[:, :43], src_w)
+    # Remaining dims should be zero (zero-init).
+    assert torch.allclose(target_w[:, 43:], torch.zeros_like(target_w[:, 43:]))
+    assert "filter_embedding.filter_embeddings.weight" in summary["partial_copied"]

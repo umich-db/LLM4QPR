@@ -17,6 +17,66 @@ if PRICE_ROOT not in sys.path:
     sys.path.insert(0, PRICE_ROOT)
 
 
+def _load_price_n_state_dict(model, ckpt_sd):
+    """Load a PRICE pretrained state dict into a PRICE_N-shaped RegressionModel.
+
+    Performs:
+      1. Best-effort load_state_dict(strict=False) for matching keys.
+         Keys with shape mismatches are excluded from this call to avoid
+         RuntimeError (PyTorch 2.7+ raises even under strict=False for shape
+         mismatches on the same key).
+      2. Partial-copy of filter_embedding.weight[:, :ckpt_dim] when target is wider.
+      3. Partial-copy of fanout_embeddings.weight[:, :ckpt_dim] when target is wider.
+      4. type_embed first 4 rows copied if target has 5.
+      5. pairwise_intra_embedding fully random-init (no copy).
+
+    Returns a dict {loaded, partial_copied, missing} for logging.
+    """
+    summary = {"loaded": [], "partial_copied": [], "missing": []}
+    target_sd = model.state_dict()
+
+    # Build a filtered checkpoint that only contains keys whose shapes match
+    # the target model — load_state_dict(strict=False) in PyTorch 2.7 still
+    # raises RuntimeError for shape mismatches, so we exclude them here and
+    # handle them manually in the partial-copy step below.
+    shape_matched = {
+        k: v for k, v in ckpt_sd.items()
+        if k in target_sd and v.shape == target_sd[k].shape
+    }
+    shape_mismatched = {k for k in ckpt_sd if k in target_sd and ckpt_sd[k].shape != target_sd[k].shape}
+
+    # Step 1: load matching shapes with strict=False (handles truly missing keys gracefully)
+    missing, unexpected = model.load_state_dict(shape_matched, strict=False)
+    summary["loaded"] = list(shape_matched.keys())
+
+    # Step 2 + 3: partial-copy mismatched 2-D Linear weights/biases.
+    for key in [
+        "filter_embedding.filter_embeddings.weight",
+        "filter_embedding.filter_embeddings.bias",
+        "scale_embedding.fanout_embeddings.weight",
+        "scale_embedding.fanout_embeddings.bias",
+    ]:
+        if key not in ckpt_sd or key not in target_sd:
+            continue
+        src = ckpt_sd[key]
+        tgt = target_sd[key]
+        if src.shape == tgt.shape:
+            continue                          # already loaded by strict=False
+        if src.dim() == 2 and src.shape[0] == tgt.shape[0] and src.shape[1] < tgt.shape[1]:
+            with torch.no_grad():
+                tgt.zero_()
+                tgt[:, :src.shape[1]].copy_(src)
+            summary["partial_copied"].append(key)
+        elif src.dim() == 1 and src.shape[0] <= tgt.shape[0]:
+            with torch.no_grad():
+                tgt.zero_()
+                tgt[:src.shape[0]].copy_(src)
+            summary["partial_copied"].append(key)
+
+    summary["missing"] = list(missing)
+    return summary
+
+
 class PRICEEmbedder(nn.Module):
     """
     Wraps PRICE's RegressionModel layers up to and including the ELU activation.

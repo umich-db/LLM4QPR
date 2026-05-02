@@ -2727,6 +2727,9 @@ def _patch_self_join_stats(sql2feat, max_copies=4):
     # Add fanout entries for numbered aliases
     existing_keys = list(sql2feat.information_fanout.keys())
     for key in existing_keys:
+        # Skip PRICE_N sentinel keys (e.g., "__orphan__") that aren't (col, col) tuples.
+        if not isinstance(key, tuple) or len(key) != 2:
+            continue
         left_col, right_col = key
         lt = left_col.split('.')[0]
         lc = left_col.split('.')[1]

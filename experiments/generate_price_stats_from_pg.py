@@ -896,21 +896,16 @@ def _order_8x8_into_regions(h8):
 
 def _pairwise_intra_discrete_self(conn, table, col, top_k=40):
     """Build an 8×8 ordered joint histogram for a self-pair on a discrete
-    (categorical) column via the SpaceSaving outer-product trick.
+    column via the SpaceSaving outer-product trick.
 
-    For (A.col × A.col) on two independent aliases of the same table, the
-    joint is the outer product of the marginal p_i (SpaceSaving-binned
-    frequencies). This avoids width_bucket (which rejects text), and gives
-    a meaningful diagonal-mass = P(eq) signal under the existing 28+8+28
-    region split.
-
-    s_eq is computed analytically as Sigma p_i² (the probability that two
-    independent draws from the marginal are equal). The H8x8_ordered vector
-    is then constructed to encode exactly that signal: diagonal mass = s_eq,
-    off-diagonal mass split symmetrically between upper (s_lt) and lower
-    (s_gt) triangles. This avoids the 40->8 compression artifact where all
-    values for a low-cardinality column (e.g. 5 marital statuses) collapse
-    into the same 8x8 block, erroneously giving s_eq=1.0.
+    Drops the OtHeRs bucket from the marginal: only the top-39 most frequent
+    values contribute. The resulting 8×8 histogram represents the joint
+    distribution conditional on both rows having one of the top-39 values.
+    For low-cardinality columns (≤39 distinct), this is exact. For
+    high-cardinality columns, the conditional s_eq is a tight estimate of
+    P(equal | both top-39); the rest of the predicate's selectivity contribution
+    (rows in OtHeRs) is small and can be inferred by the model from the
+    column's 1D filter-token marginal.
     """
     cur = conn.cursor()
     cur.execute(f"""
@@ -930,18 +925,21 @@ def _pairwise_intra_discrete_self(conn, table, col, top_k=40):
             "s_lt": 0.0, "s_eq": 0.0, "s_gt": 0.0,
         }
 
-    # Compute marginal probabilities for top-39 values + OtHeRs catch-all.
-    p_vals = []
-    top_freq_sum = 0
+    # Build a 40-element marginal of top-39 frequencies. Slot 39 stays zero
+    # (OtHeRs is intentionally dropped — see commit message). Effect: outer
+    # product produces a 39x39 non-zero submatrix; after total-mass
+    # normalization, s_eq is the conditional P(equal | both rows in top-39),
+    # which is tight even for high-cardinality columns where the OtHeRs
+    # bucket would otherwise dominate the diagonal.
+    p = np.zeros(40, dtype=np.float64)
     for i, (_, cnt) in enumerate(rows[:39]):
-        p_vals.append(cnt / float(total))
-        top_freq_sum += cnt
-    p_others = max(0.0, 1.0 - top_freq_sum / float(total))  # OtHeRs
-    p_vals.append(p_others)
+        p[i] = cnt / float(total)
+    # p[39] = 0 (deliberate: no OtHeRs lumping)
 
     # Analytical s_eq = Sigma p_i² (collision probability under independence).
     # This is exact and avoids any binning/compression artifact.
-    s_eq = float(sum(p ** 2 for p in p_vals))
+    p_vals = list(p)
+    s_eq = float(sum(v ** 2 for v in p_vals))
     # For a discrete self-pair, the non-equality mass is symmetric (no natural
     # ordering between two independent aliases of the same text column).
     s_lt = (1.0 - s_eq) / 2.0

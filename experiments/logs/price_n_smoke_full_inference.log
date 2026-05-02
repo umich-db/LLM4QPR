@@ -1,0 +1,6 @@
+2026-05-02 16:04:53,539 INFO Getting LLM+PRICE dataset from ['../data/imdb/postgres/long_raw_postgres_tpcds.csv'] and Nonelong_raw_postgres_None.csv
+2026-05-02 16:06:06,204 INFO Getting LLM+PRICE dataset from ['../queryPlans/tpch/postgres/long_raw_postgres_tpch.csv'] and ../queryPlans/tpch/postgres/long_raw_postgres_tpch.csv
+2026-05-02 16:18:31,698 INFO Getting LLM+PRICE dataset from ['../queryPlans/tpch/postgres/long_raw_postgres_tpch.csv'] and ../queryPlans/tpch/postgres/long_raw_postgres_tpch.csv
+2026-05-02 16:24:58,477 INFO Getting LLM+PRICE dataset from ['../queryPlans/tpch/postgres/long_raw_postgres_tpch.csv'] and ../queryPlans/tpch/postgres/long_raw_postgres_tpch.csv
+2026-05-02 16:30:57,298 INFO Getting LLM+PRICE dataset from ['../queryPlans/tpch/postgres/long_raw_postgres_tpch.csv'] and ../queryPlans/tpch/postgres/long_raw_postgres_tpch.csv
+2026-05-02 16:46:11,954 INFO Getting LLM+PRICE dataset from ['../queryPlans/tpch/postgres/long_raw_postgres_tpch.csv'] and ../queryPlans/tpch/postgres/long_raw_postgres_tpch.csv

@@ -55,3 +55,5 @@
 2026-05-02 16:50:41,479 INFO [Train] Epoch 0 Batch 27 DataLoad — 0.26 ms
 2026-05-02 16:51:19,644 INFO [Train] Epoch 0 Batch 27 — 38165.03 ms
 2026-05-02 16:51:19,644 INFO [Train] Epoch 0 Batch 28 DataLoad — 0.31 ms
+2026-05-02 16:52:02,573 INFO [Train] Epoch 0 Batch 28 — 42928.38 ms
+2026-05-02 16:52:02,573 INFO [Train] Epoch 0 Batch 29 DataLoad — 0.23 ms

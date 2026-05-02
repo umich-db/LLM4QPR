@@ -1,0 +1,81 @@
+2026-05-02 16:52:34,424 INFO [Train] Epoch 0 Batch 1 DataLoad — 0.68 ms
+2026-05-02 16:52:48,865 INFO [Train] Epoch 0 Batch 1 — 14440.96 ms
+2026-05-02 16:52:48,865 INFO [Train] Epoch 0 Batch 2 DataLoad — 0.27 ms
+2026-05-02 16:53:02,724 INFO [Train] Epoch 0 Batch 2 — 13858.47 ms
+2026-05-02 16:53:02,724 INFO [Train] Epoch 0 Batch 3 DataLoad — 0.21 ms
+2026-05-02 16:53:13,727 INFO [Train] Epoch 0 Batch 3 — 11002.40 ms
+2026-05-02 16:53:13,727 INFO [Train] Epoch 0 Batch 4 DataLoad — 0.22 ms
+2026-05-02 16:53:23,780 INFO [Train] Epoch 0 Batch 4 — 10052.68 ms
+2026-05-02 16:53:23,780 INFO [Train] Epoch 0 Batch 5 DataLoad — 0.19 ms
+2026-05-02 16:53:38,113 INFO [Train] Epoch 0 Batch 5 — 14332.87 ms
+2026-05-02 16:53:38,113 INFO [Train] Epoch 0 Batch 6 DataLoad — 0.20 ms
+2026-05-02 16:53:50,543 INFO [Train] Epoch 0 Batch 6 — 12429.21 ms
+2026-05-02 16:53:50,543 INFO [Train] Epoch 0 Batch 7 DataLoad — 0.21 ms
+2026-05-02 16:53:59,645 INFO [Train] Epoch 0 Batch 7 — 9101.67 ms
+2026-05-02 16:53:59,645 INFO [Train] Epoch 0 Batch 8 DataLoad — 0.20 ms
+2026-05-02 16:54:13,976 INFO [Train] Epoch 0 Batch 8 — 14330.91 ms
+2026-05-02 16:54:13,977 INFO [Train] Epoch 0 Batch 9 DataLoad — 0.23 ms
+2026-05-02 16:54:25,931 INFO [Train] Epoch 0 Batch 9 — 11954.80 ms
+2026-05-02 16:54:25,932 INFO [Train] Epoch 0 Batch 10 DataLoad — 0.19 ms
+2026-05-02 16:54:37,410 INFO [Train] Epoch 0 Batch 10 — 11478.13 ms
+2026-05-02 16:54:37,410 INFO [Train] Epoch 0 Batch 11 DataLoad — 0.20 ms
+2026-05-02 16:54:49,366 INFO [Train] Epoch 0 Batch 11 — 11955.38 ms
+2026-05-02 16:54:49,366 INFO [Train] Epoch 0 Batch 12 DataLoad — 0.21 ms
+2026-05-02 16:54:58,466 INFO [Train] Epoch 0 Batch 12 — 9099.89 ms
+2026-05-02 16:54:58,466 INFO [Train] Epoch 0 Batch 13 DataLoad — 0.20 ms
+2026-05-02 16:55:10,420 INFO [Train] Epoch 0 Batch 13 — 11953.66 ms
+2026-05-02 16:55:10,420 INFO [Train] Epoch 0 Batch 14 DataLoad — 0.18 ms
+2026-05-02 16:55:21,424 INFO [Train] Epoch 0 Batch 14 — 11003.07 ms
+2026-05-02 16:55:21,424 INFO [Train] Epoch 0 Batch 15 DataLoad — 0.20 ms
+2026-05-02 16:55:29,571 INFO [Train] Epoch 0 Batch 15 — 8147.24 ms
+2026-05-02 16:55:29,572 INFO [Train] Epoch 0 Batch 16 DataLoad — 0.20 ms
+2026-05-02 16:55:41,523 INFO [Train] Epoch 0 Batch 16 — 11951.58 ms
+2026-05-02 16:55:41,524 INFO [Train] Epoch 0 Batch 17 DataLoad — 0.20 ms
+2026-05-02 16:55:54,429 INFO [Train] Epoch 0 Batch 17 — 12905.40 ms
+2026-05-02 16:55:54,430 INFO [Train] Epoch 0 Batch 18 DataLoad — 0.20 ms
+2026-05-02 16:56:04,959 INFO [Train] Epoch 0 Batch 18 — 10529.32 ms
+2026-05-02 16:56:04,959 INFO [Train] Epoch 0 Batch 19 DataLoad — 0.24 ms
+2026-05-02 16:56:16,913 INFO [Train] Epoch 0 Batch 19 — 11953.07 ms
+2026-05-02 16:56:16,913 INFO [Train] Epoch 0 Batch 20 DataLoad — 0.21 ms
+2026-05-02 16:56:25,062 INFO [Train] Epoch 0 Batch 20 — 8149.28 ms
+2026-05-02 16:56:25,063 INFO [Train] Epoch 0 Batch 21 DataLoad — 0.20 ms
+2026-05-02 16:56:36,537 INFO [Train] Epoch 0 Batch 21 — 11474.34 ms
+2026-05-02 16:56:36,537 INFO [Train] Epoch 0 Batch 22 DataLoad — 0.20 ms
+2026-05-02 16:56:47,063 INFO [Train] Epoch 0 Batch 22 — 10525.77 ms
+2026-05-02 16:56:47,064 INFO [Train] Epoch 0 Batch 23 DataLoad — 0.21 ms
+2026-05-02 16:56:57,592 INFO [Train] Epoch 0 Batch 23 — 10528.53 ms
+2026-05-02 16:56:57,593 INFO [Train] Epoch 0 Batch 24 DataLoad — 0.20 ms
+2026-05-02 16:57:10,497 INFO [Train] Epoch 0 Batch 24 — 12904.50 ms
+2026-05-02 16:57:10,498 INFO [Train] Epoch 0 Batch 25 DataLoad — 0.20 ms
+2026-05-02 16:57:20,072 INFO [Train] Epoch 0 Batch 25 — 9574.15 ms
+2026-05-02 16:57:20,072 INFO [Train] Epoch 0 Batch 26 DataLoad — 0.19 ms
+2026-05-02 16:57:37,722 INFO [Train] Epoch 0 Batch 26 — 17649.98 ms
+2026-05-02 16:57:37,723 INFO [Train] Epoch 0 Batch 27 DataLoad — 0.19 ms
+2026-05-02 16:57:48,724 INFO [Train] Epoch 0 Batch 27 — 11001.85 ms
+2026-05-02 16:57:48,725 INFO [Train] Epoch 0 Batch 28 DataLoad — 0.19 ms
+2026-05-02 16:58:01,154 INFO [Train] Epoch 0 Batch 28 — 12428.76 ms
+2026-05-02 16:58:01,154 INFO [Train] Epoch 0 Batch 29 DataLoad — 0.19 ms
+2026-05-02 16:58:12,157 INFO [Train] Epoch 0 Batch 29 — 11003.29 ms
+2026-05-02 16:58:12,158 INFO [Train] Epoch 0 Batch 30 DataLoad — 0.20 ms
+2026-05-02 16:58:26,015 INFO [Train] Epoch 0 Batch 30 — 13857.30 ms
+2026-05-02 16:58:26,016 INFO [Train] Epoch 0 Batch 31 DataLoad — 0.20 ms
+2026-05-02 16:58:35,117 INFO [Train] Epoch 0 Batch 31 — 9101.20 ms
+2026-05-02 16:58:35,117 INFO [Train] Epoch 0 Batch 32 DataLoad — 0.21 ms
+2026-05-02 16:58:46,120 INFO [Train] Epoch 0 Batch 32 — 11003.18 ms
+2026-05-02 16:58:46,121 INFO [Train] Epoch 0 Batch 33 DataLoad — 0.20 ms
+2026-05-02 16:58:59,025 INFO [Train] Epoch 0 Batch 33 — 12903.71 ms
+2026-05-02 16:58:59,025 INFO [Train] Epoch 0 Batch 34 DataLoad — 0.21 ms
+2026-05-02 16:59:10,981 INFO [Train] Epoch 0 Batch 34 — 11955.62 ms
+2026-05-02 16:59:10,981 INFO [Train] Epoch 0 Batch 35 DataLoad — 0.19 ms
+2026-05-02 16:59:22,459 INFO [Train] Epoch 0 Batch 35 — 11477.87 ms
+2026-05-02 16:59:22,459 INFO [Train] Epoch 0 Batch 36 DataLoad — 0.19 ms
+2026-05-02 16:59:33,463 INFO [Train] Epoch 0 Batch 36 — 11004.12 ms
+2026-05-02 16:59:33,464 INFO [Train] Epoch 0 Batch 37 DataLoad — 0.20 ms
+2026-05-02 16:59:43,038 INFO [Train] Epoch 0 Batch 37 — 9574.58 ms
+2026-05-02 16:59:43,038 INFO [Train] Epoch 0 Batch 38 DataLoad — 0.19 ms
+2026-05-02 16:59:54,040 INFO [Train] Epoch 0 Batch 38 — 11001.23 ms
+2026-05-02 16:59:54,040 INFO [Train] Epoch 0 Batch 39 DataLoad — 0.19 ms
+2026-05-02 17:00:07,421 INFO [Train] Epoch 0 Batch 39 — 13380.55 ms
+2026-05-02 17:00:07,421 INFO [Train] Epoch 0 Batch 40 DataLoad — 0.19 ms
+2026-05-02 17:00:16,521 INFO [Train] Epoch 0 Batch 40 — 9099.73 ms
+2026-05-02 17:00:16,521 INFO [Train] Epoch 0 Batch 41 DataLoad — 0.19 ms

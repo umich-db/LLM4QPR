@@ -1598,9 +1598,16 @@ def _add_conditions_to_where(sql, conditions):
     return sql
 
 
-def _preprocess_predicates(sql, db_name=None, price_m=False, price_s=False):
+def _preprocess_predicates(sql, db_name=None, price_m=False, price_s=False,
+                           price_n_parsing=False, price_n_filter=False,
+                           price_n_fanout=False, price_n_pairwise=False):
     """
     Preprocess SQL predicates before PRICE transformation.
+
+    Phase 0 — NNF / OR → IN rewrite (when price_n_parsing=True):
+      - Push NOT to leaf atoms via De Morgan / operator flip (NNF)
+      - Rewrite disjoint OR-of-EQ chains to IN (val, ...) for same column
+      - Normalize date literals to epoch-day integers
 
     Phase 1 — Subquery handling:
       - EXISTS/NOT EXISTS → inline inner tables and correlated join conditions
@@ -1619,6 +1626,11 @@ def _preprocess_predicates(sql, db_name=None, price_m=False, price_s=False):
     Args:
         price_m: When True, preserve IN and LIKE predicates for PRICE_M encoding.
         price_s: When True, preserve IN and LIKE predicates for PRICE_S encoding.
+        price_n_parsing: When True, apply NNF push-down, disjoint-OR→IN rewrite,
+            and date literal normalisation before Phase 1 subquery handling.
+        price_n_filter: Reserved for Phase-N filter encoding (unused here).
+        price_n_fanout: Reserved for Phase-N fanout side tracking (unused here).
+        price_n_pairwise: Reserved for Phase-N pairwise encoding (unused here).
     """
     if not HAS_SQLGLOT:
         return sql
@@ -1640,6 +1652,15 @@ def _preprocess_predicates(sql, db_name=None, price_m=False, price_s=False):
     _inline_in_subqueries(ast, new_from_tables, tautology)
     if db_name:
         _estimate_scalar_subqueries(ast, db_name, tautology, new_from_tables, new_conditions)
+
+    # --- Phase 1.5: PRICE_N NNF / OR→IN / date normalisation ---
+    # Runs AFTER subquery inlining so that inline-expanded predicates are also
+    # rewritten, but BEFORE Phase 2 so the BETWEEN / IN / LIKE simplification
+    # operates on the already-normalised tree.
+    if price_n_parsing:
+        _push_not_to_nnf(ast)
+        _rewrite_disjoint_or_to_in(ast)
+        _normalize_date_literals(ast)
 
     # --- Phase 2: Predicate simplification ---
 
@@ -2812,7 +2833,9 @@ def _regex_collect_predicates(sql, db_name):
     return f"SELECT COUNT(*) FROM {', '.join(from_parts)} WHERE {' AND '.join(where_parts)}"
 
 
-def transform_sql_for_price(sql, db_name, price_m=False, price_s=False):
+def transform_sql_for_price(sql, db_name, price_m=False, price_s=False,
+                            price_n_parsing=False, price_n_filter=False,
+                            price_n_fanout=False, price_n_pairwise=False):
     """
     Transform a standard SQL query into PRICE-compatible format.
 
@@ -2830,7 +2853,18 @@ def transform_sql_for_price(sql, db_name, price_m=False, price_s=False):
     Args:
         price_m: When True, preserve IN and LIKE predicates for PRICE_M encoding.
         price_s: When True, preserve IN and LIKE predicates for PRICE_S encoding.
+        price_n_parsing: When True, apply NNF push-down, disjoint-OR→IN rewrite,
+            and date literal normalisation inside _preprocess_predicates.
+        price_n_filter: Reserved for PRICE_N filter encoding (forwarded to
+            _preprocess_predicates for future use).
+        price_n_fanout: When True, call _flatten_join_with_side to collect
+            outer-join side info and stash it in _PRICE_N_SIDE_CACHE.
+        price_n_pairwise: Reserved for PRICE_N pairwise encoding (forwarded
+            to _preprocess_predicates for future use).
     """
+    sides_collected = []
+    if price_n_fanout:
+        sql, sides_collected = _flatten_join_with_side(sql)
     # Convert timestamps/dates to epoch before any other transformation
     sql = _convert_timestamps_to_epoch(sql)
 
@@ -2889,7 +2923,11 @@ def transform_sql_for_price(sql, db_name, price_m=False, price_s=False):
     # LIKE → drop, scalar subquery estimation, arithmetic evaluation.
     # Must be after CTE flattening because sqlglot round-trip can alter CTE format.
     # PRICE_M/PRICE_S: preserves IN and LIKE for SpaceSaving encoding.
-    sql = _preprocess_predicates(sql, db_name, price_m=price_m, price_s=price_s)
+    sql = _preprocess_predicates(sql, db_name, price_m=price_m, price_s=price_s,
+                                price_n_parsing=price_n_parsing,
+                                price_n_filter=price_n_filter,
+                                price_n_fanout=price_n_fanout,
+                                price_n_pairwise=price_n_pairwise)
 
     abbrev = _load_abbrev_mapping(db_name)
 
@@ -3003,7 +3041,17 @@ def transform_sql_for_price(sql, db_name, price_m=False, price_s=False):
     select_part = 'SELECT COUNT(*)'
 
     result = f"{select_part} FROM {new_from} WHERE {new_where}"
+
+    if price_n_fanout and sides_collected:
+        _PRICE_N_SIDE_CACHE[result] = sides_collected
+
     return result
+
+
+# Module-level scratchpad: SQL → list[(L, R, side)] from Phase 7.
+# Populated by transform_sql_for_price when price_n_fanout=True; consumed
+# by generate_price_features → Sql2FeatureN.create_sql_features.
+_PRICE_N_SIDE_CACHE = {}
 
 
 def extract_pg_est_card_from_plan(plan_json):

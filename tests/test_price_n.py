@@ -386,3 +386,16 @@ def test_flatten_join_with_side_preserves_left():
            "LEFT JOIN tpch_b b ON a.k = b.k")
     flat_sql, sides = _flatten_join_with_side(sql)
     assert any(s == "LEFT" for _, _, s in sides)
+
+
+def test_transform_sql_with_price_n_parsing_runs_without_error():
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import transform_sql_for_price
+    sql = ("SELECT count(*) FROM tpch_l "
+           "WHERE NOT (tpch_l.l_quantity > 50 AND tpch_l.l_shipmode IS NULL) "
+           "AND tpch_l.l_quantity = 30")
+    out = transform_sql_for_price(
+        sql, "tpch",
+        price_n_parsing=True, price_n_filter=True,
+        price_n_fanout=False, price_n_pairwise=False)
+    assert "NOT" not in out.upper().replace("NOT NULL", "").replace("IS NOT", "")

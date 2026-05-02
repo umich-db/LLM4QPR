@@ -297,3 +297,26 @@ def test_not_pushdown_is_null_flip():
     ast = sqlglot.parse_one("SELECT * FROM t WHERE NOT (t.a IS NULL)")
     _push_not_to_nnf(ast)
     assert "IS NOT NULL" in ast.sql().upper()
+
+
+def test_disjoint_or_to_in_collapses_chain():
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _rewrite_disjoint_or_to_in
+    import sqlglot
+    ast = sqlglot.parse_one(
+        "SELECT * FROM t WHERE (t.c = 1) OR (t.c = 2) OR (t.c = 3)")
+    _rewrite_disjoint_or_to_in(ast)
+    sql = ast.sql()
+    assert " IN " in sql.upper()
+    assert " OR " not in sql.upper()
+
+
+def test_disjoint_or_keeps_mixed_columns():
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _rewrite_disjoint_or_to_in
+    import sqlglot
+    ast = sqlglot.parse_one(
+        "SELECT * FROM t WHERE (t.c = 1) OR (t.d = 2)")
+    _rewrite_disjoint_or_to_in(ast)
+    # Mixed columns must NOT be collapsed.
+    assert " IN " not in ast.sql().upper()

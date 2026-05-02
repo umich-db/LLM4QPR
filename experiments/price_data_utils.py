@@ -486,6 +486,65 @@ def _push_not_to_nnf(ast):
             # encoder to handle.
 
 
+def _rewrite_disjoint_or_to_in(ast):
+    """Collapse `(c=v1) OR (c=v2) OR ... OR (c=vk)` into `c IN (v1, ..., vk)`.
+
+    Only collapses chains where every leaf is an EQ on the same fully-qualified
+    column reference. Walks bottom-up so nested chains collapse iteratively.
+    """
+    if not HAS_SQLGLOT:
+        return
+
+    def _eq_atom(node):
+        # Strip Paren wrappers (sqlglot wraps `(c=v)` as Paren(EQ(c,v)))
+        while isinstance(node, sqlglot_exp.Paren):
+            node = node.this
+        if not isinstance(node, sqlglot_exp.EQ):
+            return None
+        col = node.this
+        rhs = node.expression
+        if not isinstance(col, sqlglot_exp.Column):
+            return None
+        if isinstance(rhs, sqlglot_exp.Column):
+            return None  # join condition, not filter
+        return (str(col), rhs)
+
+    def _flatten_or(node):
+        """Flatten chained ORs into a list of leaf nodes."""
+        # Strip Paren wrappers first
+        while isinstance(node, sqlglot_exp.Paren):
+            node = node.this
+        if isinstance(node, sqlglot_exp.Or):
+            return _flatten_or(node.this) + _flatten_or(node.expression)
+        return [node]
+
+    changed = True
+    while changed:
+        changed = False
+        for or_node in list(ast.find_all(sqlglot_exp.Or)):
+            # Already replaced by a previous iteration?
+            if or_node.parent is None:
+                continue
+            leaves = _flatten_or(or_node)
+            atoms = [_eq_atom(leaf) for leaf in leaves]
+            if any(a is None for a in atoms):
+                continue
+            cols = {a[0] for a in atoms}
+            if len(cols) != 1:
+                continue
+            # All leaves share the same column → rewrite to IN.
+            col_node = leaves[0]
+            # Strip Paren on the column-bearing leaf
+            while isinstance(col_node, sqlglot_exp.Paren):
+                col_node = col_node.this
+            col_node = col_node.this.copy()
+            values = [a[1].copy() for a in atoms]
+            in_node = sqlglot_exp.In(this=col_node, expressions=values)
+            or_node.replace(sqlglot_exp.Paren(this=in_node))
+            changed = True
+            break  # restart iteration since the AST mutated
+
+
 def _is_constant(node):
     """Check if expression has no Column or Subquery refs (is a literal/constant)."""
     if isinstance(node, sqlglot_exp.Column):

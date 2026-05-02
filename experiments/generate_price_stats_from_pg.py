@@ -52,6 +52,7 @@ PAIRWISE_INTRA_WHITELIST = [
 PAIRWISE_XTAB_WHITELIST = [
     ("inventory", "inv_quantity_on_hand", "catalog_sales", "cs_quantity"),
 ]
+
 PRICE_STATS_BASE = "/root/PRICE/datas/statistics/finetune"
 QUERIES_DIR = "/root/LLM4QPR/queries"
 DEEPDB_BASE = "/root/LLM4QPR/deepdb_augmented"

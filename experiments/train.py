@@ -20,6 +20,32 @@ from time import time as timer
 import numpy as np
 import csv
 
+
+def _price_dims(argsP, bin_size):
+    """Return (filter_dim, fanout_dim, pairwise_intra_dim) per active flags."""
+    if getattr(argsP, "price_n_filter", False):
+        filter_dim = bin_size + 3 * 11 + 2          # 75
+    elif getattr(argsP, "price_m", False):
+        filter_dim = bin_size + 21                  # 61
+    else:
+        filter_dim = bin_size + 3                   # 43 (PRICE_S or base PRICE)
+
+    fanout_dim = bin_size + 2 if getattr(argsP, "price_n_fanout", False) else bin_size
+    pairwise_intra_dim = (8 * 8 * 2 + 1) if getattr(argsP, "price_n_pairwise", False) else 0
+    return filter_dim, fanout_dim, pairwise_intra_dim
+
+
+def _price_path_suffix(argsP):
+    parts = []
+    if getattr(argsP, 'price_s', False):           parts.append("priceS")
+    if getattr(argsP, 'price_m', False):           parts.append("priceM")
+    if getattr(argsP, 'price_n_filter', False):    parts.append("priceNflt")
+    if getattr(argsP, 'price_n_fanout', False):    parts.append("priceNfan")
+    if getattr(argsP, 'price_n_pairwise', False):  parts.append("priceNpw")
+    if getattr(argsP, 'price_n_parsing', False):   parts.append("priceNprs")
+    return ("_" + "_".join(parts)) if parts else ""
+
+
 argsP = utilsTrain.parse_args()
 
 # Global subdir component: inserted into every finetuned_models/{db}/<_GSUB>/... path
@@ -71,8 +97,7 @@ if (argsP.algo == "llm_price" and getattr(argsP, 'retrain_mlp', False) and
     _pws = argsP.price_weights_source
     _ft_bs = getattr(argsP, 'ft_batch_size', 16)
     _task_str = "card" if argsP.card else "time"
-    _pm = "_priceM" if getattr(argsP, 'price_m', False) else ""
-    _ps = "_priceS" if getattr(argsP, 'price_s', False) else ""
+    _price_suffix = _price_path_suffix(argsP)
     _ri = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
     _rp = "_refinedPool" if getattr(argsP, 'refined_pool', False) else ""
     _tc = "_tripleConcat" if getattr(argsP, 'triple_concat', False) else ""
@@ -89,7 +114,7 @@ if (argsP.algo == "llm_price" and getattr(argsP, 'retrain_mlp', False) and
         _attn = "_revCrossAttn"
     else:
         _attn = "_crossAttn"
-    _weight_prefix = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{_task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{_ft_bs}{_pm}{_ps}_llm_price{_attn}{_rp}{_tc}{_ip}{_ri}{_nl}{_fr}{_nc}{_es}"
+    _weight_prefix = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{_task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{_ft_bs}{_price_suffix}_llm_price{_attn}{_rp}{_tc}{_ip}{_ri}{_nl}{_fr}{_nc}{_es}"
     _test_tag = f"_test-{argsP.workload_test}" if getattr(argsP, 'workload_test', '') else ""
     _early_cache_path = f"{_weight_prefix}{_test_tag}_retrainMLP_embeddings.pt"
     if os.path.exists(_early_cache_path):
@@ -120,8 +145,7 @@ if "llm" in argsP.algo and not _retrain_mlp_cache_hit:
       task_str = "card" if argsP.card else "time"
       pws = getattr(argsP, 'price_weights_source', 'joint')
       ft_bs = getattr(argsP, 'ft_batch_size', 16)
-      price_m_suffix = "_priceM" if getattr(argsP, 'price_m', False) else ""
-      price_s_suffix = "_priceS" if getattr(argsP, 'price_s', False) else ""
+      _price_suffix = _price_path_suffix(argsP)
       if pws in ("joint", "joint_frozen_init", "gated_joint", "cross_attn_joint", "bi_cross_attn_joint", "reverse_cross_attn_joint"):
         # Joint finetuning: LLM weights saved with _llm_price_llm suffix
         frozen_init_suffix = "_frozenInit" if pws == "joint_frozen_init" else ""
@@ -138,7 +162,7 @@ if "llm" in argsP.algo and not _retrain_mlp_cache_hit:
         n_cross_suffix = f"_cx{argsP.n_cross_layers}" if pws in ("cross_attn_joint", "bi_cross_attn_joint", "reverse_cross_attn_joint") and getattr(argsP, 'n_cross_layers', 2) != 2 else ""
         ft_epochs = getattr(argsP, 'ft_num_epoch', 0)
         epoch_suffix = f"_e{ft_epochs}" if ft_epochs > 0 else ""
-        llm_path = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_m_suffix}{price_s_suffix}_llm_price{frozen_init_suffix}{gated_suffix}{cross_attn_suffix}{bi_cross_attn_suffix}{rev_cross_attn_suffix}{refined_pool_suffix}{triple_concat_suffix}{inflate_price_suffix}{rand_init_suffix}{n_layers_suffix}{ffn_ratio_suffix}{n_cross_suffix}{epoch_suffix}_llm.pt"
+        llm_path = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{_price_suffix}_llm_price{frozen_init_suffix}{gated_suffix}{cross_attn_suffix}{bi_cross_attn_suffix}{rev_cross_attn_suffix}{refined_pool_suffix}{triple_concat_suffix}{inflate_price_suffix}{rand_init_suffix}{n_layers_suffix}{ffn_ratio_suffix}{n_cross_suffix}{epoch_suffix}_llm.pt"
       else:
         # Standalone LLM finetune: weights saved with _llm suffix
         llm_path = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}_llm.pt"
@@ -489,7 +513,7 @@ elif argsP.algo == "llm_price" and not _retrain_mlp_cache_hit:
     max_nfc = argsP.price_max_n_filter_col
     bin_size = getattr(argsP, 'price_bin_size', 40)
     table_dim = 4
-    filter_dim = (bin_size + 21) if getattr(argsP, 'price_m', False) else (bin_size + 3)
+    filter_dim, fanout_dim, pairwise_intra_dim = _price_dims(argsP, bin_size)
     n_cross = getattr(argsP, 'n_cross_layers', 2)
 
     _price_n_embd = getattr(argsP, 'price_n_embd', 256)
@@ -497,7 +521,10 @@ elif argsP.algo == "llm_price" and not _retrain_mlp_cache_hit:
     _price_ffn_ratio = getattr(argsP, 'price_ffn_ratio', 4.0)
     price_model = RegressionModel(
         n_join_col=max_njc, n_fanout=max_nfo, n_table=max_ntb, n_filter_col=max_nfc,
+        n_pairwise_intra=getattr(argsP, "price_max_n_pairwise_intra", 8)
+                          if getattr(argsP, "price_n_pairwise", False) else 0,
         hist_dim=bin_size, table_dim=table_dim, filter_dim=filter_dim,
+        fanout_dim=fanout_dim, pairwise_intra_dim=pairwise_intra_dim,
         query_hidden_dim=512, final_hidden_dim=1024, output_dim=1,
         n_embd=_price_n_embd, n_layers=getattr(argsP, 'price_n_layers', 6), n_heads=_price_n_heads,
         dropout_rate=0.1, ffn_ratio=_price_ffn_ratio
@@ -535,8 +562,7 @@ elif argsP.algo == "llm_price" and not _retrain_mlp_cache_hit:
     # Load finetuned PRICE+cross-attn weights
     ft_bs = getattr(argsP, 'ft_batch_size', 16)
     task_str = "card" if argsP.card else "time"
-    price_m_suffix = "_priceM" if getattr(argsP, 'price_m', False) else ""
-    price_s_suffix = "_priceS" if getattr(argsP, 'price_s', False) else ""
+    _price_suffix = _price_path_suffix(argsP)
     rand_init_suffix = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
     refined_pool_suffix = "_refinedPool" if getattr(argsP, 'refined_pool', False) else ""
     triple_concat_suffix = "_tripleConcat" if getattr(argsP, 'triple_concat', False) else ""
@@ -546,7 +572,7 @@ elif argsP.algo == "llm_price" and not _retrain_mlp_cache_hit:
     n_cross_suffix = f"_cx{n_cross}" if n_cross != 2 else ""
     ft_epochs = getattr(argsP, 'ft_num_epoch', 0)
     epoch_suffix = f"_e{ft_epochs}" if ft_epochs > 0 else ""
-    weight_prefix = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_m_suffix}{price_s_suffix}_llm_price{attn_tag}{refined_pool_suffix}{triple_concat_suffix}{inflate_price_suffix}{rand_init_suffix}{n_layers_suffix}{ffn_ratio_suffix}{n_cross_suffix}{epoch_suffix}"
+    weight_prefix = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{_price_suffix}_llm_price{attn_tag}{refined_pool_suffix}{triple_concat_suffix}{inflate_price_suffix}{rand_init_suffix}{n_layers_suffix}{ffn_ratio_suffix}{n_cross_suffix}{epoch_suffix}"
 
     price_sd = torch.load(f"{weight_prefix}_price.pt", map_location=device)
     model_comb.price.load_state_dict(price_sd)
@@ -605,14 +631,17 @@ elif argsP.algo == "llm_price_finetune":
   max_nfc = argsP.price_max_n_filter_col
   bin_size = getattr(argsP, 'price_bin_size', 40)
   table_dim = 4
-  filter_dim = (bin_size + 21) if getattr(argsP, 'price_m', False) else (bin_size + 3)
+  filter_dim, fanout_dim, pairwise_intra_dim = _price_dims(argsP, bin_size)
 
   _price_n_embd = getattr(argsP, 'price_n_embd', 256)
   _price_n_heads = getattr(argsP, 'price_n_heads', 8)
   _price_ffn_ratio = getattr(argsP, 'price_ffn_ratio', 4.0)
   price_model = RegressionModel(
       n_join_col=max_njc, n_fanout=max_nfo, n_table=max_ntb, n_filter_col=max_nfc,
+      n_pairwise_intra=getattr(argsP, "price_max_n_pairwise_intra", 8)
+                        if getattr(argsP, "price_n_pairwise", False) else 0,
       hist_dim=bin_size, table_dim=table_dim, filter_dim=filter_dim,
+      fanout_dim=fanout_dim, pairwise_intra_dim=pairwise_intra_dim,
       query_hidden_dim=512, final_hidden_dim=1024, output_dim=1,
       n_embd=_price_n_embd, n_layers=getattr(argsP, 'price_n_layers', 6), n_heads=_price_n_heads,
       dropout_rate=0.1, ffn_ratio=_price_ffn_ratio
@@ -641,9 +670,8 @@ elif argsP.algo == "llm_price_finetune":
   elif getattr(argsP, 'price_init_frozen_joint', False):
     # Load frozen-joint PRICE weights instead of pretrained
     task_str = "card" if argsP.card else "time"
-    price_m_suffix = "_priceM" if getattr(argsP, 'price_m', False) else ""
-    price_s_suffix = "_priceS" if getattr(argsP, 'price_s', False) else ""
-    frozen_price_path = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{task_str}_inference_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{price_m_suffix}{price_s_suffix}_llm_price_price.pt"
+    _price_suffix = _price_path_suffix(argsP)
+    frozen_price_path = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{task_str}_inference_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{_price_suffix}_llm_price_price.pt"
     frozen_sd = torch.load(frozen_price_path, map_location=device)
     _load_price_sd(price_model, frozen_sd, f"Loaded frozen-joint PRICE weights from {frozen_price_path}")
   else:
@@ -786,14 +814,17 @@ elif argsP.algo == "price_finetune":
   max_nfc = argsP.price_max_n_filter_col
   bin_size = getattr(argsP, 'price_bin_size', 40)
   table_dim = 4
-  filter_dim = (bin_size + 21) if getattr(argsP, 'price_m', False) else (bin_size + 3)
+  filter_dim, fanout_dim, pairwise_intra_dim = _price_dims(argsP, bin_size)
 
   _price_n_embd = getattr(argsP, 'price_n_embd', 256)
   _price_n_heads = getattr(argsP, 'price_n_heads', 8)
   _price_ffn_ratio = getattr(argsP, 'price_ffn_ratio', 4.0)
   price_model = RegressionModel(
       n_join_col=max_njc, n_fanout=max_nfo, n_table=max_ntb, n_filter_col=max_nfc,
+      n_pairwise_intra=getattr(argsP, "price_max_n_pairwise_intra", 8)
+                        if getattr(argsP, "price_n_pairwise", False) else 0,
       hist_dim=bin_size, table_dim=table_dim, filter_dim=filter_dim,
+      fanout_dim=fanout_dim, pairwise_intra_dim=pairwise_intra_dim,
       query_hidden_dim=512, final_hidden_dim=1024, output_dim=1,
       n_embd=_price_n_embd, n_layers=getattr(argsP, 'price_n_layers', 6), n_heads=_price_n_heads,
       dropout_rate=0.1, ffn_ratio=_price_ffn_ratio
@@ -955,18 +986,16 @@ if argsP.algo == "llm_price_finetune":
     _rp = "_refinedPool" if getattr(argsP, 'refined_pool', False) else ""
     _tc = "_tripleConcat" if getattr(argsP, 'triple_concat', False) else ""
     _ip = "_inflatePRICE" if getattr(argsP, 'inflate_price', False) else ""
-    _pm = "_priceM" if getattr(argsP, 'price_m', False) else ""
-    _ps = "_priceS" if getattr(argsP, 'price_s', False) else ""
+    _price_suffix = _price_path_suffix(argsP)
     _ri = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
     _nl = f"_pL{argsP.price_n_layers}" if getattr(argsP, 'price_n_layers', 6) != 6 else ""
     _fr = f"_ffn{argsP.price_ffn_ratio:g}" if getattr(argsP, 'price_ffn_ratio', 4.0) != 4.0 else ""
     _nc = f"_cx{argsP.n_cross_layers}" if (getattr(argsP, 'use_cross_attention', False) or getattr(argsP, 'use_bi_cross_attention', False) or getattr(argsP, 'use_reverse_cross_attention', False)) and getattr(argsP, 'n_cross_layers', 2) != 2 else ""
-    _ckpt_prefix = f"{argsP.canonical_wl_prefix}_{_task}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{_pm}{_ps}_llm_price{_fi}{_ga}{_ca}{_bca}{_rca}{_rp}{_tc}{_ip}{_ri}{_nl}{_fr}{_nc}"
+    _ckpt_prefix = f"{argsP.canonical_wl_prefix}_{_task}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{_price_suffix}_llm_price{_fi}{_ga}{_ca}{_bca}{_rca}{_rp}{_tc}{_ip}{_ri}{_nl}{_fr}{_nc}"
 elif argsP.algo == "price_finetune":
-    _pm = "_priceM" if getattr(argsP, 'price_m', False) else ""
-    _ps = "_priceS" if getattr(argsP, 'price_s', False) else ""
+    _price_suffix = _price_path_suffix(argsP)
     _ri = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
-    _ckpt_prefix = f"{argsP.canonical_wl_prefix}_card_b{argsP.batch_size}{_pm}{_ps}{_ri}_price_separate"
+    _ckpt_prefix = f"{argsP.canonical_wl_prefix}_card_b{argsP.batch_size}{_price_suffix}{_ri}_price_separate"
 elif argsP.algo == "llm_finetune":
     _task = "card" if argsP.card else "time"
     _ckpt_prefix = f"{argsP.canonical_wl_prefix}_{_task}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}"
@@ -1122,14 +1151,13 @@ elif argsP.algo == "llm_price_finetune" and not getattr(argsP, '_cross_attn_infe
     refined_pool_suffix = "_refinedPool" if getattr(argsP, 'refined_pool', False) else ""
     triple_concat_suffix = "_tripleConcat" if getattr(argsP, 'triple_concat', False) else ""
     inflate_price_suffix = "_inflatePRICE" if getattr(argsP, 'inflate_price', False) else ""
-    price_m_suffix = "_priceM" if getattr(argsP, 'price_m', False) else ""
-    price_s_suffix = "_priceS" if getattr(argsP, 'price_s', False) else ""
+    _price_suffix = _price_path_suffix(argsP)
     rand_init_suffix = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
     n_layers_suffix = f"_pL{argsP.price_n_layers}" if getattr(argsP, 'price_n_layers', 6) != 6 else ""
     ffn_ratio_suffix = f"_ffn{argsP.price_ffn_ratio:g}" if getattr(argsP, 'price_ffn_ratio', 4.0) != 4.0 else ""
     n_cross_suffix = f"_cx{argsP.n_cross_layers}" if (getattr(argsP, 'use_cross_attention', False) or getattr(argsP, 'use_bi_cross_attention', False) or getattr(argsP, 'use_reverse_cross_attention', False)) and getattr(argsP, 'n_cross_layers', 2) != 2 else ""
     epoch_suffix = f"_e{argsP.num_epoch}"
-    prefix = f"{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{price_m_suffix}{price_s_suffix}_llm_price{frozen_init_suffix}{gated_suffix}{cross_attn_suffix}{bi_cross_attn_suffix}{rev_cross_attn_suffix}{refined_pool_suffix}{triple_concat_suffix}{inflate_price_suffix}{rand_init_suffix}{n_layers_suffix}{ffn_ratio_suffix}{n_cross_suffix}{epoch_suffix}"
+    prefix = f"{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{_price_suffix}_llm_price{frozen_init_suffix}{gated_suffix}{cross_attn_suffix}{bi_cross_attn_suffix}{rev_cross_attn_suffix}{refined_pool_suffix}{triple_concat_suffix}{inflate_price_suffix}{rand_init_suffix}{n_layers_suffix}{ffn_ratio_suffix}{n_cross_suffix}{epoch_suffix}"
 
     if not getattr(argsP, 'freeze_llm', False):
         llm_sd = trained_model.llm.model.state_dict()
@@ -1165,13 +1193,12 @@ elif argsP.algo == "price_finetune":
     save_path = f"finetuned_models/{argsP.db}{_GSUB}/"
     os.makedirs(save_path, exist_ok=True)
 
-    price_m_suffix = "_priceM" if getattr(argsP, 'price_m', False) else ""
-    price_s_suffix = "_priceS" if getattr(argsP, 'price_s', False) else ""
+    _price_suffix = _price_path_suffix(argsP)
     rand_init_suffix = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
     n_layers_suffix = f"_pL{argsP.price_n_layers}" if getattr(argsP, 'price_n_layers', 6) != 6 else ""
     ffn_ratio_suffix = f"_ffn{argsP.price_ffn_ratio:g}" if getattr(argsP, 'price_ffn_ratio', 4.0) != 4.0 else ""
     epoch_suffix = f"_e{argsP.num_epoch}"
-    price_out = os.path.join(save_path, f"{argsP.canonical_wl_prefix}_card_b{argsP.batch_size}{price_m_suffix}{price_s_suffix}{rand_init_suffix}{n_layers_suffix}{ffn_ratio_suffix}{epoch_suffix}_price_separate.pt")
+    price_out = os.path.join(save_path, f"{argsP.canonical_wl_prefix}_card_b{argsP.batch_size}{_price_suffix}{rand_init_suffix}{n_layers_suffix}{ffn_ratio_suffix}{epoch_suffix}_price_separate.pt")
     torch.save(trained_model.model.state_dict(), price_out)
     print(f"Saved separately finetuned PRICE weights to {price_out}")
 else:

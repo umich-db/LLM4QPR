@@ -435,3 +435,15 @@ def test_pad_and_cache_features_handles_pairwise_axis():
         bin_size=40, table_dim=4, filter_dim=75,
         pairwise_intra_dim=129, price_n_pairwise=True)
     assert len(out) >= 6  # padded_features, masks, max counts (one extra for pairwise)
+
+
+def test_scale_embedding_accepts_parametric_fanout_dim():
+    sys.path.insert(0, "/root/PRICE")
+    import torch
+    from model.module import ScaleEmbedding
+    se = ScaleEmbedding(n_join_col=2, n_fanout=2, hist_dim=40,
+                        n_embd=64, fanout_token_dim=42)
+    # 2 join cols × 40 + 2 fanout tokens × 42 = 80 + 84 = 164
+    x = torch.zeros(1, 164)
+    out = se(x)
+    assert out.shape == (1, 1 + 2 + 2, 64)  # virtual + 2 join + 2 fanout

@@ -147,37 +147,47 @@ class Encoder(nn.Module):
     
 
 class ScaleEmbedding(nn.Module):
-    def __init__(self, n_join_col, n_fanout, hist_dim, n_embd):
+    def __init__(self, n_join_col, n_fanout, hist_dim, n_embd,
+                 fanout_token_dim=None):
+        """
+        fanout_token_dim: raw width per fanout token in the input tensor.
+            Defaults to hist_dim (base PRICE / PRICE_S / PRICE_M).
+            For PRICE_N pass `hist_dim + 2` (raw 40-dim histogram + orphan
+            + outer_preserve_flag).
+        """
         super(ScaleEmbedding, self).__init__()
         self.n_join_col, self.n_fanout = n_join_col, n_fanout
         self.hist_dim = hist_dim
+        self.fanout_token_dim = fanout_token_dim or hist_dim
         self.n_embd = n_embd
 
+        # Both Linear layers consume hist_sum + raw_token (hence +1).
         self.join_hist_embeddings = nn.Linear(hist_dim + 1, n_embd)
-        self.fanout_embeddings = nn.Linear(hist_dim + 1, n_embd)
+        self.fanout_embeddings = nn.Linear(self.fanout_token_dim + 1, n_embd)
         self.virtual_token_embedding = nn.Embedding(2, n_embd)
 
     def forward(self, x):
-        # x: [batch_size, features_dim]
         features_embedding = []
-        # virtual token embedding in the beginning
-        virtual_token_embedding = self.virtual_token_embedding(torch.ones(x.size(0), dtype=torch.long, device=x.device))
+        virtual_token_embedding = self.virtual_token_embedding(
+            torch.ones(x.size(0), dtype=torch.long, device=x.device))
         features_embedding.append(virtual_token_embedding)
 
         for i in range(self.n_join_col):
             begin, end = i * self.hist_dim, (i + 1) * self.hist_dim
-            # calculate the sum of histograms and cat to the embedding
             hist_sum = torch.sum(x[:, begin:end], dim=1)
-            features_embedding.append(self.join_hist_embeddings(torch.cat([hist_sum.view(-1, 1), x[:, begin:end]], dim=1)))
+            features_embedding.append(self.join_hist_embeddings(
+                torch.cat([hist_sum.view(-1, 1), x[:, begin:end]], dim=1)))
 
         bias = self.n_join_col * self.hist_dim
         for i in range(self.n_fanout):
-            begin, end = bias + i * self.hist_dim, bias + (i + 1) * self.hist_dim
-            # calculate the sum of fanout and cat to the embedding
-            fanout_sum = torch.sum(x[:, begin:end], dim=1)
-            features_embedding.append(self.fanout_embeddings(torch.cat([fanout_sum.view(-1, 1), x[:, begin:end]], dim=1)))
-                
-        # return [batch_size, n_join_col + n_fanout + 1, n_embd]
+            begin = bias + i * self.fanout_token_dim
+            end = begin + self.fanout_token_dim
+            # hist_sum is taken from the first hist_dim slice of the token only.
+            fanout_hist_part = x[:, begin:begin + self.hist_dim]
+            fanout_sum = torch.sum(fanout_hist_part, dim=1)
+            features_embedding.append(self.fanout_embeddings(
+                torch.cat([fanout_sum.view(-1, 1), x[:, begin:end]], dim=1)))
+
         return torch.stack(features_embedding, dim=1)
     
 

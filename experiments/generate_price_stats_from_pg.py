@@ -36,6 +36,22 @@ sys.path.insert(0, os.path.dirname(__file__))
 # Configuration
 # ---------------------------------------------------------------------------
 BIN_SIZE = 40
+
+# Same-table column pairs that get a 2D 8x8 joint histogram for col-op-col
+# predicates (rule j). Source: tpch_tpcds_predicate_audit.md.
+PAIRWISE_INTRA_WHITELIST = [
+    ("lineitem", "l_shipdate", "l_commitdate"),
+    ("lineitem", "l_commitdate", "l_receiptdate"),
+    ("lineitem", "l_shipdate", "l_receiptdate"),
+    ("date_dim", "d_date", "d_date"),
+    ("customer_demographics", "cd_marital_status", "cd_marital_status"),
+    ("customer_address", "ca_city", "ca_city"),
+]
+
+# Cross-table 2D histogram (rule h). Single hardcoded entry from TPC-DS q72.
+PAIRWISE_XTAB_WHITELIST = [
+    ("inventory", "inv_quantity_on_hand", "catalog_sales", "cs_quantity"),
+]
 PRICE_STATS_BASE = "/root/PRICE/datas/statistics/finetune"
 QUERIES_DIR = "/root/LLM4QPR/queries"
 DEEPDB_BASE = "/root/LLM4QPR/deepdb_augmented"
@@ -841,6 +857,106 @@ def generate_fanouts(conn, abbrev, joins, col_types, histogram_data,
 
 
 # ---------------------------------------------------------------------------
+# Generate pairwise_intra40.pkl (rule j) — 2D joint histograms
+# ---------------------------------------------------------------------------
+def _compress_40_to_8(h40):
+    """Aggregate a 40x40 histogram down to 8x8 by summing 5x5 blocks."""
+    h40 = np.asarray(h40, dtype=np.float64)
+    h8 = np.zeros((8, 8), dtype=np.float64)
+    for i in range(8):
+        for j in range(8):
+            h8[i, j] = h40[i * 5:(i + 1) * 5, j * 5:(j + 1) * 5].sum()
+    return h8
+
+
+def _order_8x8_into_regions(h8):
+    """Flatten an 8x8 grid into the (region_1, region_2, region_3) order
+    used by PRICE_N's pairwise filter token.
+
+      region_1: strict upper triangle (i<j) → 28 cells, x<y
+      region_2: main diagonal (i=j)         →  8 cells, x≈y
+      region_3: strict lower triangle (i>j) → 28 cells, x>y
+
+    Returns a 64-vector [region_1..., region_2..., region_3...].
+    """
+    r1, r2, r3 = [], [], []
+    for i in range(8):
+        for j in range(8):
+            if i < j:
+                r1.append(h8[i, j])
+            elif i == j:
+                r2.append(h8[i, j])
+            else:
+                r3.append(h8[i, j])
+    out = np.array(r1 + r2 + r3, dtype=np.float32)
+    assert out.shape == (64,)
+    return out
+
+
+def generate_pairwise_intra(conn, pairs):
+    """Compute the 8x8 ordered joint histogram + (s_lt, s_eq, s_gt) per pair.
+
+    Args:
+        conn: psycopg2 connection.
+        pairs: iterable of (table, col_x, col_y).
+
+    Returns dict[(table, col_x, col_y)] -> {
+        'H8x8_ordered': np.ndarray (64,) float32,
+        's_lt': float, 's_eq': float, 's_gt': float,
+    }.
+    """
+    # Fetch column dtypes once so we can cast dates to epoch via _col_expr.
+    table_col_dtypes = build_table_columns(conn)
+    out = {}
+    cur = conn.cursor()
+    for table, col_x, col_y in pairs:
+        try:
+            dtype_x = table_col_dtypes.get(table, {}).get(col_x, "")
+            dtype_y = table_col_dtypes.get(table, {}).get(col_y, "")
+            expr_x = _col_expr(table, col_x, dtype_x)
+            expr_y = _col_expr(table, col_y, dtype_y)
+            cur.execute(
+                f'SELECT MIN({expr_x}), MAX({expr_x}), '
+                f'       MIN({expr_y}), MAX({expr_y}) FROM "{table}"'
+            )
+            xmin, xmax, ymin, ymax = cur.fetchone()
+            if xmin is None or ymin is None or xmin == xmax or ymin == ymax:
+                continue
+            xmin, xmax = float(xmin), float(xmax)
+            ymin, ymax = float(ymin), float(ymax)
+            cur.execute(f"""
+                SELECT
+                  width_bucket({expr_x}, %s, %s, 40) AS bx,
+                  width_bucket({expr_y}, %s, %s, 40) AS by,
+                  COUNT(*) AS cnt
+                FROM "{table}"
+                WHERE "{col_x}" IS NOT NULL AND "{col_y}" IS NOT NULL
+                GROUP BY 1, 2
+            """, (xmin, xmax, ymin, ymax))
+            h40 = np.zeros((40, 40), dtype=np.float64)
+            for bx, by, cnt in cur.fetchall():
+                if bx is None or by is None:
+                    continue
+                bx_i = max(1, min(40, int(bx))) - 1
+                by_i = max(1, min(40, int(by))) - 1
+                h40[bx_i, by_i] += cnt
+            h8 = _compress_40_to_8(h40)
+            ordered = _order_8x8_into_regions(h8)
+            total = ordered.sum() or 1.0
+            s_lt = float(ordered[:28].sum() / total)
+            s_eq = float(ordered[28:36].sum() / total)
+            s_gt = float(ordered[36:64].sum() / total)
+            out[(table, col_x, col_y)] = {
+                "H8x8_ordered": ordered,
+                "s_lt": s_lt, "s_eq": s_eq, "s_gt": s_gt,
+            }
+        except Exception as e:
+            print(f"    WARN pairwise_intra({table}.{col_x}, {col_y}): {e}")
+    cur.close()
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Generate orphan_fraction (rule g) — nested inside fanout40.pkl
 # ---------------------------------------------------------------------------
 def generate_orphan_fractions(conn, abbrev, joins):
@@ -1287,6 +1403,15 @@ def generate_stats_for_db(db_name, price_n_filter=False, price_n_fanout=False,
         # Embed orphan info inside fanout_data so existing loaders see it on read.
         fanout_data["__orphan__"] = orphan_fraction_data
 
+    pairwise_intra_data = {}
+    if price_n_pairwise:
+        print()
+        print(f"    Computing pairwise_intra (rule j) for "
+              f"{len(PAIRWISE_INTRA_WHITELIST)} pairs ...")
+        # Filter whitelist to pairs whose table exists in this db.
+        relevant = [p for p in PAIRWISE_INTRA_WHITELIST if p[0] in abbrev]
+        pairwise_intra_data = generate_pairwise_intra(conn, relevant)
+
     col_type_dict = build_col_type_dict(abbrev, col_types)
 
     # Save all files
@@ -1303,6 +1428,8 @@ def generate_stats_for_db(db_name, price_n_filter=False, price_n_fanout=False,
     }
     if price_n_filter:
         files["null_fraction.pkl"] = null_fraction_data
+    if price_n_pairwise:
+        files["pairwise_intra40.pkl"] = pairwise_intra_data
     for fname, data in files.items():
         fpath = os.path.join(output_dir, fname)
         with open(fpath, "wb") as f:

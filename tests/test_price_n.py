@@ -75,3 +75,25 @@ def test_orphan_fraction_aggregate_produces_dict():
     assert key in out, f"missing key {key} in {list(out.keys())[:3]}"
     o_lr, o_rl = out[key]
     assert 0.0 <= o_lr <= 1.0 and 0.0 <= o_rl <= 1.0
+
+
+def test_pairwise_intra_aggregate_produces_dict():
+    """generate_pairwise_intra returns dict[(table, col_x, col_y)] -> {
+        'H8x8_ordered': np.ndarray (64,),
+        's_lt': float, 's_eq': float, 's_gt': float
+    } and the three sels sum to ~1."""
+    import numpy as np
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from generate_price_stats_from_pg import (
+        get_connection, generate_pairwise_intra, DB_CONFIG,
+    )
+    pg_db, _, _ = DB_CONFIG["tpch"]
+    conn = get_connection(pg_db)
+    pairs = [("lineitem", "l_shipdate", "l_commitdate")]
+    out = generate_pairwise_intra(conn, pairs)
+    conn.close()
+    assert ("lineitem", "l_shipdate", "l_commitdate") in out
+    rec = out[("lineitem", "l_shipdate", "l_commitdate")]
+    assert isinstance(rec["H8x8_ordered"], np.ndarray)
+    assert rec["H8x8_ordered"].shape == (64,)
+    assert abs(rec["s_lt"] + rec["s_eq"] + rec["s_gt"] - 1.0) < 1e-3

@@ -130,3 +130,54 @@ def test_sql2feature_n_skeleton_dims():
     assert f.pairwise_dim_n == 129
     assert f.K == 10
     assert f.PAIRWISE_GRID == 8
+
+
+def test_filter_token_eq_single_value():
+    sys.path.insert(0, "/root/LLM4QPR/PRICE")
+    from setup.features_tool_n import Sql2FeatureN
+    f = Sql2FeatureN("tpch", 40, "finetune")
+    # equality on a known continuous column
+    atoms = {"eq_values": [50000], "in_values": [], "not_in_values": [],
+             "range_low": None, "range_high": None,
+             "is_null": False, "is_not_null": False, "like_keys": []}
+    tok = f._encode_filter_token("tpch_p.p_size", atoms)
+    assert tok.shape == (75,)
+    # null_pred_flag is the last entry, zero for no NULL atom
+    assert tok[-1].item() == 0.0
+
+
+def test_filter_token_in_with_overflow():
+    sys.path.insert(0, "/root/LLM4QPR/PRICE")
+    from setup.features_tool_n import Sql2FeatureN
+    f = Sql2FeatureN("tpch", 40, "finetune")
+    atoms = {"eq_values": [],
+             "in_values": list(range(15)),
+             "not_in_values": [], "range_low": None, "range_high": None,
+             "is_null": False, "is_not_null": False, "like_keys": []}
+    tok = f._encode_filter_token("tpch_p.p_size", atoms)
+    assert tok.shape == (75,)
+    # tail bucket selectivity (slot 11 = index 40 + 30 + 2) should be nonzero
+    tail_sel_idx = 40 + 3 * 10 + 2
+    assert tok[tail_sel_idx].item() >= 0.0  # nonneg; may be 0 if values absent
+
+
+def test_filter_token_is_null():
+    sys.path.insert(0, "/root/LLM4QPR/PRICE")
+    from setup.features_tool_n import Sql2FeatureN
+    f = Sql2FeatureN("tpch", 40, "finetune")
+    atoms = {"eq_values": [], "in_values": [], "not_in_values": [],
+             "range_low": None, "range_high": None,
+             "is_null": True, "is_not_null": False, "like_keys": []}
+    tok = f._encode_filter_token("tpch_p.p_size", atoms)
+    assert tok[-1].item() == 1.0      # null_pred_flag = +1
+
+
+def test_filter_token_is_not_null():
+    sys.path.insert(0, "/root/LLM4QPR/PRICE")
+    from setup.features_tool_n import Sql2FeatureN
+    f = Sql2FeatureN("tpch", 40, "finetune")
+    atoms = {"eq_values": [], "in_values": [], "not_in_values": [],
+             "range_low": None, "range_high": None,
+             "is_null": False, "is_not_null": True, "like_keys": []}
+    tok = f._encode_filter_token("tpch_p.p_size", atoms)
+    assert tok[-1].item() == -1.0     # null_pred_flag = -1

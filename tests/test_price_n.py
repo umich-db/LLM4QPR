@@ -217,3 +217,27 @@ def test_pairwise_intra_token_xtab_falls_through_to_xtab_pkl():
         "inventory", "inv_quantity_on_hand", "<",
         right_table="catalog_sales", right_col="cs_quantity")
     assert tok.shape == (129,)
+
+
+def test_fanout_ext_inner_join_zero_outer_bits():
+    sys.path.insert(0, "/root/LLM4QPR/PRICE")
+    from setup.features_tool_n import Sql2FeatureN
+    f = Sql2FeatureN("tpch", 40, "finetune")
+    join = "tpch_l.l_orderkey = tpch_o.o_orderkey"
+    f1, f2 = f._encode_fanout_tokens_extended(join, side="INNER")
+    assert f1.shape == (42,)
+    assert f2.shape == (42,)
+    # last 2 dims = (orphan_fraction, outer_preserve_flag); preserve=0 for INNER.
+    assert f1[-1].item() == 0.0
+    assert f2[-1].item() == 0.0
+
+
+def test_fanout_ext_left_join_preserve_flag():
+    sys.path.insert(0, "/root/LLM4QPR/PRICE")
+    from setup.features_tool_n import Sql2FeatureN
+    f = Sql2FeatureN("tpch", 40, "finetune")
+    join = "tpch_l.l_orderkey = tpch_o.o_orderkey"
+    f_lr, f_rl = f._encode_fanout_tokens_extended(join, side="LEFT")
+    # L→R has preserve_flag = 1, R→L has 0.
+    assert f_lr[-1].item() == 1.0
+    assert f_rl[-1].item() == 0.0

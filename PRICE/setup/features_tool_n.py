@@ -215,6 +215,50 @@ class Sql2FeatureN(Sql2Feature):
             f"filter token shape {feature.shape[0]} != {self.filter_dim_n}"
         return feature
 
+    # ---- extended fanout token (rule g) ----
+
+    _PRESERVE_TABLE = {
+        # side -> (preserve_LR, preserve_RL)
+        "INNER": (0.0, 0.0),
+        "LEFT":  (1.0, 0.0),
+        "RIGHT": (0.0, 1.0),
+        "FULL":  (1.0, 1.0),
+    }
+
+    def _encode_fanout_tokens_extended(self, join: str, side: str = "INNER"
+                                       ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Return (fanout_LR, fanout_RL) each a 42-dim tensor.
+
+        Layout: [raw_fanout_hist[0:40], orphan_fraction, outer_preserve_flag].
+
+        Pretrained PRICE consumes only the 40-dim raw histogram; the 2 new
+        dims are zero-filled when the orphan stats are missing or for INNER
+        joins.
+        """
+        ff1, ff2 = self.get_fanout_features(join)
+        ff1_t = torch.tensor(ff1, dtype=torch.float32)
+        ff2_t = torch.tensor(ff2, dtype=torch.float32)
+        if ff1_t.shape[0] != self.bin_size:
+            ff1_t = torch.nn.functional.pad(
+                ff1_t[:self.bin_size], (0, self.bin_size - ff1_t.shape[0]))
+        if ff2_t.shape[0] != self.bin_size:
+            ff2_t = torch.nn.functional.pad(
+                ff2_t[:self.bin_size], (0, self.bin_size - ff2_t.shape[0]))
+
+        left_join, right_join = join.split(" = ")[0], join.split(" = ")[1]
+        orph_lr, orph_rl = self._orphan_fraction.get(
+            (left_join, right_join), (0.0, 0.0))
+        preserve_lr, preserve_rl = self._PRESERVE_TABLE.get(
+            side.upper(), (0.0, 0.0))
+
+        f_lr = torch.cat([ff1_t,
+                          torch.tensor([orph_lr, preserve_lr],
+                                       dtype=torch.float32)])
+        f_rl = torch.cat([ff2_t,
+                          torch.tensor([orph_rl, preserve_rl],
+                                       dtype=torch.float32)])
+        return f_lr, f_rl
+
     # ---- pairwise intra/cross-table filter token (rules h, j) ----
 
     # Operator → mask region indices into the 64-vector

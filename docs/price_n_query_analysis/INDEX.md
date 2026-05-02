@@ -3,6 +3,10 @@
 Per-template analysis of TPC-H (22 queries) and TPC-DS (99 queries).
 Shows what PRICE can handle vs. what falls to the LLM residual encoder.
 
+## Companion guides
+
+- **[Subquery Inlining in PRICE_N](SUBQUERY_INLINING.md)** — when EXISTS / IN / scalar / CTE / derived-table subqueries can be folded into the outer query, when they can't, and what semantic information gets lost in the fold. Read this first if you're trying to understand why a query landed with the residual constructs it did.
+
 ## Statistics
 
 - **TPCH**: 22 templates, 22 fully analyzed, 0 with pipeline errors

@@ -3601,11 +3601,22 @@ def pad_and_cache_features(data_features, n_join_cols, n_fanouts, n_tables,
              max_n_join_col, max_n_fanout, max_n_table, max_n_filter_col,
              max_n_pairwise_intra)
     """
+    # Auto-detect 5-tuple shape: Sql2FeatureN always outputs 5-tuples even
+    # when price_n_pairwise=False.  When the input data is 5-tuples we must
+    # use the PRICE_N padding path (which knows how to unpack 5-tuples).
+    # If n_pairwise_intras is not provided we zero-fill it so the pairwise
+    # axis has width 0 (no pairwise embedding layer is exercised but the
+    # unpacking is consistent).
+    has_5tuple = bool(data_features) and len(data_features[0]) == 5
+    use_n_path = price_n_pairwise or has_5tuple
+    if use_n_path and n_pairwise_intras is None:
+        n_pairwise_intras = [0] * len(data_features)
+
     if cache_path and os.path.exists(cache_path):
         print(f"[PRICE] Loading cached features from {cache_path}")
         with open(cache_path, "rb") as f:
             cached = pickle.load(f)
-        if price_n_pairwise and "max_n_pairwise_intra" in cached:
+        if use_n_path and "max_n_pairwise_intra" in cached:
             return (cached["padded_features"], cached["padding_masks"],
                     cached["max_n_join_col"], cached["max_n_fanout"],
                     cached["max_n_table"], cached["max_n_filter_col"],
@@ -3622,7 +3633,7 @@ def pad_and_cache_features(data_features, n_join_cols, n_fanouts, n_tables,
     # (non-N) uses bin_size-dim tokens.
     effective_fanout_dim = fanout_dim if fanout_dim is not None else bin_size
 
-    if price_n_pairwise:
+    if use_n_path:
         # ----------------------------------------------------------------
         # PRICE_N pairwise path: 5-tuple input, manual padding.
         # We replicate the same pattern as features_padding but handle the
@@ -3718,9 +3729,14 @@ def pad_and_cache_features(data_features, n_join_cols, n_fanouts, n_tables,
                     "max_n_pairwise_intra": max_n_pairwise_intra,
                 }, f)
 
+        if price_n_pairwise:
+            return (padded_features, padding_masks,
+                    max_n_join_col, max_n_fanout, max_n_table, max_n_filter_col,
+                    max_n_pairwise_intra)
+        # has_5tuple=True but price_n_pairwise=False: return 6-tuple (pairwise
+        # counts were all 0, so max_n_pairwise_intra=0 and no caller needs it)
         return (padded_features, padding_masks,
-                max_n_join_col, max_n_fanout, max_n_table, max_n_filter_col,
-                max_n_pairwise_intra)
+                max_n_join_col, max_n_fanout, max_n_table, max_n_filter_col)
 
     # ----------------------------------------------------------------
     # Original path (non-pairwise): delegate to PRICE's features_padding.

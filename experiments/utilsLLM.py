@@ -3018,13 +3018,20 @@ def generate_price_embeddings(price_embedder, workload, sql_list, db_name, bin_s
     # Pad features
     bin_size_val = bin_size
     table_dim = 4
-    filter_dim = (bin_size_val + 21) if getattr(argsP, 'price_m', False) else (bin_size_val + 3)
-    fanout_dim = getattr(argsP, 'price_fanout_dim', None)
+    # Sql2FeatureN is used when ANY of the N-flags is set.  It always produces
+    # 75-dim filter tokens and 42-dim fanout tokens regardless of which
+    # individual flags are active.
+    _use_price_n = any(getattr(argsP, f, False) for f in
+                       ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise'))
+    _price_n_filter_dim = 75 if _use_price_n else (
+        (bin_size_val + 21) if getattr(argsP, 'price_m', False) else (bin_size_val + 3))
+    # Compute correct fanout_dim: PRICE_N uses 42-dim fanout tokens (bin_size + 2)
+    _price_n_fanout_dim = 42 if _use_price_n else None
     pad_kwargs = dict(
-        bin_size=bin_size_val, table_dim=table_dim, filter_dim=filter_dim,
+        bin_size=bin_size_val, table_dim=table_dim, filter_dim=_price_n_filter_dim,
         price_m=getattr(argsP, 'price_m', False),
         price_n_pairwise=price_n_pairwise,
-        fanout_dim=fanout_dim if getattr(argsP, 'price_n_fanout', False) else None,
+        fanout_dim=_price_n_fanout_dim,
         pairwise_intra_dim=129 if price_n_pairwise else None,
         n_pairwise_intras=n_pairwise_intras,
     )
@@ -3385,12 +3392,17 @@ def get_llm_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_info, 
             else:
                 data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols = _gpf_out_llmprice
                 _n_pi_llmprice = None
+            _use_pn_llmprice = any(getattr(argsP, f, False) for f in
+                                   ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise'))
+            _pn_filter_dim_llmprice = 75 if _use_pn_llmprice else (
+                (bin_size + 21) if getattr(argsP, 'price_m', False) else (bin_size + 3))
             _pad_out_llmprice = pdu.pad_and_cache_features(
                 data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols,
                 bin_size=bin_size,
+                filter_dim=_pn_filter_dim_llmprice,
                 price_m=getattr(argsP, 'price_m', False),
                 price_n_pairwise=_price_n_pairwise_llmprice,
-                fanout_dim=getattr(argsP, 'price_fanout_dim', None) if getattr(argsP, 'price_n_fanout', False) else None,
+                fanout_dim=42 if any(getattr(argsP, f, False) for f in ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise')) else None,
                 pairwise_intra_dim=129 if _price_n_pairwise_llmprice else None,
                 n_pairwise_intras=_n_pi_llmprice,
             )
@@ -3537,12 +3549,17 @@ def get_llm_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_info, 
             all_nfc.extend(nfc_test)
 
             # Unified padding
+            _use_pn_multi = any(getattr(argsP, f, False) for f in
+                                ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise'))
+            _pn_filter_dim_multi = 75 if _use_pn_multi else (
+                (bin_size + 21) if getattr(argsP, 'price_m', False) else (bin_size + 3))
             _pad_out_multi = pdu.pad_and_cache_features(
                 all_raw_feats, all_njc, all_nfo, all_ntb, all_nfc,
                 bin_size=bin_size,
+                filter_dim=_pn_filter_dim_multi,
                 price_m=getattr(argsP, 'price_m', False),
                 price_n_pairwise=_price_n_pairwise_multi,
-                fanout_dim=getattr(argsP, 'price_fanout_dim', None) if getattr(argsP, 'price_n_fanout', False) else None,
+                fanout_dim=42 if any(getattr(argsP, f, False) for f in ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise')) else None,
                 pairwise_intra_dim=129 if _price_n_pairwise_multi else None,
                 n_pairwise_intras=_n_pi_test_multi,
             )
@@ -3841,12 +3858,17 @@ def get_price_only_ds_from_csv(dat_path_train_list, dat_path_test, ds_info, args
     print(f"[PRICE finetune] Step 5: Padding features and splitting...", flush=True)
     if len(dat_path_train_list) == 1 and dat_path_train_list[0] == dat_path_test:
         # Same file — pad all, then split
+        _use_pn_po = any(getattr(argsP, f, False) for f in
+                         ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise'))
+        _pn_filter_dim_po = 75 if _use_pn_po else (
+            (bin_size + 21) if getattr(argsP, 'price_m', False) else (bin_size + 3))
         _pad_out_po_same = pdu.pad_and_cache_features(
             data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols,
             bin_size=bin_size,
+            filter_dim=_pn_filter_dim_po,
             price_m=getattr(argsP, 'price_m', False),
             price_n_pairwise=_price_n_pairwise_po,
-            fanout_dim=getattr(argsP, 'price_fanout_dim', None) if getattr(argsP, 'price_n_fanout', False) else None,
+            fanout_dim=42 if any(getattr(argsP, f, False) for f in ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise')) else None,
             pairwise_intra_dim=129 if _price_n_pairwise_po else None,
             n_pairwise_intras=_n_pi_po,
         )
@@ -3940,12 +3962,17 @@ def get_price_only_ds_from_csv(dat_path_train_list, dat_path_test, ds_info, args
         all_ntb = ntb_train_all + n_tables
         all_nfc = nfc_train_all + n_filter_cols
 
+        _use_pn_po_multi = any(getattr(argsP, f, False) for f in
+                               ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise'))
+        _pn_filter_dim_po_multi = 75 if _use_pn_po_multi else (
+            (bin_size + 21) if getattr(argsP, 'price_m', False) else (bin_size + 3))
         _pad_out_po_multi = pdu.pad_and_cache_features(
             all_raw_feats, all_njc, all_nfo, all_ntb, all_nfc,
             bin_size=bin_size,
+            filter_dim=_pn_filter_dim_po_multi,
             price_m=getattr(argsP, 'price_m', False),
             price_n_pairwise=_price_n_pairwise_po,
-            fanout_dim=getattr(argsP, 'price_fanout_dim', None) if getattr(argsP, 'price_n_fanout', False) else None,
+            fanout_dim=42 if any(getattr(argsP, f, False) for f in ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise')) else None,
             pairwise_intra_dim=129 if _price_n_pairwise_po else None,
             n_pairwise_intras=_n_pi_po,
         )
@@ -3995,6 +4022,9 @@ def get_price_only_ds_from_csv(dat_path_train_list, dat_path_test, ds_info, args
     argsP.price_max_n_fanout = max_nfo
     argsP.price_max_n_table = max_ntb
     argsP.price_max_n_filter_col = max_nfc
+    # Override CLI pairwise max with the actual data max to avoid shape errors.
+    if _price_n_pairwise_po and _n_pi_po is not None:
+        argsP.price_max_n_pairwise_intra = max(_n_pi_po) if _n_pi_po else 0
 
     # ---- Step 6: Normalize labels with log(card+1)+1 and create datasets ----
     print(f"[PRICE finetune] Step 6: Normalizing and creating datasets (train={len(costs_train)}, val={len(costs_val)}, test={len(costs_test)})...", flush=True)
@@ -4118,12 +4148,17 @@ def get_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_
     print(f"[LLM+PRICE] Step 5/6: Splitting train/val/test...", flush=True)
     if len(dat_path_train_list) == 1 and dat_path_train_list[0] == dat_path_test:
         # Same file for train/test — pad all together
+        _use_pn_llmp = any(getattr(argsP, f, False) for f in
+                           ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise'))
+        _pn_filter_dim_llmp = 75 if _use_pn_llmp else (
+            (bin_size + 21) if getattr(argsP, 'price_m', False) else (bin_size + 3))
         _pad_out_llmp_same = pdu.pad_and_cache_features(
             data_features_test, n_join_cols_test, n_fanouts_test, n_tables_test, n_filter_cols_test,
             bin_size=bin_size,
+            filter_dim=_pn_filter_dim_llmp,
             price_m=getattr(argsP, 'price_m', False),
             price_n_pairwise=_price_n_pairwise_llmp,
-            fanout_dim=getattr(argsP, 'price_fanout_dim', None) if getattr(argsP, 'price_n_fanout', False) else None,
+            fanout_dim=42 if any(getattr(argsP, f, False) for f in ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise')) else None,
             pairwise_intra_dim=129 if _price_n_pairwise_llmp else None,
             n_pairwise_intras=_n_pi_test_llmp,
         )
@@ -4252,12 +4287,17 @@ def get_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_
         all_nfc_list = nfc_train_all + n_filter_cols_test
 
         print(f"[LLM+PRICE] Step 5/6: Padding {len(all_raw_feats)} features with unified dims...", flush=True)
+        _use_pn_llmp_multi = any(getattr(argsP, f, False) for f in
+                                 ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise'))
+        _pn_filter_dim_llmp_multi = 75 if _use_pn_llmp_multi else (
+            (bin_size + 21) if getattr(argsP, 'price_m', False) else (bin_size + 3))
         _pad_out_llmp_multi = pdu.pad_and_cache_features(
             all_raw_feats, all_njc_list, all_nfo_list, all_ntb_list, all_nfc_list,
             bin_size=bin_size,
+            filter_dim=_pn_filter_dim_llmp_multi,
             price_m=getattr(argsP, 'price_m', False),
             price_n_pairwise=_price_n_pairwise_llmp,
-            fanout_dim=getattr(argsP, 'price_fanout_dim', None) if getattr(argsP, 'price_n_fanout', False) else None,
+            fanout_dim=42 if any(getattr(argsP, f, False) for f in ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise')) else None,
             pairwise_intra_dim=129 if _price_n_pairwise_llmp else None,
             n_pairwise_intras=_n_pi_test_llmp,
         )
@@ -4335,6 +4375,11 @@ def get_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_
     argsP.price_max_n_fanout = max_nfo
     argsP.price_max_n_table = max_ntb
     argsP.price_max_n_filter_col = max_nfc
+    # Store actual max pairwise intra count (overrides CLI default of 8).
+    # This prevents the model from allocating pairwise embedding slots that
+    # the data does not have (which causes a mat-mul shape error at runtime).
+    if _price_n_pairwise_llmp and _n_pi_test_llmp is not None:
+        argsP.price_max_n_pairwise_intra = max(_n_pi_test_llmp) if _n_pi_test_llmp else 0
     print(f"[LLM+PRICE] Model dims: n_join_col={max_njc}, n_fanout={max_nfo}, n_table={max_ntb}, n_filter_col={max_nfc}", flush=True)
 
     # ---- Step 6: Normalize labels and create datasets ----
@@ -4443,12 +4488,17 @@ def get_frozen_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_te
     print(f"[FrozenLLM+PRICE] Step 4: Splitting train/val/test...", flush=True)
     if len(dat_path_train_list) == 1 and dat_path_train_list[0] == dat_path_test:
         # Same file for train/test
+        _use_pn_flp = any(getattr(argsP, f, False) for f in
+                          ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise'))
+        _pn_filter_dim_flp = 75 if _use_pn_flp else (
+            (bin_size + 21) if getattr(argsP, 'price_m', False) else (bin_size + 3))
         _pad_out_flp_same = pdu.pad_and_cache_features(
             data_features_test, n_join_cols_test, n_fanouts_test, n_tables_test, n_filter_cols_test,
             bin_size=bin_size,
+            filter_dim=_pn_filter_dim_flp,
             price_m=getattr(argsP, 'price_m', False),
             price_n_pairwise=_price_n_pairwise_flp,
-            fanout_dim=getattr(argsP, 'price_fanout_dim', None) if getattr(argsP, 'price_n_fanout', False) else None,
+            fanout_dim=42 if any(getattr(argsP, f, False) for f in ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise')) else None,
             pairwise_intra_dim=129 if _price_n_pairwise_flp else None,
             n_pairwise_intras=_n_pi_test_flp,
         )
@@ -4561,12 +4611,17 @@ def get_frozen_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_te
         all_ntb_list = ntb_train_all + n_tables_test
         all_nfc_list = nfc_train_all + n_filter_cols_test
 
+        _use_pn_flp_multi = any(getattr(argsP, f, False) for f in
+                                ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise'))
+        _pn_filter_dim_flp_multi = 75 if _use_pn_flp_multi else (
+            (bin_size + 21) if getattr(argsP, 'price_m', False) else (bin_size + 3))
         _pad_out_flp_multi = pdu.pad_and_cache_features(
             all_raw_feats, all_njc_list, all_nfo_list, all_ntb_list, all_nfc_list,
             bin_size=bin_size,
+            filter_dim=_pn_filter_dim_flp_multi,
             price_m=getattr(argsP, 'price_m', False),
             price_n_pairwise=_price_n_pairwise_flp,
-            fanout_dim=getattr(argsP, 'price_fanout_dim', None) if getattr(argsP, 'price_n_fanout', False) else None,
+            fanout_dim=42 if any(getattr(argsP, f, False) for f in ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise')) else None,
             pairwise_intra_dim=129 if _price_n_pairwise_flp else None,
             n_pairwise_intras=_n_pi_test_flp,
         )
@@ -4624,6 +4679,9 @@ def get_frozen_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_te
     argsP.price_max_n_fanout = max_nfo
     argsP.price_max_n_table = max_ntb
     argsP.price_max_n_filter_col = max_nfc
+    # Override CLI pairwise max with the actual data max to avoid shape errors.
+    if _price_n_pairwise_flp and _n_pi_test_flp is not None:
+        argsP.price_max_n_pairwise_intra = max(_n_pi_test_flp) if _n_pi_test_flp else 0
     argsP.embed_size = llm_embed_size
     print(f"[FrozenLLM+PRICE] Model dims: n_join_col={max_njc}, n_fanout={max_nfo}, n_table={max_ntb}, n_filter_col={max_nfc}, llm_dim={llm_embed_size}", flush=True)
 

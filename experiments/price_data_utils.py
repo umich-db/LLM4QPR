@@ -3564,29 +3564,52 @@ def _lower_except_quotes(sql):
     return ''.join(result)
 
 
-def pad_and_cache_features(data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols,
+def pad_and_cache_features(data_features, n_join_cols, n_fanouts, n_tables,
+                           n_filter_cols, n_pairwise_intras=None,
                            bin_size=40, table_dim=4, filter_dim=43,
-                           cache_path=None, price_m=False):
+                           fanout_dim=None, pairwise_intra_dim=None,
+                           cache_path=None, price_m=False,
+                           price_n_pairwise=False):
     """
     Pad variable-length features to uniform size and optionally cache.
 
     Args:
-        data_features: list of tuples from generate_price_features
+        data_features: list of tuples from generate_price_features.
+            Under PRICE_N pairwise mode, each tuple is a 5-tuple:
+            (join_hist, fanout, table, filter, pairwise_intra).
+            Otherwise a 4-tuple.
         n_join_cols, n_fanouts, n_tables, n_filter_cols: per-query counts
+        n_pairwise_intras: per-query pairwise token counts (only used when
+            price_n_pairwise=True)
         bin_size: histogram bin size
         table_dim: table feature dimension (default 4: log_size, avi, minsel, ebo)
-        filter_dim: filter feature dimension (default bin_size+3 = 43, or bin_size+21 for PRICE_M)
+        filter_dim: filter feature dimension (default bin_size+3 = 43, or
+            bin_size+21 for PRICE_M, or 75 for PRICE_N)
+        fanout_dim: fanout token dimension (default bin_size for non-N, 42 for N)
+        pairwise_intra_dim: pairwise token dimension (default 129 for PRICE_N)
         cache_path: if set, save/load from this pickle path
+        price_m: if True use PRICE_M filter_dim (bin_size+21)
+        price_n_pairwise: if True, handle 5-tuple input and pad the pairwise
+            axis; return 7-tuple instead of 6-tuple.
 
     Returns:
-        padded_features: list of tensors, each of uniform length
-        padding_masks: list of tensors
-        max_n_join_col, max_n_fanout, max_n_table, max_n_filter_col
+        When price_n_pairwise=False (default):
+            (padded_features, padding_masks,
+             max_n_join_col, max_n_fanout, max_n_table, max_n_filter_col)
+        When price_n_pairwise=True:
+            (padded_features, padding_masks,
+             max_n_join_col, max_n_fanout, max_n_table, max_n_filter_col,
+             max_n_pairwise_intra)
     """
     if cache_path and os.path.exists(cache_path):
         print(f"[PRICE] Loading cached features from {cache_path}")
         with open(cache_path, "rb") as f:
             cached = pickle.load(f)
+        if price_n_pairwise and "max_n_pairwise_intra" in cached:
+            return (cached["padded_features"], cached["padding_masks"],
+                    cached["max_n_join_col"], cached["max_n_fanout"],
+                    cached["max_n_table"], cached["max_n_filter_col"],
+                    cached["max_n_pairwise_intra"])
         return (cached["padded_features"], cached["padding_masks"],
                 cached["max_n_join_col"], cached["max_n_fanout"],
                 cached["max_n_table"], cached["max_n_filter_col"])
@@ -3594,6 +3617,114 @@ def pad_and_cache_features(data_features, n_join_cols, n_fanouts, n_tables, n_fi
     # Compute filter_dim: use PRICE_M (bin_size+21) if price_m flag is set
     if price_m:
         filter_dim = bin_size + 21
+
+    # Resolve fanout_dim: PRICE_N uses extended 42-dim fanout tokens; default
+    # (non-N) uses bin_size-dim tokens.
+    effective_fanout_dim = fanout_dim if fanout_dim is not None else bin_size
+
+    if price_n_pairwise:
+        # ----------------------------------------------------------------
+        # PRICE_N pairwise path: 5-tuple input, manual padding.
+        # We replicate the same pattern as features_padding but handle the
+        # extended fanout_dim and the new pairwise axis ourselves.
+        # ----------------------------------------------------------------
+        if pairwise_intra_dim is None:
+            pairwise_intra_dim = 129
+        if n_pairwise_intras is None:
+            n_pairwise_intras = [0] * len(data_features)
+
+        max_n_join_col = max(n_join_cols) if n_join_cols else 0
+        max_n_fanout = max(n_fanouts) if n_fanouts else 0
+        max_n_table = max(n_tables) if n_tables else 0
+        max_n_filter_col = max(n_filter_cols) if n_filter_cols else 0
+        max_n_pairwise_intra = max(n_pairwise_intras) if n_pairwise_intras else 0
+
+        padding_value = -1e3
+        padded_features = []
+        padding_masks = []
+
+        for i, (n_jc, n_fo, n_tb, n_fc, n_pi) in enumerate(zip(
+                n_join_cols, n_fanouts, n_tables, n_filter_cols, n_pairwise_intras)):
+
+            join_hist, fanout_ext, table_feats, filter_feats, pairwise_feats = data_features[i]
+
+            # --- pad join histogram axis ---
+            if n_jc < max_n_join_col:
+                pad = torch.full(((max_n_join_col - n_jc) * bin_size,), padding_value)
+                join_hist = torch.cat([join_hist, pad])
+
+            # --- pad fanout axis ---
+            if n_fo < max_n_fanout:
+                pad = torch.full(((max_n_fanout - n_fo) * effective_fanout_dim,), padding_value)
+                fanout_ext = torch.cat([fanout_ext, pad])
+
+            # --- pad table axis ---
+            if n_tb < max_n_table:
+                for _ in range(max_n_table - n_tb):
+                    tok = torch.cat([torch.zeros(1),
+                                     torch.full((table_dim - 1,), padding_value)])
+                    table_feats = torch.cat([table_feats, tok])
+
+            # --- pad filter axis ---
+            if n_fc < max_n_filter_col:
+                pad = torch.full(((max_n_filter_col - n_fc) * filter_dim,), padding_value)
+                if filter_feats is not None and filter_feats.numel() > 0:
+                    filter_feats = torch.cat([filter_feats, pad])
+                else:
+                    filter_feats = pad
+
+            # --- pad pairwise axis ---
+            if n_pi < max_n_pairwise_intra:
+                pad = torch.full(((max_n_pairwise_intra - n_pi) * pairwise_intra_dim,),
+                                 padding_value)
+                if pairwise_feats is not None and pairwise_feats.numel() > 0:
+                    pairwise_feats = torch.cat([pairwise_feats, pad])
+                else:
+                    pairwise_feats = pad
+
+            # Build padding mask:
+            # token order: [CLS, join×max_n_join_col, fanout×max_n_fanout,
+            #               table×max_n_table, filter×max_n_filter_col,
+            #               pairwise×max_n_pairwise_intra]
+            mask = (
+                [1]
+                + [1] * n_jc + [0] * (max_n_join_col - n_jc)
+                + [1] * n_fo + [0] * (max_n_fanout - n_fo)
+                + [1] * n_tb + [0] * (max_n_table - n_tb)
+                + [1] * n_fc + [0] * (max_n_filter_col - n_fc)
+                + [1] * n_pi + [0] * (max_n_pairwise_intra - n_pi)
+            )
+            padding_masks.append(torch.tensor(mask))
+
+            # Concatenate all axes into a single flat tensor
+            parts = [join_hist, fanout_ext, table_feats]
+            if filter_feats is not None and filter_feats.numel() > 0:
+                parts.append(filter_feats)
+            if pairwise_feats is not None and pairwise_feats.numel() > 0:
+                parts.append(pairwise_feats)
+            padded_features.append(torch.cat(parts))
+
+        if cache_path:
+            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+            print(f"[PRICE] Caching features to {cache_path}")
+            with open(cache_path, "wb") as f:
+                pickle.dump({
+                    "padded_features": padded_features,
+                    "padding_masks": padding_masks,
+                    "max_n_join_col": max_n_join_col,
+                    "max_n_fanout": max_n_fanout,
+                    "max_n_table": max_n_table,
+                    "max_n_filter_col": max_n_filter_col,
+                    "max_n_pairwise_intra": max_n_pairwise_intra,
+                }, f)
+
+        return (padded_features, padding_masks,
+                max_n_join_col, max_n_fanout, max_n_table, max_n_filter_col,
+                max_n_pairwise_intra)
+
+    # ----------------------------------------------------------------
+    # Original path (non-pairwise): delegate to PRICE's features_padding.
+    # ----------------------------------------------------------------
     # Import from PRICE's utils.model.padding (avoid name conflict with other 'utils' packages)
     import importlib.util as _ilu
     _spec = _ilu.spec_from_file_location("price_padding", os.path.join(PRICE_ROOT, "utils", "model", "padding.py"))

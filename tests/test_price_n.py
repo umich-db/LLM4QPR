@@ -417,3 +417,21 @@ def test_generate_price_features_returns_5_tuple_under_price_n():
     data_features, *_ = out
     assert len(data_features) == 1
     assert len(data_features[0]) == 5  # 5-tuple per query
+
+
+def test_pad_and_cache_features_handles_pairwise_axis():
+    import torch
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import pad_and_cache_features
+    feats = [
+        (torch.zeros(40), torch.zeros(2 * 42),
+         torch.zeros(8), torch.zeros(75 * 1), torch.zeros(129 * 0)),
+        (torch.zeros(40), torch.zeros(2 * 42),
+         torch.zeros(8), torch.zeros(75 * 1), torch.zeros(129 * 1)),
+    ]
+    out = pad_and_cache_features(
+        feats, n_join_cols=[1, 1], n_fanouts=[2, 2], n_tables=[2, 2],
+        n_filter_cols=[1, 1], n_pairwise_intras=[0, 1],
+        bin_size=40, table_dim=4, filter_dim=75,
+        pairwise_intra_dim=129, price_n_pairwise=True)
+    assert len(out) >= 6  # padded_features, masks, max counts (one extra for pairwise)

@@ -330,3 +330,136 @@ class Sql2FeatureN(Sql2Feature):
         feature = torch.cat([H, M, s_op_t])
         assert feature.shape[0] == self.pairwise_dim_n
         return feature
+
+    def create_sql_features(self, sql: str, atoms_meta: Optional[dict] = None):
+        """PRICE_N feature builder. Returns
+            (feats_5tuple, n_join_col, n_fanout, n_table, n_filter_col,
+             n_pairwise_intra)
+        or None on failure.
+
+        atoms_meta is the dict produced by the price_data_utils Phase 2-9
+        helpers (see spec §3 / §7.1). When None, defaults are used so the
+        builder can still be exercised in isolation.
+        """
+        if atoms_meta is None:
+            atoms_meta = {"filter_atoms": {}, "join_sides": {}, "pairwise_atoms": []}
+        filter_atoms = atoms_meta.get("filter_atoms", {})
+        join_sides = atoms_meta.get("join_sides", {})
+        pairwise_atoms = atoms_meta.get("pairwise_atoms", [])
+
+        columns, tables, joins, _ = self.parse_sql(sql)
+        # Rule f: skip the cyclic-join check entirely (cyclic graphs are now legal).
+
+        table_join_cols, table_filter_cols = {}, {}
+        for t in tables:
+            table_join_cols[t] = []
+            table_filter_cols[t] = []
+        for col in columns:
+            tbl = col.split(".")[0]
+            is_join_col = any(col == j.split("=")[0].strip()
+                              or col == j.split("=")[1].strip()
+                              for j in joins)
+            if is_join_col:
+                table_join_cols[tbl].append(col)
+            else:
+                table_filter_cols[tbl].append(col)
+
+        join_columns = self.flatten_list(list(table_join_cols.values()))
+        filter_columns = self.flatten_list(list(table_filter_cols.values()))
+
+        # Join-column histograms (existing PRICE machinery)
+        join_column_histograms = []
+        for jc in join_columns:
+            join_column_histograms.append(
+                torch.tensor(self.get_column_histograms(jc), dtype=torch.float32))
+
+        # Extended fanout tokens (rule g)
+        fanout_tokens = []
+        for j in joins:
+            side = join_sides.get(j, "INNER")
+            f_lr, f_rl = self._encode_fanout_tokens_extended(j, side=side)
+            fanout_tokens.append(f_lr)
+            fanout_tokens.append(f_rl)
+
+        # Filter tokens (75 dim each)
+        filter_tokens = []
+        table_sels = {t: [] for t in tables}
+        for fc in filter_columns:
+            atoms = filter_atoms.get(fc, dict(self.EMPTY_ATOMS))
+            tok = self._encode_filter_token(fc, atoms)
+            filter_tokens.append(tok)
+            # token layout: hist[40] + (10×3) slots + tail(3) + (null_fraction, null_pred_flag)
+            # selectivity for the AVI/EBO/MinSel needs the strongest matched slot's sel.
+            slot_sels = tok[40:40 + 30:3]
+            tail_sel = tok[40 + 30 + 2].item()
+            sel_pos = max(slot_sels.tolist() + [tail_sel])
+            null_pred = tok[-1].item()
+            null_frac = tok[-2].item()
+            if null_pred == 1.0:
+                effective = max(null_frac, 1e-6)
+            elif null_pred == -1.0:
+                effective = max(1.0 - null_frac, 1e-6)
+            elif sel_pos > 0:
+                effective = sel_pos
+            else:
+                effective = 1e-6
+            table_sels[fc.split(".")[0]].append(effective)
+
+        # Pairwise intra-table tokens (rules h, j)
+        pairwise_tokens = []
+        for atom in pairwise_atoms:
+            # atom: (left_table, col_x, col_y, op, right_table, right_col)
+            l_t, cx, cy, op, r_t, r_c = atom
+            pairwise_tokens.append(self._encode_pairwise_intra_token(
+                l_t, cx, cy, op, right_table=r_t, right_col=r_c))
+
+        # Table tokens (existing PRICE machinery)
+        table_features = []
+        for t in tables:
+            sels = table_sels[t]
+            if not sels:
+                avi = torch.tensor([1.0]); minsel = torch.tensor([1.0]); ebo = torch.tensor([1.0])
+            else:
+                avi = torch.prod(torch.tensor(sels))
+                minsel = torch.min(torch.tensor(sels))
+                sorted_sels = sorted(sels, reverse=True)
+                ebo_v = 1.0
+                for i, s in enumerate(sorted_sels):
+                    if i > 3: break
+                    ebo_v *= s ** (1 / (2 ** i))
+                ebo = torch.tensor([ebo_v])
+            table_size = self.get_table_size(t)
+            table_features.append(torch.cat([
+                torch.tensor([np.log(table_size)], dtype=torch.float32),
+                torch.tensor([avi.item()], dtype=torch.float32),
+                torch.tensor([minsel.item()], dtype=torch.float32),
+                torch.tensor([ebo.item()], dtype=torch.float32),
+            ]))
+
+        # Single-table fall-through: zero-pad join_hist + fanout (PRICE_M precedent)
+        if len(join_columns) == 0:
+            join_hist = torch.zeros(self.bin_size)
+            fanout_feat = torch.zeros(self.fanout_dim_n * 2)
+            n_jc, n_fo = 1, 2
+        else:
+            join_hist = torch.cat(join_column_histograms)
+            fanout_feat = torch.cat(fanout_tokens)
+            n_jc, n_fo = len(join_columns), len(joins) * 2
+
+        if filter_tokens:
+            filter_feat = torch.cat(filter_tokens)
+        else:
+            filter_feat = torch.zeros(self.filter_dim_n)
+        n_fc = max(len(filter_columns), 1)
+
+        if pairwise_tokens:
+            pairwise_feat = torch.cat(pairwise_tokens)
+            n_pi = len(pairwise_tokens)
+        else:
+            pairwise_feat = torch.zeros(0)
+            n_pi = 0
+
+        feats = (join_hist, fanout_feat,
+                 torch.cat(table_features),
+                 filter_feat, pairwise_feat)
+        return feats, n_jc, n_fo, len(tables), n_fc, n_pi

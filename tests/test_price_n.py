@@ -241,3 +241,28 @@ def test_fanout_ext_left_join_preserve_flag():
     # L→R has preserve_flag = 1, R→L has 0.
     assert f_lr[-1].item() == 1.0
     assert f_rl[-1].item() == 0.0
+
+
+def test_create_sql_features_returns_5_tuple_for_simple_query():
+    sys.path.insert(0, "/root/LLM4QPR/PRICE")
+    from setup.features_tool_n import Sql2FeatureN
+    f = Sql2FeatureN("tpch", 40, "finetune")
+    sql = ("select count(*) from tpch_l, tpch_o "
+           "where tpch_l.l_orderkey = tpch_o.o_orderkey "
+           "and tpch_l.l_quantity = 50")
+    atoms_meta = {
+        "filter_atoms": {
+            "tpch_l.l_quantity": {**f.EMPTY_ATOMS, "eq_values": [50]},
+        },
+        "join_sides": {},          # all INNER
+        "pairwise_atoms": [],      # no col-op-col / xtab non-equi
+    }
+    out = f.create_sql_features(sql, atoms_meta=atoms_meta)
+    assert out is not None
+    feats, n_jc, n_fo, n_tb, n_fc, n_pi = out
+    assert len(feats) == 5
+    join_hist, fanout_ext, table, filter_n, pairwise_intra = feats
+    assert filter_n.shape[0] == 75 * n_fc
+    assert fanout_ext.shape[0] == 42 * n_fo
+    assert n_pi == 0
+    assert pairwise_intra.numel() == 0

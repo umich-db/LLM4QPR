@@ -266,3 +266,34 @@ def test_create_sql_features_returns_5_tuple_for_simple_query():
     assert fanout_ext.shape[0] == 42 * n_fo
     assert n_pi == 0
     assert pairwise_intra.numel() == 0
+
+
+def test_not_pushdown_de_morgan_and():
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _push_not_to_nnf
+    import sqlglot
+    ast = sqlglot.parse_one(
+        "SELECT * FROM t WHERE NOT (t.a < 5 AND t.b > 10)")
+    _push_not_to_nnf(ast)
+    sql = ast.sql()
+    # Expect rewrite to (t.a >= 5 OR t.b <= 10) — De Morgan plus operator flips.
+    assert "NOT" not in sql.upper().replace("NOT NULL", "").replace("IS NOT", "")
+    assert ">=" in sql and "<=" in sql
+
+
+def test_not_pushdown_double_neg():
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _push_not_to_nnf
+    import sqlglot
+    ast = sqlglot.parse_one("SELECT * FROM t WHERE NOT NOT (t.a = 5)")
+    _push_not_to_nnf(ast)
+    assert "NOT" not in ast.sql().upper().replace("NOT NULL", "").replace("IS NOT", "")
+
+
+def test_not_pushdown_is_null_flip():
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _push_not_to_nnf
+    import sqlglot
+    ast = sqlglot.parse_one("SELECT * FROM t WHERE NOT (t.a IS NULL)")
+    _push_not_to_nnf(ast)
+    assert "IS NOT NULL" in ast.sql().upper()

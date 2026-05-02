@@ -406,6 +406,86 @@ def _flatten_and(node, results):
         results.append(node)
 
 
+def _push_not_to_nnf(ast):
+    """Rewrite the AST so every Not wraps a leaf. De Morgan + operator flip.
+
+    Mutates the AST in place. Returns nothing.
+
+    Handles:
+      - NOT (a AND b) → (NOT a) OR (NOT b)
+      - NOT (a OR b)  → (NOT a) AND (NOT b)
+      - NOT NOT x      → x
+      - NOT (x op y)   → flipped operator (= ↔ !=, < ↔ >=, etc.)
+      - NOT (x IS NULL) → x IS NOT NULL
+      - NOT (x IS NOT NULL) → x IS NULL
+      - NOT (x LIKE p), NOT (x IN ...), NOT (x BETWEEN ...) → preserved.
+    """
+    if not HAS_SQLGLOT:
+        return
+    _OP_FLIP = {
+        sqlglot_exp.EQ:  sqlglot_exp.NEQ,
+        sqlglot_exp.NEQ: sqlglot_exp.EQ,
+        sqlglot_exp.LT:  sqlglot_exp.GTE,
+        sqlglot_exp.LTE: sqlglot_exp.GT,
+        sqlglot_exp.GT:  sqlglot_exp.LTE,
+        sqlglot_exp.GTE: sqlglot_exp.LT,
+    }
+    def _unwrap_paren(node):
+        """Recursively strip Paren wrappers."""
+        while isinstance(node, sqlglot_exp.Paren):
+            node = node.this
+        return node
+
+    changed = True
+    while changed:
+        changed = False
+        for not_node in list(ast.find_all(sqlglot_exp.Not)):
+            child = _unwrap_paren(not_node.this)
+            if child is None:
+                continue
+            if isinstance(child, sqlglot_exp.Not):
+                not_node.replace(child.this.copy())
+                changed = True
+                continue
+            if isinstance(child, sqlglot_exp.And):
+                lhs = sqlglot_exp.Not(this=child.this.copy())
+                rhs = sqlglot_exp.Not(this=child.expression.copy())
+                not_node.replace(sqlglot_exp.Or(this=lhs, expression=rhs))
+                changed = True
+                continue
+            if isinstance(child, sqlglot_exp.Or):
+                lhs = sqlglot_exp.Not(this=child.this.copy())
+                rhs = sqlglot_exp.Not(this=child.expression.copy())
+                not_node.replace(sqlglot_exp.And(this=lhs, expression=rhs))
+                changed = True
+                continue
+            cls = type(child)
+            if cls in _OP_FLIP:
+                flipped = _OP_FLIP[cls](
+                    this=child.this.copy(),
+                    expression=child.expression.copy())
+                not_node.replace(flipped)
+                changed = True
+                continue
+            if isinstance(child, sqlglot_exp.Is):
+                # IS NULL / IS NOT NULL are represented as Is(Null) / Is(Not Null)
+                inner = child.expression
+                if isinstance(inner, sqlglot_exp.Null):
+                    not_node.replace(sqlglot_exp.Is(
+                        this=child.this.copy(),
+                        expression=sqlglot_exp.Not(this=sqlglot_exp.Null())))
+                    changed = True
+                    continue
+                if isinstance(inner, sqlglot_exp.Not) and isinstance(inner.this, sqlglot_exp.Null):
+                    not_node.replace(sqlglot_exp.Is(
+                        this=child.this.copy(),
+                        expression=sqlglot_exp.Null()))
+                    changed = True
+                    continue
+            # NOT LIKE / NOT IN / NOT BETWEEN: leave as-is for the filter
+            # encoder to handle.
+
+
 def _is_constant(node):
     """Check if expression has no Column or Subquery refs (is a literal/constant)."""
     if isinstance(node, sqlglot_exp.Column):

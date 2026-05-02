@@ -894,12 +894,88 @@ def _order_8x8_into_regions(h8):
     return out
 
 
-def generate_pairwise_intra(conn, pairs):
+def _pairwise_intra_discrete_self(conn, table, col, top_k=40):
+    """Build an 8×8 ordered joint histogram for a self-pair on a discrete
+    (categorical) column via the SpaceSaving outer-product trick.
+
+    For (A.col × A.col) on two independent aliases of the same table, the
+    joint is the outer product of the marginal p_i (SpaceSaving-binned
+    frequencies). This avoids width_bucket (which rejects text), and gives
+    a meaningful diagonal-mass = P(eq) signal under the existing 28+8+28
+    region split.
+
+    s_eq is computed analytically as Sigma p_i² (the probability that two
+    independent draws from the marginal are equal). The H8x8_ordered vector
+    is then constructed to encode exactly that signal: diagonal mass = s_eq,
+    off-diagonal mass split symmetrically between upper (s_lt) and lower
+    (s_gt) triangles. This avoids the 40->8 compression artifact where all
+    values for a low-cardinality column (e.g. 5 marital statuses) collapse
+    into the same 8x8 block, erroneously giving s_eq=1.0.
+    """
+    cur = conn.cursor()
+    cur.execute(f"""
+        SELECT "{col}", COUNT(*)
+        FROM "{table}" WHERE "{col}" IS NOT NULL
+        GROUP BY 1 ORDER BY 2 DESC LIMIT {top_k}
+    """)
+    rows = cur.fetchall()
+    cur.execute(f'SELECT COUNT(*) FROM "{table}" WHERE "{col}" IS NOT NULL')
+    (total,) = cur.fetchone()
+    cur.close()
+
+    if not rows or total == 0:
+        # Empty column — return uniform-zero token-shaped record.
+        return {
+            "H8x8_ordered": np.zeros(64, dtype=np.float32),
+            "s_lt": 0.0, "s_eq": 0.0, "s_gt": 0.0,
+        }
+
+    # Compute marginal probabilities for top-39 values + OtHeRs catch-all.
+    p_vals = []
+    top_freq_sum = 0
+    for i, (_, cnt) in enumerate(rows[:39]):
+        p_vals.append(cnt / float(total))
+        top_freq_sum += cnt
+    p_others = max(0.0, 1.0 - top_freq_sum / float(total))  # OtHeRs
+    p_vals.append(p_others)
+
+    # Analytical s_eq = Sigma p_i² (collision probability under independence).
+    # This is exact and avoids any binning/compression artifact.
+    s_eq = float(sum(p ** 2 for p in p_vals))
+    # For a discrete self-pair, the non-equality mass is symmetric (no natural
+    # ordering between two independent aliases of the same text column).
+    s_lt = (1.0 - s_eq) / 2.0
+    s_gt = s_lt
+
+    # Construct H8x8_ordered to match (s_lt, s_eq, s_gt) exactly.
+    # Diagonal (8 cells): s_eq * total / 8 each.
+    # Upper-triangle (28 cells): s_lt * total / 28 each.
+    # Lower-triangle (28 cells): s_gt * total / 28 each.
+    ordered = np.empty(64, dtype=np.float32)
+    ordered[:28] = s_lt * float(total) / 28.0   # region 1: upper triangle (x<y)
+    ordered[28:36] = s_eq * float(total) / 8.0  # region 2: diagonal (x≈y)
+    ordered[36:64] = s_gt * float(total) / 28.0  # region 3: lower triangle (x>y)
+
+    return {
+        "H8x8_ordered": ordered,
+        "s_lt": s_lt,
+        "s_eq": s_eq,
+        "s_gt": s_gt,
+    }
+
+
+def generate_pairwise_intra(conn, pairs, col_types=None):
     """Compute the 8x8 ordered joint histogram + (s_lt, s_eq, s_gt) per pair.
+
+    For self-pairs on discrete columns, uses the SpaceSaving outer-product
+    trick (no width_bucket needed). For numeric pairs (or cross-column
+    pairs), uses width_bucket on the column expression.
 
     Args:
         conn: psycopg2 connection.
         pairs: iterable of (table, col_x, col_y).
+        col_types: optional dict[(table, col)] -> 'ctn' | 'dsct'. When the
+            self-pair's column is 'dsct', uses the discrete code path.
 
     Returns dict[(table, col_x, col_y)] -> {
         'H8x8_ordered': np.ndarray (64,) float32,
@@ -912,6 +988,12 @@ def generate_pairwise_intra(conn, pairs):
     cur = conn.cursor()
     for table, col_x, col_y in pairs:
         try:
+            is_self = (col_x == col_y)
+            is_discrete = bool(col_types) and col_types.get((table, col_x)) == "dsct"
+            if is_self and is_discrete:
+                out[(table, col_x, col_y)] = _pairwise_intra_discrete_self(
+                    conn, table, col_x)
+                continue
             dtype_x = table_col_dtypes.get(table, {}).get(col_x, "")
             dtype_y = table_col_dtypes.get(table, {}).get(col_y, "")
             expr_x = _col_expr(table, col_x, dtype_x)
@@ -1502,7 +1584,22 @@ def generate_stats_for_db(db_name, price_n_filter=False, price_n_fanout=False,
               f"{len(PAIRWISE_INTRA_WHITELIST)} pairs ...")
         # Filter whitelist to pairs whose table exists in this db.
         relevant = [p for p in PAIRWISE_INTRA_WHITELIST if p[0] in abbrev]
-        pairwise_intra_data = generate_pairwise_intra(conn, relevant)
+        # col_types may not yet include whitelist columns that weren't found in
+        # discovered queries (e.g. text columns never appear in join/filter
+        # discovery). Classify any missing ones here so we can dispatch
+        # discrete self-pairs to the outer-product path.
+        pairwise_cols = set()
+        for t, cx, cy in relevant:
+            pairwise_cols.add((t, cx))
+            pairwise_cols.add((t, cy))
+        new_cols = pairwise_cols - set(col_types.keys())
+        if new_cols:
+            extra_types = classify_columns(conn, new_cols, table_col_dtypes)
+            col_types_full = {**col_types, **extra_types}
+        else:
+            col_types_full = col_types
+        pairwise_intra_data = generate_pairwise_intra(conn, relevant,
+                                                      col_types=col_types_full)
 
     pairwise_xtab_data = {}
     if price_n_pairwise:

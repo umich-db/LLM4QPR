@@ -97,3 +97,25 @@ def test_pairwise_intra_aggregate_produces_dict():
     assert isinstance(rec["H8x8_ordered"], np.ndarray)
     assert rec["H8x8_ordered"].shape == (64,)
     assert abs(rec["s_lt"] + rec["s_eq"] + rec["s_gt"] - 1.0) < 1e-3
+
+
+def test_pairwise_xtab_aggregate_produces_dict():
+    """generate_pairwise_xtab returns the cross-table 2D joint with the same
+    schema as generate_pairwise_intra but a 4-tuple key."""
+    import numpy as np
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from generate_price_stats_from_pg import (
+        get_connection, generate_pairwise_xtab, DB_CONFIG,
+    )
+    pg_db, _, _ = DB_CONFIG["tpcds"]
+    conn = get_connection(pg_db)
+    pairs = [("inventory", "inv_quantity_on_hand",
+              "catalog_sales", "cs_quantity")]
+    out = generate_pairwise_xtab(conn, pairs, sample_n=10000)
+    conn.close()
+    key = ("inventory", "inv_quantity_on_hand",
+           "catalog_sales", "cs_quantity")
+    assert key in out
+    assert out[key]["H8x8_ordered"].shape == (64,)
+    assert abs(out[key]["s_lt"] + out[key]["s_eq"]
+               + out[key]["s_gt"] - 1.0) < 1e-3

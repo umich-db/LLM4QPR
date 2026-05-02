@@ -958,6 +958,72 @@ def generate_pairwise_intra(conn, pairs):
 
 
 # ---------------------------------------------------------------------------
+# Generate nonequi_pair_xtab.pkl (rule h) — cross-table 2D joint histograms
+# ---------------------------------------------------------------------------
+def generate_pairwise_xtab(conn, pairs, sample_n=1_000_000):
+    """Compute cross-table 8x8 ordered joint histogram via uniform sampling.
+
+    Args:
+        conn: psycopg2 connection.
+        pairs: iterable of (L_table, L_col, R_table, R_col).
+        sample_n: rows drawn from each table independently (default 1M).
+
+    Returns dict[(L_table, L_col, R_table, R_col)] -> same schema as
+    generate_pairwise_intra.
+    """
+    out = {}
+    cur = conn.cursor()
+    for tL, cL, tR, cR in pairs:
+        try:
+            cur.execute(
+                f'SELECT MIN("{cL}"), MAX("{cL}") FROM "{tL}"'
+            )
+            x_lo, x_hi = cur.fetchone()
+            cur.execute(
+                f'SELECT MIN("{cR}"), MAX("{cR}") FROM "{tR}"'
+            )
+            y_lo, y_hi = cur.fetchone()
+            if x_lo is None or y_lo is None or x_lo == x_hi or y_lo == y_hi:
+                continue
+            cur.execute(f"""
+                WITH ls AS (
+                    SELECT "{cL}" AS x FROM "{tL}"
+                    WHERE "{cL}" IS NOT NULL ORDER BY random() LIMIT %s
+                ),
+                rs AS (
+                    SELECT "{cR}" AS y FROM "{tR}"
+                    WHERE "{cR}" IS NOT NULL ORDER BY random() LIMIT %s
+                )
+                SELECT
+                  width_bucket(ls.x, %s, %s, 40) AS bx,
+                  width_bucket(rs.y, %s, %s, 40) AS by,
+                  COUNT(*)
+                FROM ls CROSS JOIN rs
+                GROUP BY 1, 2
+            """, (sample_n, sample_n, x_lo, x_hi, y_lo, y_hi))
+            h40 = np.zeros((40, 40), dtype=np.float64)
+            for bx, by, cnt in cur.fetchall():
+                if bx is None or by is None:
+                    continue
+                bx_i = max(1, min(40, int(bx))) - 1
+                by_i = max(1, min(40, int(by))) - 1
+                h40[bx_i, by_i] += cnt
+            h8 = _compress_40_to_8(h40)
+            ordered = _order_8x8_into_regions(h8)
+            total = ordered.sum() or 1.0
+            out[(tL, cL, tR, cR)] = {
+                "H8x8_ordered": ordered,
+                "s_lt": float(ordered[:28].sum() / total),
+                "s_eq": float(ordered[28:36].sum() / total),
+                "s_gt": float(ordered[36:64].sum() / total),
+            }
+        except Exception as e:
+            print(f"    WARN pairwise_xtab({tL}.{cL} × {tR}.{cR}): {e}")
+    cur.close()
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Generate orphan_fraction (rule g) — nested inside fanout40.pkl
 # ---------------------------------------------------------------------------
 def generate_orphan_fractions(conn, abbrev, joins):
@@ -1413,6 +1479,15 @@ def generate_stats_for_db(db_name, price_n_filter=False, price_n_fanout=False,
         relevant = [p for p in PAIRWISE_INTRA_WHITELIST if p[0] in abbrev]
         pairwise_intra_data = generate_pairwise_intra(conn, relevant)
 
+    pairwise_xtab_data = {}
+    if price_n_pairwise:
+        print()
+        print(f"    Computing nonequi_pair_xtab (rule h) for "
+              f"{len(PAIRWISE_XTAB_WHITELIST)} pairs ...")
+        relevant_xtab = [p for p in PAIRWISE_XTAB_WHITELIST
+                         if p[0] in abbrev and p[2] in abbrev]
+        pairwise_xtab_data = generate_pairwise_xtab(conn, relevant_xtab)
+
     col_type_dict = build_col_type_dict(abbrev, col_types)
 
     # Save all files
@@ -1431,6 +1506,7 @@ def generate_stats_for_db(db_name, price_n_filter=False, price_n_fanout=False,
         files["null_fraction.pkl"] = null_fraction_data
     if price_n_pairwise:
         files["pairwise_intra40.pkl"] = pairwise_intra_data
+        files["nonequi_pair_xtab.pkl"] = pairwise_xtab_data
     for fname, data in files.items():
         fpath = os.path.join(output_dir, fname)
         with open(fpath, "wb") as f:

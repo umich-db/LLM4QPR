@@ -953,6 +953,7 @@ def generate_pairwise_intra(conn, pairs):
             }
         except Exception as e:
             print(f"    WARN pairwise_intra({table}.{col_x}, {col_y}): {e}")
+            conn.rollback()
     cur.close()
     return out
 
@@ -1042,6 +1043,7 @@ def generate_pairwise_xtab(conn, pairs, sample_n=1_000_000):
             }
         except Exception as e:
             print(f"    WARN pairwise_xtab({tL}.{cL} × {tR}.{cR}): {e}")
+            conn.rollback()
     cur.close()
     return out
 
@@ -1530,6 +1532,9 @@ def generate_stats_for_db(db_name, price_n_filter=False, price_n_fanout=False,
     if price_n_pairwise:
         files["pairwise_intra40.pkl"] = pairwise_intra_data
         files["nonequi_pair_xtab.pkl"] = pairwise_xtab_data
+        # Empty stub for now (per spec §5.5). Future cross-table non-equi
+        # entries beyond the §5.4 whitelist plug in here.
+        files["nonequi_fanout_op40.pkl"] = {}
     for fname, data in files.items():
         fpath = os.path.join(output_dir, fname)
         with open(fpath, "wb") as f:

@@ -214,3 +214,75 @@ class Sql2FeatureN(Sql2Feature):
         assert feature.shape[0] == self.filter_dim_n, \
             f"filter token shape {feature.shape[0]} != {self.filter_dim_n}"
         return feature
+
+    # ---- pairwise intra/cross-table filter token (rules h, j) ----
+
+    # Operator → mask region indices into the 64-vector
+    # Region_1 (x<y) is indices [0, 28), region_2 (x≈y) is [28, 36),
+    # region_3 (x>y) is [36, 64).
+    _REGION_BOUNDS = {"lt": (0, 28), "eq": (28, 36), "gt": (36, 64)}
+
+    @classmethod
+    def _op_to_regions(cls, op: str) -> Sequence[str]:
+        return {
+            "<":  ("lt",),
+            "<=": ("lt", "eq"),
+            "=":  ("eq",),
+            "!=": ("lt", "gt"),
+            ">":  ("gt",),
+            ">=": ("eq", "gt"),
+        }[op]
+
+    def _build_op_mask(self, op: str) -> np.ndarray:
+        mask = np.zeros(64, dtype=np.float32)
+        for region in self._op_to_regions(op):
+            lo, hi = self._REGION_BOUNDS[region]
+            mask[lo:hi] = 1.0
+        return mask
+
+    def _selectivity_for_op(self, op: str, s_lt: float, s_eq: float, s_gt: float) -> float:
+        regions = self._op_to_regions(op)
+        return sum({"lt": s_lt, "eq": s_eq, "gt": s_gt}[r] for r in regions)
+
+    def _encode_pairwise_intra_token(self, left_table: str, col_x: str,
+                                     col_y: str, op: Optional[str] = None,
+                                     right_table: Optional[str] = None,
+                                     right_col: Optional[str] = None) -> torch.Tensor:
+        """Build a 129-dim pairwise filter token.
+
+        For same-table pairs (right_table is None or == left_table), draws from
+        pairwise_intra40.pkl. For cross-table pairs, draws from
+        nonequi_pair_xtab.pkl.
+
+        Caller is responsible for providing op ∈ {<, <=, =, !=, >, >=}.
+
+        For cross-table calls, col_y may hold the operator string when op is
+        omitted (i.e. called as _encode_pairwise_intra_token(t, cx, op,
+        right_table=rt, right_col=rc)).
+        """
+        # Normalise signature: when right_table is given and op is None,
+        # the caller passed op as the col_y positional argument.
+        if right_table is not None and right_table != left_table and op is None:
+            op = col_y
+            col_y = None
+
+        if right_table is None or right_table == left_table:
+            rec = self._pairwise_intra.get((left_table, col_x, col_y))
+        else:
+            rec = self._pairwise_xtab.get(
+                (left_table, col_x, right_table, right_col))
+
+        if rec is None:
+            # Missing stats — emit a zero token so the caller can still
+            # proceed with a feature-shaped placeholder.
+            return torch.zeros(self.pairwise_dim_n, dtype=torch.float32)
+
+        H = torch.tensor(rec["H8x8_ordered"], dtype=torch.float32)
+        if H.shape != (64,):
+            H = H.flatten()[:64]
+        M = torch.tensor(self._build_op_mask(op), dtype=torch.float32)
+        s_op = self._selectivity_for_op(op, rec["s_lt"], rec["s_eq"], rec["s_gt"])
+        s_op_t = torch.tensor([s_op], dtype=torch.float32)
+        feature = torch.cat([H, M, s_op_t])
+        assert feature.shape[0] == self.pairwise_dim_n
+        return feature

@@ -181,3 +181,39 @@ def test_filter_token_is_not_null():
              "is_null": False, "is_not_null": True, "like_keys": []}
     tok = f._encode_filter_token("tpch_p.p_size", atoms)
     assert tok[-1].item() == -1.0     # null_pred_flag = -1
+
+
+def test_pairwise_intra_token_lt():
+    sys.path.insert(0, "/root/LLM4QPR/PRICE")
+    from setup.features_tool_n import Sql2FeatureN
+    f = Sql2FeatureN("tpch", 40, "finetune")
+    tok = f._encode_pairwise_intra_token(
+        "lineitem", "l_shipdate", "l_commitdate", "<")
+    assert tok.shape == (129,)
+    # Mask is 64 dims at offset 64; for "<" exactly the first 28 should be 1.
+    mask = tok[64:128]
+    assert mask[:28].sum().item() == 28.0
+    assert mask[28:].sum().item() == 0.0
+
+
+def test_pairwise_intra_token_eq():
+    sys.path.insert(0, "/root/LLM4QPR/PRICE")
+    from setup.features_tool_n import Sql2FeatureN
+    f = Sql2FeatureN("tpch", 40, "finetune")
+    tok = f._encode_pairwise_intra_token(
+        "lineitem", "l_shipdate", "l_commitdate", "=")
+    mask = tok[64:128]
+    # Region-2 only (8 cells at indices 28..35).
+    assert mask[28:36].sum().item() == 8.0
+    assert mask[:28].sum().item() == 0.0
+    assert mask[36:].sum().item() == 0.0
+
+
+def test_pairwise_intra_token_xtab_falls_through_to_xtab_pkl():
+    sys.path.insert(0, "/root/LLM4QPR/PRICE")
+    from setup.features_tool_n import Sql2FeatureN
+    f = Sql2FeatureN("tpcds", 40, "finetune")
+    tok = f._encode_pairwise_intra_token(
+        "inventory", "inv_quantity_on_hand", "<",
+        right_table="catalog_sales", right_col="cs_quantity")
+    assert tok.shape == (129,)

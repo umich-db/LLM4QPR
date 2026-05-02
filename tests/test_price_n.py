@@ -342,3 +342,47 @@ def test_normalize_date_arith_literal():
     _normalize_date_literals(ast)
     # 1970-01-15 = day 14, minus 5 = 9.
     assert "9" in ast.sql()
+
+
+def test_extract_filter_atoms_collects_eq_in_null():
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _extract_filter_atoms
+    import sqlglot
+    ast = sqlglot.parse_one(
+        "SELECT * FROM tpch_l "
+        "WHERE tpch_l.l_quantity IN (10, 20) "
+        "AND tpch_l.l_shipmode IS NOT NULL")
+    atoms = _extract_filter_atoms(ast)
+    assert atoms["tpch_l.l_quantity"]["in_values"] == [10, 20]
+    assert atoms["tpch_l.l_shipmode"]["is_not_null"] is True
+
+
+def test_extract_pairwise_intra_atoms_finds_self_pair():
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _extract_pairwise_intra_atoms
+    import sqlglot
+    ast = sqlglot.parse_one(
+        "SELECT * FROM tpch_l "
+        "WHERE tpch_l.l_shipdate < tpch_l.l_commitdate")
+    atoms = _extract_pairwise_intra_atoms(ast)
+    assert ("tpch_l", "l_shipdate", "l_commitdate", "<", None, None) in atoms
+
+
+def test_extract_xtab_nonequi_atoms_whitelist_only():
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _extract_xtab_nonequi_atoms
+    import sqlglot
+    ast = sqlglot.parse_one(
+        "SELECT * FROM inventory inv, catalog_sales cs "
+        "WHERE inv.inv_quantity_on_hand < cs.cs_quantity")
+    atoms = _extract_xtab_nonequi_atoms(ast)
+    assert any(a[2] == "<" for a in atoms)
+
+
+def test_flatten_join_with_side_preserves_left():
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _flatten_join_with_side
+    sql = ("SELECT * FROM tpch_a a "
+           "LEFT JOIN tpch_b b ON a.k = b.k")
+    flat_sql, sides = _flatten_join_with_side(sql)
+    assert any(s == "LEFT" for _, _, s in sides)

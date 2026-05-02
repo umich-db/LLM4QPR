@@ -610,6 +610,226 @@ def _rewrite_disjoint_or_to_in(ast):
             break  # restart iteration since the AST mutated
 
 
+# ---------------------------------------------------------------------------
+# Rule d: per-column filter atom extraction
+# ---------------------------------------------------------------------------
+
+def _column_str(node):
+    """'table.column' for a sqlglot Column node, else str(node)."""
+    if hasattr(node, 'table') and getattr(node, 'table', None):
+        return f"{node.table}.{node.name}"
+    return str(node)
+
+
+def _literal_value(node):
+    """Best-effort native-Python value from a Literal/Number/etc."""
+    if isinstance(node, sqlglot_exp.Literal):
+        try:
+            return int(str(node.name))
+        except (TypeError, ValueError):
+            try:
+                return float(str(node.name))
+            except (TypeError, ValueError):
+                return str(node.name)
+    return None
+
+
+def _extract_filter_atoms(ast):
+    """Walk WHERE and collect per-column atoms for the PRICE_N filter token.
+
+    Returns dict[full_col -> dict] using the schema from
+    Sql2FeatureN.EMPTY_ATOMS.
+    """
+    if not HAS_SQLGLOT:
+        return {}
+    where = ast.args.get("where")
+    if where is None:
+        return {}
+    atoms = {}
+
+    def _ensure(col):
+        return atoms.setdefault(col, {
+            "eq_values": [], "in_values": [], "not_in_values": [],
+            "range_low": None, "range_high": None,
+            "is_null": False, "is_not_null": False, "like_keys": [],
+        })
+
+    for in_node in where.find_all(sqlglot_exp.In):
+        col = _column_str(in_node.this)
+        for v in in_node.expressions:
+            val = _literal_value(v)
+            if val is not None:
+                _ensure(col)["in_values"].append(val)
+    for eq in where.find_all(sqlglot_exp.EQ):
+        if isinstance(eq.expression, sqlglot_exp.Column):
+            continue
+        col = _column_str(eq.this)
+        v = _literal_value(eq.expression)
+        if v is not None:
+            _ensure(col)["eq_values"].append(v)
+    for cmp_cls, side in [
+        (sqlglot_exp.GTE, "low"), (sqlglot_exp.GT, "low"),
+        (sqlglot_exp.LTE, "high"), (sqlglot_exp.LT, "high"),
+    ]:
+        for cmp in where.find_all(cmp_cls):
+            if isinstance(cmp.expression, sqlglot_exp.Column):
+                continue
+            col = _column_str(cmp.this)
+            v = _literal_value(cmp.expression)
+            if v is None:
+                continue
+            entry = _ensure(col)
+            if side == "low":
+                entry["range_low"] = v if entry["range_low"] is None \
+                                     else max(entry["range_low"], v)
+            else:
+                entry["range_high"] = v if entry["range_high"] is None \
+                                      else min(entry["range_high"], v)
+    for is_node in where.find_all(sqlglot_exp.Is):
+        col = _column_str(is_node.this)
+        rhs = is_node.expression
+        if isinstance(rhs, sqlglot_exp.Null):
+            # Check if this Is node is wrapped in a Not (IS NOT NULL pattern)
+            parent = is_node.parent
+            if isinstance(parent, sqlglot_exp.Not):
+                _ensure(col)["is_not_null"] = True
+            else:
+                _ensure(col)["is_null"] = True
+        elif isinstance(rhs, sqlglot_exp.Not) and isinstance(rhs.this, sqlglot_exp.Null):
+            # sqlglot might represent IS NOT NULL as Is(col, Not(Null())) in some versions
+            _ensure(col)["is_not_null"] = True
+    return atoms
+
+
+# ---------------------------------------------------------------------------
+# Rule h: intra-table column-vs-column predicate extraction
+# ---------------------------------------------------------------------------
+
+_PAIRWISE_OPS = {
+    sqlglot_exp.LT: "<",   sqlglot_exp.LTE: "<=",
+    sqlglot_exp.EQ: "=",   sqlglot_exp.NEQ: "!=",
+    sqlglot_exp.GT: ">",   sqlglot_exp.GTE: ">=",
+}
+
+
+def _extract_pairwise_intra_atoms(ast):
+    """Find `A.x op A.y` predicates where both sides are columns of the same
+    physical table alias.
+
+    Returns list of (left_table, col_x, col_y, op, None, None).
+    """
+    if not HAS_SQLGLOT:
+        return []
+    where = ast.args.get("where")
+    if where is None:
+        return []
+    out = []
+    for cmp_cls, op_str in _PAIRWISE_OPS.items():
+        for cmp in where.find_all(cmp_cls):
+            lhs, rhs = cmp.this, cmp.expression
+            if not (isinstance(lhs, sqlglot_exp.Column)
+                    and isinstance(rhs, sqlglot_exp.Column)):
+                continue
+            lt = getattr(lhs, "table", None)
+            rt = getattr(rhs, "table", None)
+            if lt and rt and lt == rt:
+                out.append((lt, str(lhs.name), str(rhs.name), op_str, None, None))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Rule j: cross-table non-equi predicate extraction (whitelisted pairs only)
+# ---------------------------------------------------------------------------
+
+# (table, col, table, col) tuples whose cross-table inequalities get a
+# pairwise token. Currently the single TPC-DS exception.
+_XTAB_NONEQUI_WHITELIST = {
+    ("inventory", "inv_quantity_on_hand",
+     "catalog_sales", "cs_quantity"),
+    ("catalog_sales", "cs_quantity",
+     "inventory", "inv_quantity_on_hand"),  # symmetric direction
+}
+
+
+def _extract_xtab_nonequi_atoms(ast):
+    """Find whitelisted cross-table non-equi predicates.
+
+    Resolves table aliases to physical table names before checking the
+    whitelist, so `FROM inventory inv, catalog_sales cs WHERE inv.x < cs.y`
+    is correctly identified.
+
+    Returns list of (L_table, L_col, op, R_table, R_col, None) — note the
+    op is in slot 2 unlike _extract_pairwise_intra_atoms; the call site
+    rewraps to a uniform 6-tuple.
+    """
+    if not HAS_SQLGLOT:
+        return []
+    where = ast.args.get("where")
+    if where is None:
+        return []
+    # Build alias → physical-table map.
+    alias_to_phys = {}
+    for tbl in ast.find_all(sqlglot_exp.Table):
+        if tbl.alias:
+            alias_to_phys[tbl.alias] = str(tbl.name)
+        else:
+            alias_to_phys[str(tbl.name)] = str(tbl.name)
+    out = []
+    for cmp_cls, op_str in _PAIRWISE_OPS.items():
+        for cmp in where.find_all(cmp_cls):
+            lhs, rhs = cmp.this, cmp.expression
+            if not (isinstance(lhs, sqlglot_exp.Column)
+                    and isinstance(rhs, sqlglot_exp.Column)):
+                continue
+            raw_lt = getattr(lhs, "table", None)
+            raw_rt = getattr(rhs, "table", None)
+            lt = alias_to_phys.get(raw_lt) if raw_lt else None
+            rt = alias_to_phys.get(raw_rt) if raw_rt else None
+            if not (lt and rt) or lt == rt:
+                continue
+            key = (lt, str(lhs.name), rt, str(rhs.name))
+            if key in _XTAB_NONEQUI_WHITELIST:
+                out.append((lt, str(lhs.name), op_str, rt, str(rhs.name), None))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Rule g: join-side-preserving SQL flattener
+# ---------------------------------------------------------------------------
+
+def _flatten_join_with_side(sql):
+    """Like flatten_sql_for_price() but also returns
+    `joins_with_side: list[tuple[str, str, side]]`.
+
+    Each entry: ('A.k', 'B.k', side) where side is one of
+    {INNER, LEFT, RIGHT, FULL}.
+    Returns (flat_sql, joins_with_side) or (sql, []) on failure.
+    """
+    if not HAS_SQLGLOT:
+        return sql, []
+    try:
+        ast = sqlglot.parse_one(sql)
+    except Exception:
+        return sql, []
+    sides = []
+    # Walk the join tree extracting side annotations BEFORE rewriting.
+    for j in list(ast.find_all(sqlglot_exp.Join)):
+        on = j.args.get("on")
+        side = (j.args.get("side") or "INNER").upper()
+        if on is None or not isinstance(on, sqlglot_exp.EQ):
+            continue
+        if not (isinstance(on.this, sqlglot_exp.Column)
+                and isinstance(on.expression, sqlglot_exp.Column)):
+            continue
+        sides.append((_column_str(on.this), _column_str(on.expression), side))
+    # Re-use the existing flattener for the rewrite (drops side info from SQL).
+    try:
+        flat = flatten_sql_for_price(sql, db_name=None)
+    except Exception:
+        flat = None
+    return (flat or sql), sides
+
+
 def _is_constant(node):
     """Check if expression has no Column or Subquery refs (is a literal/constant)."""
     if isinstance(node, sqlglot_exp.Column):

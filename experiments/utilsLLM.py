@@ -1108,17 +1108,29 @@ class QueryPlanPredictor(nn.Module):
             if target_modules:
                 default_targets = target_modules
             else:
-                # Try common target module names
+                # Try common target module names (architecture-specific attention projections).
+                # Order matters: more specific patterns first.
                 module_names = {n.split('.')[-1] for n, _ in model.named_modules() if isinstance(_, nn.Linear)}
                 if {"q_proj", "v_proj"} <= module_names:
-                    default_targets = ["q_proj", "v_proj"]
+                    default_targets = ["q_proj", "v_proj"]            # LLaMA, OPT, Qwen, Mistral
+                elif "query_key_value" in module_names:
+                    default_targets = ["query_key_value"]              # GPT-NeoX (Pythia), Falcon, MPT
                 elif {"query", "value"} <= module_names:
-                    default_targets = ["query", "value"]
+                    default_targets = ["query", "value"]               # BERT, RoBERTa, ELECTRA
                 elif {"Wqkv"} <= module_names:
-                    default_targets = ["Wqkv"]
+                    default_targets = ["Wqkv"]                         # ModernBERT
+                elif {"c_attn"} <= module_names:
+                    default_targets = ["c_attn"]                       # GPT-2 family (combined QKV)
+                elif {"q", "v"} <= module_names:
+                    default_targets = ["q", "v"]                       # T5
                 else:
-                    # Fallback: target all linear layers
-                    default_targets = list(module_names)[:4] if module_names else ["query", "value"]
+                    # No known attention-projection pattern matched. Refuse to silently
+                    # train LoRA on arbitrary Linear layers (causes divergence). Bail out.
+                    raise ValueError(
+                        f"[generic] Could not auto-detect LoRA target modules for "
+                        f"{model_name}. Linear module suffixes seen: {sorted(module_names)}. "
+                        f"Pass --target_modules explicitly to train this model."
+                    )
                 print(f"[generic] LoRA target modules: {default_targets}")
             lora_config = LoraConfig(
                 r=lora_r,
@@ -2967,7 +2979,7 @@ def get_embeddings(predictor, ds_info, dat_path, argsP, batch_size=1, normalize_
         return features, costs, lengths, templates
 
 
-def generate_price_embeddings(price_embedder, workload, sql_list, db_name, bin_size, device, batch_size=64):
+def generate_price_embeddings(price_embedder, workload, sql_list, db_name, bin_size, device, argsP=None, batch_size=64):
     """
     Generate PRICE embeddings for a list of SQL queries.
 
@@ -2978,6 +2990,7 @@ def generate_price_embeddings(price_embedder, workload, sql_list, db_name, bin_s
         db_name: PRICE database name
         bin_size: histogram bin size
         device: torch device
+        argsP: parsed arguments (for PRICE flags)
         batch_size: batch size for inference
 
     Returns:
@@ -2986,18 +2999,43 @@ def generate_price_embeddings(price_embedder, workload, sql_list, db_name, bin_s
     import price_data_utils as pdu
 
     # Generate raw features
-    data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols = pdu.generate_price_features(
+    price_n_pairwise = getattr(argsP, 'price_n_pairwise', False)
+    gpf_out = pdu.generate_price_features(
         workload, sql_list, db_name, bin_size,
         price_m=getattr(argsP, 'price_m', False),
-        price_s=getattr(argsP, 'price_s', False)
+        price_s=getattr(argsP, 'price_s', False),
+        price_n_parsing=getattr(argsP, 'price_n_parsing', False),
+        price_n_filter=getattr(argsP, 'price_n_filter', False),
+        price_n_fanout=getattr(argsP, 'price_n_fanout', False),
+        price_n_pairwise=price_n_pairwise,
     )
+    if price_n_pairwise:
+        data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols, n_pairwise_intras = gpf_out
+    else:
+        data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols = gpf_out
+        n_pairwise_intras = None
 
     # Pad features
-    padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc = pdu.pad_and_cache_features(
-        data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols,
-        bin_size=bin_size,
+    bin_size_val = bin_size
+    table_dim = 4
+    filter_dim = (bin_size_val + 21) if getattr(argsP, 'price_m', False) else (bin_size_val + 3)
+    fanout_dim = getattr(argsP, 'price_fanout_dim', None)
+    pad_kwargs = dict(
+        bin_size=bin_size_val, table_dim=table_dim, filter_dim=filter_dim,
         price_m=getattr(argsP, 'price_m', False),
+        price_n_pairwise=price_n_pairwise,
+        fanout_dim=fanout_dim if getattr(argsP, 'price_n_fanout', False) else None,
+        pairwise_intra_dim=129 if price_n_pairwise else None,
+        n_pairwise_intras=n_pairwise_intras,
     )
+    pad_out = pdu.pad_and_cache_features(
+        data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols,
+        **pad_kwargs,
+    )
+    if price_n_pairwise:
+        padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc, max_n_pi = pad_out
+    else:
+        padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc = pad_out
 
     # Run through PRICEEmbedder in batches with no_grad
     price_embedder.eval()
@@ -3331,16 +3369,35 @@ def get_llm_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_info, 
         if len(dat_path_train_list) == 1 and dat_path_train_list[0] == dat_path_test:
             # Same file — generate PRICE embeddings for all, then split
             # First generate raw features to determine dims for model construction
-            data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols = pdu.generate_price_features(
+            _price_n_pairwise_llmprice = getattr(argsP, 'price_n_pairwise', False)
+            _gpf_out_llmprice = pdu.generate_price_features(
                 workload, sql_list_test, db_name, bin_size,
                 price_m=getattr(argsP, 'price_m', False),
                 price_s=getattr(argsP, 'price_s', False),
+                price_n_parsing=getattr(argsP, 'price_n_parsing', False),
+                price_n_filter=getattr(argsP, 'price_n_filter', False),
+                price_n_fanout=getattr(argsP, 'price_n_fanout', False),
+                price_n_pairwise=_price_n_pairwise_llmprice,
                 already_price_format=is_cross_wl_test,
             )
-            padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc = pdu.pad_and_cache_features(
-                data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols, bin_size=bin_size,
+            if _price_n_pairwise_llmprice:
+                data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols, _n_pi_llmprice = _gpf_out_llmprice
+            else:
+                data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols = _gpf_out_llmprice
+                _n_pi_llmprice = None
+            _pad_out_llmprice = pdu.pad_and_cache_features(
+                data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols,
+                bin_size=bin_size,
                 price_m=getattr(argsP, 'price_m', False),
+                price_n_pairwise=_price_n_pairwise_llmprice,
+                fanout_dim=getattr(argsP, 'price_fanout_dim', None) if getattr(argsP, 'price_n_fanout', False) else None,
+                pairwise_intra_dim=129 if _price_n_pairwise_llmprice else None,
+                n_pairwise_intras=_n_pi_llmprice,
             )
+            if _price_n_pairwise_llmprice:
+                padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc, _max_n_pi_llmprice = _pad_out_llmprice
+            else:
+                padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc = _pad_out_llmprice
 
             # Build PRICE model and load weights based on price_weights_source
             price_embedder = _load_price_embedder(argsP, max_njc, max_nfo, max_ntb, max_nfc, device)
@@ -3428,7 +3485,20 @@ def get_llm_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_info, 
                 train_sqls = train_sqls[:min_tr]
 
                 # Generate raw features for this train split
-                df_tr, njc_tr, nfo_tr, ntb_tr, nfc_tr = pdu.generate_price_features(train_wl, train_sqls, train_db, bin_size, price_m=getattr(argsP, 'price_m', False), price_s=getattr(argsP, 'price_s', False), already_price_format=is_cross_wl_train)
+                _gpf_tr_llmprice = pdu.generate_price_features(
+                    train_wl, train_sqls, train_db, bin_size,
+                    price_m=getattr(argsP, 'price_m', False),
+                    price_s=getattr(argsP, 'price_s', False),
+                    price_n_parsing=getattr(argsP, 'price_n_parsing', False),
+                    price_n_filter=getattr(argsP, 'price_n_filter', False),
+                    price_n_fanout=getattr(argsP, 'price_n_fanout', False),
+                    price_n_pairwise=getattr(argsP, 'price_n_pairwise', False),
+                    already_price_format=is_cross_wl_train,
+                )
+                if getattr(argsP, 'price_n_pairwise', False):
+                    df_tr, njc_tr, nfo_tr, ntb_tr, nfc_tr, _npi_tr = _gpf_tr_llmprice
+                else:
+                    df_tr, njc_tr, nfo_tr, ntb_tr, nfc_tr = _gpf_tr_llmprice
                 price_train_list.append((df_tr[:min_tr], njc_tr[:min_tr], nfo_tr[:min_tr], ntb_tr[:min_tr], nfc_tr[:min_tr]))
 
             embeddings_train_llm = torch.cat(embeddings_train_list, dim=0)
@@ -3443,12 +3513,22 @@ def get_llm_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_info, 
                 all_nfc.extend(nfc_tr)
 
             # Test PRICE features
-            data_features_test, njc_test, nfo_test, ntb_test, nfc_test = pdu.generate_price_features(
+            _price_n_pairwise_multi = getattr(argsP, 'price_n_pairwise', False)
+            _gpf_test_multi = pdu.generate_price_features(
                 workload, sql_list_test, db_name, bin_size,
                 price_m=getattr(argsP, 'price_m', False),
                 price_s=getattr(argsP, 'price_s', False),
+                price_n_parsing=getattr(argsP, 'price_n_parsing', False),
+                price_n_filter=getattr(argsP, 'price_n_filter', False),
+                price_n_fanout=getattr(argsP, 'price_n_fanout', False),
+                price_n_pairwise=_price_n_pairwise_multi,
                 already_price_format=is_cross_wl_test,
             )
+            if _price_n_pairwise_multi:
+                data_features_test, njc_test, nfo_test, ntb_test, nfc_test, _n_pi_test_multi = _gpf_test_multi
+            else:
+                data_features_test, njc_test, nfo_test, ntb_test, nfc_test = _gpf_test_multi
+                _n_pi_test_multi = None
             n_train_price = len(all_raw_feats)
             all_raw_feats.extend(data_features_test)
             all_njc.extend(njc_test)
@@ -3457,10 +3537,19 @@ def get_llm_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_info, 
             all_nfc.extend(nfc_test)
 
             # Unified padding
-            all_padded, all_masks, max_njc, max_nfo, max_ntb, max_nfc = pdu.pad_and_cache_features(
-                all_raw_feats, all_njc, all_nfo, all_ntb, all_nfc, bin_size=bin_size,
+            _pad_out_multi = pdu.pad_and_cache_features(
+                all_raw_feats, all_njc, all_nfo, all_ntb, all_nfc,
+                bin_size=bin_size,
                 price_m=getattr(argsP, 'price_m', False),
+                price_n_pairwise=_price_n_pairwise_multi,
+                fanout_dim=getattr(argsP, 'price_fanout_dim', None) if getattr(argsP, 'price_n_fanout', False) else None,
+                pairwise_intra_dim=129 if _price_n_pairwise_multi else None,
+                n_pairwise_intras=_n_pi_test_multi,
             )
+            if _price_n_pairwise_multi:
+                all_padded, all_masks, max_njc, max_nfo, max_ntb, max_nfc, _max_n_pi_multi = _pad_out_multi
+            else:
+                all_padded, all_masks, max_njc, max_nfo, max_ntb, max_nfc = _pad_out_multi
 
             # Build PRICE model and load weights based on price_weights_source
             price_embedder = _load_price_embedder(argsP, max_njc, max_nfo, max_ntb, max_nfc, device)
@@ -3723,11 +3812,21 @@ def get_price_only_ds_from_csv(dat_path_train_list, dat_path_test, ds_info, args
 
     # ---- Step 3: Generate PRICE features ----
     print(f"[PRICE finetune] Step 3: Generating PRICE features for {len(sql_list)} queries...", flush=True)
-    data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols = pdu.generate_price_features(
+    _price_n_pairwise_po = getattr(argsP, 'price_n_pairwise', False)
+    _gpf_out_po = pdu.generate_price_features(
         workload, sql_list, db_name, bin_size,
         price_m=getattr(argsP, 'price_m', False),
-        price_s=getattr(argsP, 'price_s', False)
+        price_s=getattr(argsP, 'price_s', False),
+        price_n_parsing=getattr(argsP, 'price_n_parsing', False),
+        price_n_filter=getattr(argsP, 'price_n_filter', False),
+        price_n_fanout=getattr(argsP, 'price_n_fanout', False),
+        price_n_pairwise=_price_n_pairwise_po,
     )
+    if _price_n_pairwise_po:
+        data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols, _n_pi_po = _gpf_out_po
+    else:
+        data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols = _gpf_out_po
+        _n_pi_po = None
 
     # ---- Step 4: Extract pg_est_card ----
     print(f"[PRICE finetune] Step 4: Extracting pg_est_card from plan JSONs...", flush=True)
@@ -3742,10 +3841,19 @@ def get_price_only_ds_from_csv(dat_path_train_list, dat_path_test, ds_info, args
     print(f"[PRICE finetune] Step 5: Padding features and splitting...", flush=True)
     if len(dat_path_train_list) == 1 and dat_path_train_list[0] == dat_path_test:
         # Same file — pad all, then split
-        padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc = pdu.pad_and_cache_features(
-            data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols, bin_size=bin_size,
+        _pad_out_po_same = pdu.pad_and_cache_features(
+            data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols,
+            bin_size=bin_size,
             price_m=getattr(argsP, 'price_m', False),
+            price_n_pairwise=_price_n_pairwise_po,
+            fanout_dim=getattr(argsP, 'price_fanout_dim', None) if getattr(argsP, 'price_n_fanout', False) else None,
+            pairwise_intra_dim=129 if _price_n_pairwise_po else None,
+            n_pairwise_intras=_n_pi_po,
         )
+        if _price_n_pairwise_po:
+            padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc, _max_n_pi_po_same = _pad_out_po_same
+        else:
+            padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc = _pad_out_po_same
         train_ids, val_ids, test_ids = train_val_test(len(costs_all), argsP)
 
         def _subset(lst, ids):
@@ -3790,7 +3898,19 @@ def get_price_only_ds_from_csv(dat_path_train_list, dat_path_test, ds_info, args
             min_tr = min(len(train_sqls), len(df_train))
             train_sqls = train_sqls[:min_tr]
 
-            df_feats, njc, nfo, ntb, nfc = pdu.generate_price_features(train_wl, train_sqls, train_db, bin_size, price_m=getattr(argsP, 'price_m', False), price_s=getattr(argsP, 'price_s', False))
+            _gpf_tr_po = pdu.generate_price_features(
+                train_wl, train_sqls, train_db, bin_size,
+                price_m=getattr(argsP, 'price_m', False),
+                price_s=getattr(argsP, 'price_s', False),
+                price_n_parsing=getattr(argsP, 'price_n_parsing', False),
+                price_n_filter=getattr(argsP, 'price_n_filter', False),
+                price_n_fanout=getattr(argsP, 'price_n_fanout', False),
+                price_n_pairwise=_price_n_pairwise_po,
+            )
+            if _price_n_pairwise_po:
+                df_feats, njc, nfo, ntb, nfc, _npi_tr_po = _gpf_tr_po
+            else:
+                df_feats, njc, nfo, ntb, nfc = _gpf_tr_po
             raw_feats_train.extend(df_feats[:min_tr])
             njc_train_all.extend(njc[:min_tr])
             nfo_train_all.extend(nfo[:min_tr])
@@ -3820,10 +3940,19 @@ def get_price_only_ds_from_csv(dat_path_train_list, dat_path_test, ds_info, args
         all_ntb = ntb_train_all + n_tables
         all_nfc = nfc_train_all + n_filter_cols
 
-        all_padded, all_masks, max_njc, max_nfo, max_ntb, max_nfc = pdu.pad_and_cache_features(
-            all_raw_feats, all_njc, all_nfo, all_ntb, all_nfc, bin_size=bin_size,
+        _pad_out_po_multi = pdu.pad_and_cache_features(
+            all_raw_feats, all_njc, all_nfo, all_ntb, all_nfc,
+            bin_size=bin_size,
             price_m=getattr(argsP, 'price_m', False),
+            price_n_pairwise=_price_n_pairwise_po,
+            fanout_dim=getattr(argsP, 'price_fanout_dim', None) if getattr(argsP, 'price_n_fanout', False) else None,
+            pairwise_intra_dim=129 if _price_n_pairwise_po else None,
+            n_pairwise_intras=_n_pi_po,
         )
+        if _price_n_pairwise_po:
+            all_padded, all_masks, max_njc, max_nfo, max_ntb, max_nfc, _max_n_pi_po_multi = _pad_out_po_multi
+        else:
+            all_padded, all_masks, max_njc, max_nfo, max_ntb, max_nfc = _pad_out_po_multi
 
         n_train = len(raw_feats_train)
         pf_train_all = all_padded[:n_train]
@@ -3955,12 +4084,22 @@ def get_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_
     cache_dir = os.path.join(os.path.dirname(__file__), "price_feature_cache", db)
     task_str = "card" if argsP.card else "time"
 
-    data_features_test, n_join_cols_test, n_fanouts_test, n_tables_test, n_filter_cols_test = pdu.generate_price_features(
+    _price_n_pairwise_llmp = getattr(argsP, 'price_n_pairwise', False)
+    _gpf_test_llmp = pdu.generate_price_features(
         workload, sql_list_test, db_name, bin_size,
         price_m=getattr(argsP, 'price_m', False),
         price_s=getattr(argsP, 'price_s', False),
+        price_n_parsing=getattr(argsP, 'price_n_parsing', False),
+        price_n_filter=getattr(argsP, 'price_n_filter', False),
+        price_n_fanout=getattr(argsP, 'price_n_fanout', False),
+        price_n_pairwise=_price_n_pairwise_llmp,
         already_price_format=is_cross_wl_test,
     )
+    if _price_n_pairwise_llmp:
+        data_features_test, n_join_cols_test, n_fanouts_test, n_tables_test, n_filter_cols_test, _n_pi_test_llmp = _gpf_test_llmp
+    else:
+        data_features_test, n_join_cols_test, n_fanouts_test, n_tables_test, n_filter_cols_test = _gpf_test_llmp
+        _n_pi_test_llmp = None
 
     # ---- Step 4: Extract pg_est_card (only for CSV-format data, not Spark) ----
     if not is_cross_wl_test and db != 'spark':
@@ -3979,11 +4118,19 @@ def get_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_
     print(f"[LLM+PRICE] Step 5/6: Splitting train/val/test...", flush=True)
     if len(dat_path_train_list) == 1 and dat_path_train_list[0] == dat_path_test:
         # Same file for train/test — pad all together
-        padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc = pdu.pad_and_cache_features(
+        _pad_out_llmp_same = pdu.pad_and_cache_features(
             data_features_test, n_join_cols_test, n_fanouts_test, n_tables_test, n_filter_cols_test,
             bin_size=bin_size,
             price_m=getattr(argsP, 'price_m', False),
+            price_n_pairwise=_price_n_pairwise_llmp,
+            fanout_dim=getattr(argsP, 'price_fanout_dim', None) if getattr(argsP, 'price_n_fanout', False) else None,
+            pairwise_intra_dim=129 if _price_n_pairwise_llmp else None,
+            n_pairwise_intras=_n_pi_test_llmp,
         )
+        if _price_n_pairwise_llmp:
+            padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc, _max_n_pi_llmp_same = _pad_out_llmp_same
+        else:
+            padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc = _pad_out_llmp_same
         n_join_cols = n_join_cols_test
         n_fanouts = n_fanouts_test
         n_tables = n_tables_test
@@ -4066,7 +4213,20 @@ def get_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_
             train_sqls = train_sqls[:min_len]
 
             print(f"[LLM+PRICE] Step 5/6: Generating PRICE features for {min_len} training queries...", flush=True)
-            df_feats, njc, nfo, ntb, nfc = pdu.generate_price_features(train_wl, train_sqls, train_db, bin_size, price_m=getattr(argsP, 'price_m', False), price_s=getattr(argsP, 'price_s', False), already_price_format=is_cross_wl_train)
+            _gpf_tr_llmp = pdu.generate_price_features(
+                train_wl, train_sqls, train_db, bin_size,
+                price_m=getattr(argsP, 'price_m', False),
+                price_s=getattr(argsP, 'price_s', False),
+                price_n_parsing=getattr(argsP, 'price_n_parsing', False),
+                price_n_filter=getattr(argsP, 'price_n_filter', False),
+                price_n_fanout=getattr(argsP, 'price_n_fanout', False),
+                price_n_pairwise=_price_n_pairwise_llmp,
+                already_price_format=is_cross_wl_train,
+            )
+            if _price_n_pairwise_llmp:
+                df_feats, njc, nfo, ntb, nfc, _npi_tr_llmp = _gpf_tr_llmp
+            else:
+                df_feats, njc, nfo, ntb, nfc = _gpf_tr_llmp
             raw_feats_train_all.extend(df_feats[:min_len])
             njc_train_all.extend(njc[:min_len])
             nfo_train_all.extend(nfo[:min_len])
@@ -4092,12 +4252,19 @@ def get_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_
         all_nfc_list = nfc_train_all + n_filter_cols_test
 
         print(f"[LLM+PRICE] Step 5/6: Padding {len(all_raw_feats)} features with unified dims...", flush=True)
-        all_padded, all_masks, _, _, _, _ = pdu.pad_and_cache_features(
+        _pad_out_llmp_multi = pdu.pad_and_cache_features(
             all_raw_feats, all_njc_list, all_nfo_list, all_ntb_list, all_nfc_list,
             bin_size=bin_size,
             price_m=getattr(argsP, 'price_m', False),
-            # Pass max dims explicitly to ensure consistency
+            price_n_pairwise=_price_n_pairwise_llmp,
+            fanout_dim=getattr(argsP, 'price_fanout_dim', None) if getattr(argsP, 'price_n_fanout', False) else None,
+            pairwise_intra_dim=129 if _price_n_pairwise_llmp else None,
+            n_pairwise_intras=_n_pi_test_llmp,
         )
+        if _price_n_pairwise_llmp:
+            all_padded, all_masks, _, _, _, _, _ = _pad_out_llmp_multi
+        else:
+            all_padded, all_masks, _, _, _, _ = _pad_out_llmp_multi
 
         # Split back into train and test portions
         n_train = len(raw_feats_train_all)
@@ -4255,22 +4422,40 @@ def get_frozen_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_te
 
     # ---- Step 3: Generate PRICE features ----
     print(f"[FrozenLLM+PRICE] Step 3: Generating PRICE features for {len(sql_list_test)} test queries...", flush=True)
-    data_features_test, n_join_cols_test, n_fanouts_test, n_tables_test, n_filter_cols_test = pdu.generate_price_features(
+    _price_n_pairwise_flp = getattr(argsP, 'price_n_pairwise', False)
+    _gpf_test_flp = pdu.generate_price_features(
         workload, sql_list_test, db_name, bin_size,
         price_m=getattr(argsP, 'price_m', False),
         price_s=getattr(argsP, 'price_s', False),
+        price_n_parsing=getattr(argsP, 'price_n_parsing', False),
+        price_n_filter=getattr(argsP, 'price_n_filter', False),
+        price_n_fanout=getattr(argsP, 'price_n_fanout', False),
+        price_n_pairwise=_price_n_pairwise_flp,
         already_price_format=is_cross_wl_test,
     )
+    if _price_n_pairwise_flp:
+        data_features_test, n_join_cols_test, n_fanouts_test, n_tables_test, n_filter_cols_test, _n_pi_test_flp = _gpf_test_flp
+    else:
+        data_features_test, n_join_cols_test, n_fanouts_test, n_tables_test, n_filter_cols_test = _gpf_test_flp
+        _n_pi_test_flp = None
 
     # ---- Step 4: Split train/val/test and pad ----
     print(f"[FrozenLLM+PRICE] Step 4: Splitting train/val/test...", flush=True)
     if len(dat_path_train_list) == 1 and dat_path_train_list[0] == dat_path_test:
         # Same file for train/test
-        padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc = pdu.pad_and_cache_features(
+        _pad_out_flp_same = pdu.pad_and_cache_features(
             data_features_test, n_join_cols_test, n_fanouts_test, n_tables_test, n_filter_cols_test,
             bin_size=bin_size,
             price_m=getattr(argsP, 'price_m', False),
+            price_n_pairwise=_price_n_pairwise_flp,
+            fanout_dim=getattr(argsP, 'price_fanout_dim', None) if getattr(argsP, 'price_n_fanout', False) else None,
+            pairwise_intra_dim=129 if _price_n_pairwise_flp else None,
+            n_pairwise_intras=_n_pi_test_flp,
         )
+        if _price_n_pairwise_flp:
+            padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc, _max_n_pi_flp_same = _pad_out_flp_same
+        else:
+            padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc = _pad_out_flp_same
 
         train_ids, val_ids, test_ids = train_val_test(n_emb, argsP)
 
@@ -4347,7 +4532,20 @@ def get_frozen_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_te
             min_len = min(len(train_sqls), emb_part.shape[0])
             train_sqls = train_sqls[:min_len]
 
-            df_feats, njc, nfo, ntb, nfc = pdu.generate_price_features(train_wl, train_sqls, train_db, bin_size, price_m=getattr(argsP, 'price_m', False), price_s=getattr(argsP, 'price_s', False), already_price_format=is_cross_wl_train)
+            _gpf_tr_flp = pdu.generate_price_features(
+                train_wl, train_sqls, train_db, bin_size,
+                price_m=getattr(argsP, 'price_m', False),
+                price_s=getattr(argsP, 'price_s', False),
+                price_n_parsing=getattr(argsP, 'price_n_parsing', False),
+                price_n_filter=getattr(argsP, 'price_n_filter', False),
+                price_n_fanout=getattr(argsP, 'price_n_fanout', False),
+                price_n_pairwise=_price_n_pairwise_flp,
+                already_price_format=is_cross_wl_train,
+            )
+            if _price_n_pairwise_flp:
+                df_feats, njc, nfo, ntb, nfc, _npi_tr_flp = _gpf_tr_flp
+            else:
+                df_feats, njc, nfo, ntb, nfc = _gpf_tr_flp
             raw_feats_train_all.extend(df_feats[:min_len])
             njc_train_all.extend(njc[:min_len])
             nfo_train_all.extend(nfo[:min_len])
@@ -4363,11 +4561,19 @@ def get_frozen_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_te
         all_ntb_list = ntb_train_all + n_tables_test
         all_nfc_list = nfc_train_all + n_filter_cols_test
 
-        all_padded, all_masks, max_njc, max_nfo, max_ntb, max_nfc = pdu.pad_and_cache_features(
+        _pad_out_flp_multi = pdu.pad_and_cache_features(
             all_raw_feats, all_njc_list, all_nfo_list, all_ntb_list, all_nfc_list,
             bin_size=bin_size,
             price_m=getattr(argsP, 'price_m', False),
+            price_n_pairwise=_price_n_pairwise_flp,
+            fanout_dim=getattr(argsP, 'price_fanout_dim', None) if getattr(argsP, 'price_n_fanout', False) else None,
+            pairwise_intra_dim=129 if _price_n_pairwise_flp else None,
+            n_pairwise_intras=_n_pi_test_flp,
         )
+        if _price_n_pairwise_flp:
+            all_padded, all_masks, max_njc, max_nfo, max_ntb, max_nfc, _max_n_pi_flp_multi = _pad_out_flp_multi
+        else:
+            all_padded, all_masks, max_njc, max_nfo, max_ntb, max_nfc = _pad_out_flp_multi
 
         n_train = len(raw_feats_train_all)
         pf_train_all = all_padded[:n_train]

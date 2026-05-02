@@ -119,3 +119,14 @@ def test_pairwise_xtab_aggregate_produces_dict():
     assert out[key]["H8x8_ordered"].shape == (64,)
     assert abs(out[key]["s_lt"] + out[key]["s_eq"]
                + out[key]["s_gt"] - 1.0) < 1e-3
+
+
+def test_sql2feature_n_skeleton_dims():
+    sys.path.insert(0, "/root/LLM4QPR/PRICE")
+    from setup.features_tool_n import Sql2FeatureN
+    f = Sql2FeatureN("tpch", 40, "finetune")
+    assert f.filter_dim_n == 75
+    assert f.fanout_dim_n == 42
+    assert f.pairwise_dim_n == 129
+    assert f.K == 10
+    assert f.PAIRWISE_GRID == 8

@@ -529,6 +529,39 @@ def generate_size(conn, abbrev):
 
 
 # ---------------------------------------------------------------------------
+# Generate null_fraction.pkl
+# ---------------------------------------------------------------------------
+def generate_null_fractions(conn, abbrev, columns):
+    """Compute null_fraction = COUNT(NULL)/COUNT(*) per (table, column).
+
+    Args:
+        conn: psycopg2 connection.
+        abbrev: dict[table_name -> price_alias].
+        columns: iterable of (table, column) pairs.
+
+    Returns:
+        dict[(table, column)] -> float in [0, 1].
+    """
+    out = {}
+    cur = conn.cursor()
+    for table, col in sorted(columns):
+        if table not in abbrev:
+            continue
+        try:
+            cur.execute(
+                f'SELECT COALESCE(SUM(CASE WHEN "{col}" IS NULL THEN 1 ELSE 0 END)::float '
+                f'       / NULLIF(COUNT(*), 0)::float, 0.0) FROM "{table}"'
+            )
+            (frac,) = cur.fetchone()
+            out[(table, col)] = float(frac) if frac is not None else 0.0
+        except Exception as e:
+            print(f"    WARN null_fraction({table}.{col}): {e}")
+            out[(table, col)] = 0.0
+    cur.close()
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Generate histogram40.pkl
 # ---------------------------------------------------------------------------
 def generate_histograms(conn, abbrev, col_types, table_col_dtypes, bin_size=BIN_SIZE):
@@ -1186,6 +1219,12 @@ def generate_stats_for_db(db_name, price_n_filter=False, price_n_fanout=False,
     print()
     summary_data = generate_summaries(conn, abbrev, col_types)
 
+    null_fraction_data = {}
+    if price_n_filter:
+        print()
+        print(f"    Computing null_fraction (rule b) ...")
+        null_fraction_data = generate_null_fractions(conn, abbrev, all_cols)
+
     print()
     fanout_data = generate_fanouts(
         conn, abbrev, joins, col_types, histogram_data, table_col_dtypes
@@ -1205,6 +1244,8 @@ def generate_stats_for_db(db_name, price_n_filter=False, price_n_fanout=False,
         "summary40.pkl": summary_data,
         "fanout40.pkl": fanout_data,
     }
+    if price_n_filter:
+        files["null_fraction.pkl"] = null_fraction_data
     for fname, data in files.items():
         fpath = os.path.join(output_dir, fname)
         with open(fpath, "wb") as f:

@@ -8,19 +8,32 @@ class RegressionModel(nn.Module):
     def __init__(self, n_join_col, n_fanout, n_table, n_filter_col,
                  hist_dim, table_dim, filter_dim,
                  query_hidden_dim, final_hidden_dim, output_dim,
-                 n_embd, n_layers, n_heads, dropout_rate, ffn_ratio=4):
+                 n_embd, n_layers, n_heads, dropout_rate, ffn_ratio=4,
+                 n_pairwise_intra=0, pairwise_intra_dim=0,
+                 fanout_dim=None):
         super(RegressionModel, self).__init__()
-        self.n_join_col, self.n_fanout, self.n_table, self.n_filter_col = n_join_col, n_fanout, n_table, n_filter_col
-        print(f"n_features: {n_join_col + n_fanout + n_table + n_filter_col}!")
+        self.n_join_col, self.n_fanout = n_join_col, n_fanout
+        self.n_table, self.n_filter_col = n_table, n_filter_col
+        self.n_pairwise_intra = n_pairwise_intra
+        self.pairwise_intra_dim = pairwise_intra_dim
+        self.fanout_dim = fanout_dim or hist_dim
+        n_features_total = n_join_col + n_fanout + n_table + n_filter_col + n_pairwise_intra
+        print(f"n_features: {n_features_total}!")
         self.hist_dim, self.table_dim, self.filter_dim = hist_dim, table_dim, filter_dim
         self.query_hidden_dim, self.final_hidden_dim, self.output_dim = query_hidden_dim, final_hidden_dim, output_dim
         self.n_embd, self.n_layers, self.n_heads = n_embd, n_layers, n_heads
         self.dropout_rate = dropout_rate
         self.ffn_ratio = ffn_ratio
 
-        self.scale_embedding = ScaleEmbedding(n_join_col, n_fanout, hist_dim, n_embd)
-        self.filter_embedding = FilterEmbedding(n_join_col, n_fanout, n_table, n_filter_col,
-                                          hist_dim, table_dim, filter_dim, n_embd)
+        self.scale_embedding = ScaleEmbedding(
+            n_join_col, n_fanout, hist_dim, n_embd,
+            fanout_token_dim=self.fanout_dim)
+        self.filter_embedding = FilterEmbedding(
+            n_join_col, n_fanout, n_table, n_filter_col,
+            hist_dim, table_dim, filter_dim, n_embd,
+            fanout_token_dim=self.fanout_dim,
+            n_pairwise_intra=n_pairwise_intra,
+            pairwise_intra_dim=pairwise_intra_dim)
         self.scale_encoder = Encoder(n_embd, n_layers, n_heads, dropout_rate, ffn_ratio)
         self.filter_encoder = Encoder(n_embd, n_layers, n_heads, dropout_rate, ffn_ratio)
 
@@ -38,7 +51,7 @@ class RegressionModel(nn.Module):
         scale_features = self.scale_embedding(x)
         masks1 = padding_mask[:, :1 + self.n_join_col + self.n_fanout] if padding_mask is not None else None
         scaling_output = self.scale_encoder(scale_features, masks1)
-        
+
         # filtering stage
         filter_features = self.filter_embedding(scaling_output, x)
         masks2 = padding_mask[:, :] if padding_mask is not None else None
@@ -54,10 +67,10 @@ class RegressionModel(nn.Module):
         output = self.output(query_output)
 
         table_sizes = []
-        bias = self.n_join_col * self.hist_dim + self.n_fanout * self.hist_dim
+        bias = self.n_join_col * self.hist_dim + self.n_fanout * self.fanout_dim
         for i in range(self.n_table):
             begin, end = bias + i * self.table_dim, bias + (i + 1) * self.table_dim
-            table_size = x[:, begin:begin+1] # table_size, without avi, minsel, ebo
+            table_size = x[:, begin:begin+1]  # table_size, without avi, minsel, ebo
             table_sizes.append(table_size)
         cartesian_product = torch.sum(torch.stack(table_sizes, dim=1), dim=1)
 

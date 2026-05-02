@@ -193,30 +193,47 @@ class ScaleEmbedding(nn.Module):
 
 class FilterEmbedding(nn.Module):
     def __init__(self, n_join_col, n_fanout, n_table, n_filter_col,
-                 hist_dim, table_dim, filter_dim, n_embd):
+                 hist_dim, table_dim, filter_dim, n_embd,
+                 fanout_token_dim=None,
+                 n_pairwise_intra=0, pairwise_intra_dim=0):
         super(FilterEmbedding, self).__init__()
-        self.n_join_col, self.n_fanout, self.n_table, self.n_filter_col = n_join_col, n_fanout, n_table, n_filter_col
+        self.n_join_col, self.n_fanout = n_join_col, n_fanout
+        self.n_table, self.n_filter_col = n_table, n_filter_col
         self.hist_dim = hist_dim
         self.table_dim = table_dim
         self.filter_dim = filter_dim
+        self.n_pairwise_intra = n_pairwise_intra
+        self.pairwise_intra_dim = pairwise_intra_dim
+        self.fanout_token_dim = fanout_token_dim or hist_dim
         self.n_embd = n_embd
 
         self.table_embeddings = nn.Linear(table_dim, n_embd)
         self.filter_embeddings = nn.Linear(filter_dim, n_embd)
+        if n_pairwise_intra > 0 and pairwise_intra_dim > 0:
+            self.pairwise_intra_embeddings = nn.Linear(pairwise_intra_dim, n_embd)
+        else:
+            self.pairwise_intra_embeddings = None
 
     def forward(self, scaling_output, x):
-        # x: [batch_size, features_dim]
         features_embedding = []
-        bias = self.n_join_col * self.hist_dim + self.n_fanout * self.hist_dim
+        bias = self.n_join_col * self.hist_dim + self.n_fanout * self.fanout_token_dim
         for i in range(self.n_table):
-            begin, end = bias + i * self.table_dim, bias + (i + 1) * self.table_dim
+            begin = bias + i * self.table_dim
+            end = begin + self.table_dim
             features_embedding.append(self.table_embeddings(x[:, begin:end]))
 
-        bias = self.n_join_col * self.hist_dim + self.n_fanout * self.hist_dim + self.n_table * self.table_dim
+        bias_f = bias + self.n_table * self.table_dim
         for i in range(self.n_filter_col):
-            begin, end = bias + i * self.filter_dim, bias + (i + 1) * self.filter_dim
+            begin = bias_f + i * self.filter_dim
+            end = begin + self.filter_dim
             features_embedding.append(self.filter_embeddings(x[:, begin:end]))
-        
-        # scaling_output: [batch_size, n_join_col + n_fanout + 1, n_embd]
-        # return [batch_size, n_features + 1, n_embd]
+
+        if self.pairwise_intra_embeddings is not None:
+            bias_p = bias_f + self.n_filter_col * self.filter_dim
+            for i in range(self.n_pairwise_intra):
+                begin = bias_p + i * self.pairwise_intra_dim
+                end = begin + self.pairwise_intra_dim
+                features_embedding.append(
+                    self.pairwise_intra_embeddings(x[:, begin:end]))
+
         return torch.cat([scaling_output, torch.stack(features_embedding, dim=1)], dim=1)

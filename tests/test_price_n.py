@@ -447,3 +447,28 @@ def test_scale_embedding_accepts_parametric_fanout_dim():
     x = torch.zeros(1, 164)
     out = se(x)
     assert out.shape == (1, 1 + 2 + 2, 64)  # virtual + 2 join + 2 fanout
+
+
+def test_regression_model_accepts_pairwise_intra_embedding_dim():
+    sys.path.insert(0, "/root/PRICE")
+    import torch
+    from model.encoder import RegressionModel
+    rm = RegressionModel(
+        n_join_col=2, n_fanout=4, n_table=2, n_filter_col=2,
+        n_pairwise_intra=1,
+        hist_dim=40, table_dim=4, filter_dim=75,
+        fanout_dim=42, pairwise_intra_dim=129,
+        n_embd=64, n_layers=2, n_heads=4, dropout_rate=0.1,
+        query_hidden_dim=64,
+        final_hidden_dim=64, output_dim=1)
+    # Total flat width: 2*40 (joins) + 4*42 (fanout) + 2*4 (tables)
+    # + 2*75 (filter) + 1*129 (pairwise) = 80 + 168 + 8 + 150 + 129 = 535
+    x = torch.zeros(2, 535)
+    pg_est_card = torch.zeros(2, 1)
+    n_jc = torch.tensor([[2.0]] * 2)
+    n_fo = torch.tensor([[4.0]] * 2)
+    n_tb = torch.tensor([[2.0]] * 2)
+    n_fc = torch.tensor([[2.0]] * 2)
+    out = rm(x, pg_est_card=pg_est_card,
+             n_join_col=n_jc, n_fanout=n_fo, n_table=n_tb, n_filter_col=n_fc)
+    assert out.shape == (2, 1)

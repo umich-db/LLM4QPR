@@ -504,3 +504,35 @@ def test_partial_copy_filter_embedding_43_to_75():
     # Remaining dims should be zero (zero-init).
     assert torch.allclose(target_w[:, 43:], torch.zeros_like(target_w[:, 43:]))
     assert "filter_embedding.filter_embeddings.weight" in summary["partial_copied"]
+
+
+def test_utilsTrain_accepts_price_n_shorthand():
+    """parse_args() with --price_n must set the four orthogonal flags."""
+    import subprocess
+    result = subprocess.run(
+        ["python", "-c",
+         "import sys; sys.path.insert(0, '/root/LLM4QPR/experiments'); "
+         "import utilsTrain, shlex; "
+         "sys.argv = shlex.split('train.py --db postgres --workload tpch --algo llm --model_name x --price_n'); "
+         "args = utilsTrain.parse_args(); "
+         "print(args.price_n_parsing, args.price_n_filter, "
+         "args.price_n_fanout, args.price_n_pairwise)"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip().endswith("True True True True")
+
+
+def test_utilsTrain_rejects_price_s_plus_price_n_filter():
+    """The mutual-exclusion guard blocks --price_s --price_n_filter."""
+    import subprocess
+    result = subprocess.run(
+        ["python", "-c",
+         "import sys; sys.path.insert(0, '/root/LLM4QPR/experiments'); "
+         "import utilsTrain, shlex; "
+         "sys.argv = shlex.split('train.py --db postgres --workload tpch --algo llm --model_name x --price_s --price_n_filter'); "
+         "args = utilsTrain.parse_args()"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode != 0
+    assert "mutually exclusive" in result.stderr.lower()

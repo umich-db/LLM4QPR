@@ -130,6 +130,24 @@ def parse_args():
                         help="Use PRICE_M encoding (61-dim filters with IN/LIKE support via multi-value SpaceSaving)")
     parser.add_argument("--price_s", action="store_true", default=False,
                         help="Use PRICE_S encoding (43-dim, IN/LIKE via bounding-box range)")
+    parser.add_argument("--price_n_parsing", action="store_true", default=False,
+                        help="PRICE_N: enable parser rules (NOT push-down, "
+                             "disjoint-OR→IN, date literals, atom tagging).")
+    parser.add_argument("--price_n_filter", action="store_true", default=False,
+                        help="PRICE_N: 75-dim filter token (10 IN slots + tail "
+                             "+ null bits). Mutually exclusive with --price_s, --price_m.")
+    parser.add_argument("--price_n_fanout", action="store_true", default=False,
+                        help="PRICE_N: 42-dim fanout token (orphan_fraction "
+                             "+ outer_preserve_flag).")
+    parser.add_argument("--price_n_pairwise", action="store_true", default=False,
+                        help="PRICE_N: enable 129-dim pairwise intra-table "
+                             "filter token (5th token type).")
+    parser.add_argument("--price_n", action="store_true", default=False,
+                        help="PRICE_N shorthand: equivalent to "
+                             "--price_n_parsing --price_n_filter "
+                             "--price_n_fanout --price_n_pairwise.")
+    parser.add_argument("--price_max_n_pairwise_intra", type=int, default=8,
+                        help="Pad pairwise intra-table tokens to this count.")
     parser.add_argument("--price_random_init", action="store_true", default=False,
                         help="Initialize PRICE with random weights instead of pretrained")
     parser.add_argument("--price_n_layers", type=int, default=6,
@@ -204,6 +222,19 @@ def parse_args():
                         help="Project PRICE up to LLM dim for BiCross; output = concat(updated_LLM, updated_PRICE) at 2*LLM_dim")
 
     args = parser.parse_args()
+
+    # PRICE_N shorthand: --price_n sets all four orthogonal flags.
+    if args.price_n:
+        args.price_n_parsing = True
+        args.price_n_filter = True
+        args.price_n_fanout = True
+        args.price_n_pairwise = True
+
+    # Mutual exclusion: --price_s, --price_m, --price_n_filter all change filter_dim.
+    if sum([args.price_s, args.price_m, args.price_n_filter]) > 1:
+        parser.error(
+            "--price_s, --price_m, --price_n_filter are mutually exclusive "
+            "(they all change filter_dim).")
 
     # Backward compat: --price_pretrained maps to price_weights_source="joint"
     if args.price_pretrained and args.price_weights_source == "pretrained":

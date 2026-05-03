@@ -41,6 +41,7 @@ from price_data_utils import (
     _flatten_join_with_side,
     _preprocess_predicates,
     flatten_sql_for_price,
+    _check_cte_body_simple,
 )
 
 
@@ -102,23 +103,151 @@ def _eval_epoch_interval_arithmetic(ast):
 # LLM residual constructs detector
 # ---------------------------------------------------------------------------
 
+def _cte_simplicity_failure_reason(body):
+    """Return a human-readable reason why a CTE body fails the simple-body check."""
+    if isinstance(body, (_exp.Union, _exp.Intersect, _exp.Except)):
+        return "multi-branch (UNION/INTERSECT/EXCEPT)"
+    if not isinstance(body, _exp.Select):
+        return "not a SELECT node"
+    reasons = []
+    if body.args.get("group"):
+        reasons.append("has GROUP BY")
+    if body.args.get("having"):
+        reasons.append("has HAVING")
+    if body.args.get("distinct"):
+        reasons.append("has DISTINCT")
+    if body.args.get("limit") and body.args.get("order"):
+        reasons.append("has ORDER BY + LIMIT")
+    if any(body.find_all(_exp.Window)):
+        reasons.append("has window functions")
+    AGGS = (_exp.Sum, _exp.Avg, _exp.Min, _exp.Max, _exp.Count)
+    for expr in body.expressions:
+        e = expr.this if isinstance(expr, _exp.Alias) else expr
+        if isinstance(e, AGGS) or any(e.find_all(AGGS)):
+            reasons.append("has aggregates in projection")
+            break
+    return "; ".join(reasons) if reasons else "unknown"
+
+
 def _collect_llm_residuals(ast, sql):
     """
     Walk the original AST to find constructs outside PRICE's scope.
 
     Returns a list of dict items:
         {"kind": str, "detail": str, "snippet": str}
+
+    Under PRICE_N policy:
+    - EXISTS / NOT EXISTS subqueries → Exists / NotExists residuals
+    - IN(subquery) / NOT IN(subquery) → InSubquery / NotInSubquery residuals
+    - Scalar subqueries (col op (SELECT AGG ...)) → ScalarSubquery residuals
+    - CTEs whose body fails _check_cte_body_simple → NonSimpleCTE residuals
+    - Simple CTEs → still reported as CTE (informational)
     """
     if not HAS_SQLGLOT:
         return [{"kind": "sqlglot_unavailable", "detail": "sqlglot not installed", "snippet": ""}]
 
     residuals = []
 
+    # --- EXISTS / NOT EXISTS ---
+    # NOT EXISTS: Not(Exists(...))
+    for not_node in list(ast.find_all(_exp.Not)):
+        if isinstance(not_node.this, _exp.Exists):
+            exists_node = not_node.this
+            inner = exists_node.this
+            if isinstance(inner, _exp.Subquery):
+                inner = inner.this
+            inner_sql = inner.sql()[:100] if hasattr(inner, "sql") else ""
+            residuals.append({
+                "kind": "NotExists",
+                "detail": f"NOT EXISTS subquery — goes to LLM residual under PRICE_N",
+                "snippet": f"NOT EXISTS ({inner_sql}{'...' if len(inner_sql) >= 100 else ''})",
+            })
+    # EXISTS (not wrapped in Not)
+    for exists_node in list(ast.find_all(_exp.Exists)):
+        # Skip if parent is Not (already handled above)
+        parent = exists_node.parent
+        if isinstance(parent, _exp.Not):
+            continue
+        inner = exists_node.this
+        if isinstance(inner, _exp.Subquery):
+            inner = inner.this
+        inner_sql = inner.sql()[:100] if hasattr(inner, "sql") else ""
+        residuals.append({
+            "kind": "Exists",
+            "detail": f"EXISTS subquery — goes to LLM residual under PRICE_N",
+            "snippet": f"EXISTS ({inner_sql}{'...' if len(inner_sql) >= 100 else ''})",
+        })
+
+    # --- IN(subquery) / NOT IN(subquery) ---
+    # NOT IN: Not(In(...))
+    for not_node in list(ast.find_all(_exp.Not)):
+        if isinstance(not_node.this, _exp.In):
+            in_node = not_node.this
+            subq = in_node.args.get("query")
+            if subq is not None:
+                col = in_node.this
+                col_str = col.sql()[:60] if hasattr(col, "sql") else str(col)
+                inner_sql = subq.sql()[:80]
+                residuals.append({
+                    "kind": "NotInSubquery",
+                    "detail": f"NOT IN (subquery) on `{col_str}` — goes to LLM residual under PRICE_N",
+                    "snippet": f"{col_str} NOT IN ({inner_sql}{'...' if len(inner_sql) >= 80 else ''})",
+                })
+    # IN(subquery)
+    for in_node in list(ast.find_all(_exp.In)):
+        subq = in_node.args.get("query")
+        if subq is None:
+            continue  # value-list IN, not a subquery
+        # Skip if parent is Not (already handled)
+        if isinstance(in_node.parent, _exp.Not):
+            continue
+        col = in_node.this
+        col_str = col.sql()[:60] if hasattr(col, "sql") else str(col)
+        inner_sql = subq.sql()[:80]
+        residuals.append({
+            "kind": "InSubquery",
+            "detail": f"IN (subquery) on `{col_str}` — goes to LLM residual under PRICE_N",
+            "snippet": f"{col_str} IN ({inner_sql}{'...' if len(inner_sql) >= 80 else ''})",
+        })
+
+    # --- Scalar subqueries (col op (SELECT AGG ...)) ---
+    cmp_classes = (_exp.EQ, _exp.NEQ, _exp.LT, _exp.LTE, _exp.GT, _exp.GTE)
+    for cmp_cls in cmp_classes:
+        for cmp in list(ast.find_all(cmp_cls)):
+            rhs = cmp.expression
+            # Unwrap Subquery wrapper if present
+            inner = rhs
+            if isinstance(inner, _exp.Subquery):
+                inner = inner.this
+            if not isinstance(inner, _exp.Select):
+                continue
+            # Check it looks like a scalar subquery (single aggregate expression)
+            AGGS = (_exp.Sum, _exp.Avg, _exp.Min, _exp.Max, _exp.Count)
+            has_agg = any(isinstance(e, AGGS) or any(e.find_all(AGGS))
+                         for e in inner.expressions)
+            if has_agg:
+                col_str = cmp.this.sql()[:60] if hasattr(cmp.this, "sql") else str(cmp.this)
+                inner_sql = rhs.sql()[:80]
+                residuals.append({
+                    "kind": "ScalarSubquery",
+                    "detail": f"Scalar subquery `{col_str} {cmp_cls.__name__} (SELECT AGG ...)` — goes to LLM residual under PRICE_N",
+                    "snippet": f"{col_str} ... ({inner_sql}{'...' if len(inner_sql) >= 80 else ''})",
+                })
+
     # CTEs: WITH ... AS (...)
+    # Under PRICE_N: non-simple bodies are NonSimpleCTE residuals; simple ones still reported as CTE.
+    with_node = ast.args.get("with")
+    is_recursive = bool(with_node and with_node.args.get("recursive")) if with_node else False
     ctes_found = list(ast.find_all(_exp.CTE))
     for cte in ctes_found:
         name = cte.alias or "(unnamed)"
         inner = cte.this
+        if isinstance(inner, _exp.Subquery):
+            inner = inner.this
+
+        # Classify as simple or non-simple
+        is_simple = _check_cte_body_simple(inner) and not is_recursive
+
         # Get SELECT list from first branch
         if isinstance(inner, _exp.Union):
             branches = list(inner.find_all(_exp.Select))
@@ -141,7 +270,17 @@ def _collect_llm_residuals(ast, sql):
         gb_nodes = list(inner.find_all(_exp.Group))
         gb_str = gb_nodes[0].sql() if gb_nodes else ""
 
-        detail = f"CTE `{name}`"
+        if is_simple:
+            detail = f"CTE `{name}` (simple body — eligible for inlining)"
+            kind = "CTE"
+        else:
+            if is_recursive:
+                failure_reason = "WITH RECURSIVE"
+            else:
+                failure_reason = _cte_simplicity_failure_reason(inner)
+            detail = f"CTE `{name}` (non-simple: {failure_reason}) — goes to LLM residual under PRICE_N"
+            kind = "NonSimpleCTE"
+
         if branch_count > 1:
             detail += f" ({branch_count} UNION branches)"
         if proj_str:
@@ -152,7 +291,7 @@ def _collect_llm_residuals(ast, sql):
             detail += f"; {gb_str[:60]}"
 
         residuals.append({
-            "kind": "CTE",
+            "kind": kind,
             "detail": detail,
             "snippet": f"WITH {name} AS ({inner.sql()[:120]}...)" if len(inner.sql()) > 120
                        else f"WITH {name} AS ({inner.sql()})",

@@ -109,6 +109,95 @@ class Sql2FeatureN(Sql2Feature):
         sel = float(freq) / max(1.0, table_size)
         return low, high, max(0.0, min(1.0, sel))
 
+    def _populate_range_pair_slots(self, column: str, not_in_values: Sequence,
+                                   is_discrete: bool, keys, vals,
+                                   table_size: int):
+        """Build N+1 range slots for `col != X` (and multi-NEQ) predicates.
+
+        For continuous columns, sorts the excluded values numerically and emits
+        slots covering the gaps between them (below first, between each pair,
+        above last).
+
+        For discrete columns, uses SpaceSaving bin indices as positions.
+
+        Returns a list of 3*(K+1) = 33 floats, same layout as _populate_in_slots.
+        """
+        eps = 1e-6
+        slots: list = []
+
+        if is_discrete:
+            # Map each excluded value to its SpaceSaving bin index.
+            excluded_bins = []
+            for v in not_in_values:
+                try:
+                    idx = keys.index(v)
+                except ValueError:
+                    idx = len(keys) - 1  # OtHeRs bin
+                excluded_bins.append(idx)
+            excluded_bins = sorted(set(excluded_bins))
+            n_bins = self.bin_size  # typically 40
+
+            # Build gap ranges: (lo_bin_incl, hi_bin_excl)
+            boundaries = [-1] + excluded_bins + [n_bins]
+            for i in range(len(boundaries) - 1):
+                lo_bin = boundaries[i] + 1
+                hi_bin = boundaries[i + 1]  # exclusive
+                if lo_bin > hi_bin:
+                    continue
+                lo_norm = lo_bin / n_bins
+                hi_norm = hi_bin / n_bins
+                # Selectivity: sum of freq for bins [lo_bin, hi_bin)
+                gap_sel = 0.0
+                for b in range(lo_bin, hi_bin):
+                    if b < len(vals):
+                        gap_sel += float(vals[b]) / max(1.0, table_size)
+                slots.append((lo_norm, hi_norm, min(1.0, gap_sel)))
+        else:
+            # Continuous: sort excluded values numerically.
+            try:
+                excl_sorted = sorted(float(v) for v in not_in_values)
+            except (TypeError, ValueError):
+                return [0.0] * (3 * (self.K + 1))
+            bin_edges = self.columns_bin_edges.get(column)
+            if bin_edges is None:
+                return [0.0] * (3 * (self.K + 1))
+            lo_edge = float(bin_edges[0])
+            hi_edge = float(bin_edges[-1])
+            rng = max(1e-9, hi_edge - lo_edge)
+            dist = self.columns_distributions[column]
+            dist_sum = max(1.0, dist.sum())
+
+            # Boundaries including sentinel min/max
+            boundaries = [lo_edge] + excl_sorted + [hi_edge]
+            for i in range(len(boundaries) - 1):
+                lo_v = boundaries[i] + (eps if i > 0 else 0.0)
+                hi_v = boundaries[i + 1] - (eps if i < len(boundaries) - 2 else 0.0)
+                if lo_v > hi_v:
+                    continue
+                lo_norm = max(0.0, min(1.0, (lo_v - lo_edge) / rng))
+                hi_norm = max(0.0, min(1.0, (hi_v - lo_edge) / rng))
+                sel = self.calculate_hist_selectivity(dist, bin_edges, lo_v, hi_v)
+                sel = float(sel) / dist_sum
+                slots.append((lo_norm, hi_norm, max(0.0, min(1.0, sel))))
+
+        # Fill top K slots sorted by selectivity descending, remainder goes to tail.
+        slots.sort(key=lambda t: t[2], reverse=True)
+        top = slots[: self.K]
+        tail = slots[self.K:]
+        result = []
+        for lo, hi, sel in top:
+            result.extend([lo, hi, sel])
+        while len(result) < self.K * 3:
+            result.extend([0.0, 0.0, 0.0])
+        if tail:
+            tail_lo = min(t[0] for t in tail)
+            tail_hi = max(t[1] for t in tail)
+            tail_sel = sum(t[2] for t in tail)
+            result.extend([tail_lo, tail_hi, min(1.0, tail_sel)])
+        else:
+            result.extend([0.0, 0.0, 0.0])
+        return result  # 3*(K+1) = 33 floats
+
     def _populate_in_slots(self, column: str, values: Sequence,
                            is_discrete: bool, keys, vals, table_size: int):
         """Sort by selectivity, take top K, fold remainder into tail."""
@@ -167,10 +256,20 @@ class Sql2FeatureN(Sql2Feature):
         positive_values = list(atoms.get("eq_values", [])) + \
                           list(atoms.get("in_values", [])) + \
                           list(atoms.get("like_keys", []))
+        not_in_values = list(atoms.get("not_in_values", []))
 
         if positive_values:
+            # Positive path dominates: EQ/IN is more selective than NEQ.
+            # If both positive and NEQ are present, prefer positive (degenerate case).
             slot_floats = self._populate_in_slots(
                 filter_column, positive_values, is_discrete,
+                keys=keys if is_discrete else None,
+                vals=vals if is_discrete else None,
+                table_size=table_size)
+        elif not_in_values:
+            # NEQ range-pair encoding: col != X (rule a extension).
+            slot_floats = self._populate_range_pair_slots(
+                filter_column, not_in_values, is_discrete,
                 keys=keys if is_discrete else None,
                 vals=vals if is_discrete else None,
                 table_size=table_size)

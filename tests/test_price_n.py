@@ -536,3 +536,73 @@ def test_utilsTrain_rejects_price_s_plus_price_n_filter():
     )
     assert result.returncode != 0
     assert "mutually exclusive" in result.stderr.lower()
+
+
+def test_filter_token_neq_continuous():
+    """NEQ range-pair encoding: col != X emits gap slots covering values != X."""
+    sys.path.insert(0, "/root/LLM4QPR/PRICE")
+    from setup.features_tool_n import Sql2FeatureN
+    f = Sql2FeatureN("tpch", 40, "finetune")
+    atoms = {**f.EMPTY_ATOMS, "not_in_values": [50]}
+    tok = f._encode_filter_token("tpch_p.p_size", atoms)
+    assert tok.shape == (75,), f"Expected shape (75,) got {tok.shape}"
+    # Two range slots should be used (below 50 and above 50).
+    # Slot selectivities are at indices 40, 43, 46, ... (step 3) for K=10 slots,
+    # then the tail slot at index 40+30+2 = 72.
+    slot_sels = tok[40:40 + 30:3]  # K=10 slots, sel is every 3rd element
+    tail_sel = tok[40 + 30 + 2].item()
+    nonzero_sels = [s.item() for s in slot_sels if s.item() > 0]
+    # At least one range slot should have non-zero selectivity
+    assert len(nonzero_sels) >= 1, \
+        f"Expected at least 1 non-zero slot selectivity, got slots={slot_sels.tolist()}"
+    # Shape should still be correct
+    assert tok[-1].item() == 0.0, "null_pred_flag should be 0 for plain NEQ"
+
+
+def test_filter_token_neq_does_not_fire_when_positive_values_present():
+    """When both eq_values and not_in_values are set, positive path takes priority."""
+    sys.path.insert(0, "/root/LLM4QPR/PRICE")
+    from setup.features_tool_n import Sql2FeatureN
+    f = Sql2FeatureN("tpch", 40, "finetune")
+    # Both eq_values=[50] and not_in_values=[30]: positive path should win
+    atoms_eq_only = {**f.EMPTY_ATOMS, "eq_values": [50]}
+    atoms_both = {**f.EMPTY_ATOMS, "eq_values": [50], "not_in_values": [30]}
+    tok_eq = f._encode_filter_token("tpch_p.p_size", atoms_eq_only)
+    tok_both = f._encode_filter_token("tpch_p.p_size", atoms_both)
+    # With positive path dominant, the two tokens should be identical
+    import torch
+    assert torch.allclose(tok_eq, tok_both), \
+        "Positive path should dominate when both eq_values and not_in_values are present"
+
+
+def test_extract_filter_atoms_collects_neq():
+    """_extract_filter_atoms must populate not_in_values for col != X predicates."""
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _extract_filter_atoms
+    import sqlglot
+    ast = sqlglot.parse_one(
+        "SELECT * FROM tpch_l "
+        "WHERE tpch_l.l_shipmode != 'MAIL'")
+    atoms = _extract_filter_atoms(ast)
+    assert "tpch_l.l_shipmode" in atoms, f"column not found; atoms keys: {list(atoms.keys())}"
+    assert atoms["tpch_l.l_shipmode"]["not_in_values"] == ["MAIL"], \
+        f"Expected ['MAIL'], got {atoms['tpch_l.l_shipmode']['not_in_values']}"
+
+
+def test_extract_filter_atoms_skips_atoms_inside_subquery():
+    """Atoms inside EXISTS/IN(subquery) should not be extracted when subqueries are residual."""
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _extract_filter_atoms
+    import sqlglot
+    # The inner filter (l2.l_orderkey = 42) is inside EXISTS — should be skipped
+    ast = sqlglot.parse_one(
+        "SELECT * FROM lineitem l1 "
+        "WHERE l1.l_quantity = 10 "
+        "AND EXISTS (SELECT 1 FROM lineitem l2 WHERE l2.l_orderkey = 42)")
+    atoms = _extract_filter_atoms(ast)
+    # The outer l1.l_quantity = 10 should be present
+    assert any("l_quantity" in k for k in atoms), \
+        f"Expected l_quantity in atoms, got: {list(atoms.keys())}"
+    # The inner l2.l_orderkey = 42 should NOT be extracted
+    assert not any("l_orderkey" in k for k in atoms), \
+        f"Inner subquery atom l_orderkey should be skipped, got: {list(atoms.keys())}"

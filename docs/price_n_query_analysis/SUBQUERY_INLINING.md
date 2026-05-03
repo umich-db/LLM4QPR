@@ -1,12 +1,29 @@
 # Subquery Inlining in PRICE_N
 
+## Inlining policy (revised)
+
+Under PRICE_N, a subquery (CTE, derived table, or inline subquery) is inlined **iff** its body is a flat conjunctive SELECT over base relations, satisfying all of the following:
+
+- No GROUP BY
+- No HAVING
+- No DISTINCT
+- No window functions
+- No ORDER BY+LIMIT combination (ORDER BY alone without LIMIT is allowed)
+- Not itself a UNION / INTERSECT / EXCEPT
+- No aggregate function calls (`SUM`, `AVG`, `MIN`, `MAX`, `COUNT`) in projections
+- Not `WITH RECURSIVE`
+
+Anything else becomes **LLM residual** — the LLM residual encoder receives the textual form of the unconverted fragment, and the downstream fusion Transformer learns to combine it with PRICE's statistical signal.
+
+**Note on NEQ filter encoding**: `col != X` predicates that survive to the flat WHERE clause are encoded as range-pair slots in the filter token (rule a extension) rather than being dropped. See the Filter Atoms section below.
+
+---
+
 ## Why inline at all?
 
 PRICE expects a query as a **flat conjunction of supported predicates over base relations**. Its tokenizer (`Sql2FeatureN.create_sql_features`) walks the WHERE clause once and emits filter / join / fanout / table / pairwise tokens. Anything that doesn't fit this shape — a CTE, a UNION branch, a correlated subquery, a CASE expression in a projection — has no representation in PRICE's token stream and must be encoded by the LLM-residual path instead.
 
-A subquery is "inlinable" when its rows can be folded into the outer query's row scope without changing the predicate's semantics in a way PRICE can't recover. When the fold is lossless (or close enough), we get the inner tables and their statistics into PRICE's view; when it isn't, the subquery becomes residual.
-
-This document explains which subquery shapes get inlined, which get estimated to scalars, which get rewritten to tautologies, and which get pushed entirely to the LLM residual.
+A subquery is inlinable when its rows can be folded into the outer query's row scope without changing the predicate semantics in a way PRICE can't recover. When the fold is lossless (or close enough), we get the inner tables and their statistics into PRICE's view; when it isn't, the subquery becomes residual.
 
 ---
 
@@ -26,250 +43,121 @@ Empirically, looking across all 121 templates ([INDEX](INDEX.md)):
 | `UNION` / `UNION ALL` | TPC-DS q4, q5, q11, q14, q23, q33, q49, q54, q56, q60, q66, q71, q74, q75, q76, q77, q80 | 18 templates |
 | `INTERSECT` | TPC-DS q8, q14, q38 | 3 templates |
 
-So most TPC-DS queries trigger at least one form of inlining. The TPC-H templates are simpler (mostly EXISTS or scalar subqueries), and inlining usually succeeds cleanly.
-
 ---
 
-## EXISTS / NOT EXISTS
+## Subqueries that always go to residual under PRICE_N
 
-Implementation: `_inline_exists_subqueries` in `experiments/price_data_utils.py:1326`.
+### EXISTS / NOT EXISTS
 
-### When inlining works
-
-The semantic of `EXISTS (SELECT * FROM B WHERE B.k = A.k AND B.x = 5)` is "for at least one row in B that matches the join condition and the local filter, the outer A row is kept." For PRICE's purposes, this is equivalent to **`A INNER JOIN B ON A.k = B.k WHERE B.x = 5`** at the cardinality estimation level — both produce the same set of A keys. We can absorb B's tables and predicates into the outer query.
-
-What survives the inlining:
-- The inner FROM tables → appended to the outer FROM clause.
-- The inner WHERE conditions, **filtered to the supported atom kinds**:
-  - Equi-joins (`A.k = B.k`) — preserved as outer joins.
-  - Range comparisons (`B.col < 100`, `>=`, `<=`, `>`) — preserved as outer filter atoms.
-
-What gets dropped:
-- `B.col != X` (NEQ) — silently dropped.
-- `B.col LIKE 'pat'` — silently dropped.
-- Nested `NOT (...)`, complex expressions, function calls — silently dropped.
-
-If everything in the inner WHERE gets dropped, the EXISTS replacement is just `1 = 1` (tautology) — the inner tables still join in, but no filter constraint propagates.
+`EXISTS (SELECT … WHERE …)` and `NOT EXISTS (SELECT … WHERE …)` are **never inlined** under PRICE_N. The approximation of treating an anti-join (NOT EXISTS) as an inner join is semantically wrong and causes systematic over-estimation. Even the EXISTS case introduces a semantic loss (the semi-join becomes an inner join). Both are reported as `Exists` / `NotExists` residuals.
 
 **Example (TPC-H q21)**:
+- Under the old policy: `lineitem l2` and `lineitem l3` would be inlined into the outer query, and the NEQ / NOT EXISTS negations would be silently dropped.
+- Under PRICE_N: the EXISTS and NOT EXISTS are left in place. The transformed SQL has only the outer 4 tables (`supplier`, `lineitem l1`, `orders`, `nation`). The LLM residual encoder sees the subquery text.
 
-Raw:
-```sql
-SELECT s_name FROM supplier, lineitem l1, orders, nation
-WHERE s_suppkey = l1.l_suppkey
-  AND o_orderkey = l1.l_orderkey
-  AND l1.l_receiptdate > l1.l_commitdate
-  AND EXISTS (
-    SELECT * FROM lineitem l2
-    WHERE l2.l_orderkey = l1.l_orderkey
-      AND l2.l_suppkey <> l1.l_suppkey
-  )
-  ...
-```
+### IN(subquery) / NOT IN(subquery)
 
-After inlining: `lineitem l2` joins in via `l2.l_orderkey = l1.l_orderkey` (equi-join, preserved); the `l2.l_suppkey != l1.l_suppkey` NEQ is dropped. PRICE sees one extra `lineitem` row scope without the anti-join discrimination — a known approximation.
+`col IN (SELECT col FROM B WHERE …)` and `col NOT IN (SELECT col FROM B WHERE …)` are **never inlined** under PRICE_N. As with EXISTS, treating a semi-join or anti-semi-join as an equi-join loses the set-membership semantics. These are reported as `InSubquery` / `NotInSubquery` residuals.
 
-### When inlining loses fidelity
+Note: `col IN (1, 2, 3)` (value-list IN) is **not** affected — it is handled by the filter-token IN-list slot rule (rule a).
 
-`NOT EXISTS` is treated identically to `EXISTS` by the inliner — the negation is **silently dropped**. This is wrong in general (NOT EXISTS is an anti-join, not an inner join), but PRICE has no way to express anti-join semantics in its token stream, so this is the least-bad option. The cardinality estimate may overshoot.
+### Scalar subqueries
 
-Templates where this matters:
-- TPC-H q21 has both `EXISTS` (correct as inner-join under our approximation) and `NOT EXISTS` (silently degraded to inner-join). The actual row count from the NOT-EXISTS branch is *much* smaller than what PRICE will compute.
+`col op (SELECT AGG(col) FROM B WHERE …)` — where the subquery must return a scalar — are **never inlined or estimated** under PRICE_N. Estimating the aggregate from histogram statistics introduces approximation errors that compound across the outer query's selectivity estimate. These are reported as `ScalarSubquery` residuals.
 
-### When inlining can't run at all
-
-A few EXISTS shapes return a tautology unconditionally:
-- The inner block isn't a `SELECT` (some sqlglot edge cases on parser-introduced wrappers).
-- The inner WHERE is missing entirely (rare).
-
-In those cases, the EXISTS predicate becomes `1=1` and contributes no information at all.
+Templates affected: TPC-H q2, q11, q15, q17, q20, q22; TPC-DS q1, q9, q24, q30, q32, q41, q81, q92.
 
 ---
 
-## IN (subquery) / NOT IN (subquery)
+## CTEs and derived tables: simple-body gate
 
-Implementation: `_inline_in_subqueries` in `experiments/price_data_utils.py:1379`.
+### Simple CTEs (inlined)
 
-`col IN (SELECT inner_col FROM B WHERE …)` is semantically equivalent to a semi-join: keep outer rows whose `col` matches the projection of the inner block. PRICE handles this by:
+A CTE whose body passes the simple-body check (single flat conjunctive SELECT, no aggregates / DISTINCT / GROUP BY / HAVING / window / ORDER+LIMIT / multi-branch / recursion) is inlined by `flatten_sql_for_price_n`. The inner FROM tables and WHERE conditions become part of the outer query.
 
-1. Adding the inner FROM tables to the outer query.
-2. Creating an equi-join `outer_col = inner_col` on the projected column.
-3. Keeping the inner WHERE conditions (same filter as EXISTS — only EQ / LT / LTE / GT / GTE survive).
-
-### When it works
-
-Standard `IN (SELECT single_col FROM B WHERE …)` shapes inline cleanly. The result is a normal multi-table query that PRICE handles fine.
-
-**Example (TPC-DS q14, simplified)**:
+**Example (TPC-H q15, simplified)**:
 ```sql
-SELECT … FROM store_sales
-WHERE ss_item_sk IN (SELECT ss_item_sk FROM cross_items)
-```
-becomes:
-```sql
-SELECT count(*) FROM store_sales, cross_items
-WHERE store_sales.ss_item_sk = cross_items.ss_item_sk
+WITH revenue0 AS (
+  SELECT l_suppkey, SUM(l_extendedprice * (1 - l_discount)) AS total_revenue
+  FROM lineitem WHERE l_shipdate >= date '1996-01-01' AND l_shipdate < date '1996-04-01'
+  GROUP BY l_suppkey
+)
+SELECT s_suppkey FROM supplier, revenue0
+WHERE s_suppkey = l_suppkey ...
 ```
 
-### When it doesn't
+The body of `revenue0` has both GROUP BY and SUM — it **fails** the simple-body check and is reported as `NonSimpleCTE`. The transformed SQL has fewer tables.
 
-- **`NOT IN (subquery)`** is treated identically to `IN`. Same caveat as `NOT EXISTS` — semantically wrong (anti-semi-join), but the alternative is total residual.
-- **Multi-column IN** (`(a, b) IN (SELECT x, y …)`): the inliner only uses the first projection column, so it generates `outer_a = inner_x` but loses the `b = y` constraint. Selectivity over-estimates.
-- **`IN (value_list)`** (`col IN (1, 2, 3)`): NOT inlined — this is a literal IN, handled by the filter-token IN-list slot rule (rule a, see [spec §7.5](../superpowers/specs/2026-05-02-price-n-parsing-rules-design.md)).
-- **Inner subquery has GROUP BY / DISTINCT / aggregates**: the projected inner column is the result of an aggregate, which can't equate to a base-relation column. The inliner still rewrites it but the equi-join is meaningless.
+### Non-simple CTEs (residual)
 
----
+CTEs failing the simple-body check are **not inlined** under PRICE_N. They are reported as `NonSimpleCTE` residuals with the reason for failure.
 
-## Scalar subqueries
-
-Implementation: `_estimate_scalar_subqueries` in `experiments/price_data_utils.py:1439`.
-
-A scalar subquery is `outer_col OP (SELECT AGG(col) FROM B WHERE …)` — it must return exactly one row and one column. Common in TPC-H q2, q11, q15, q17, q20, q22 (the "above average …" idiom).
-
-PRICE doesn't keep the subquery; instead it tries to **estimate the scalar value** from base-relation statistics and replace the subquery with a numeric literal.
-
-### Recognized aggregate patterns
-
-The inliner extracts `(multiplier, agg_func, col)` from the inner SELECT for the following shapes:
-
-| Pattern | Example | multiplier |
-|---|---|---|
-| `AGG(col)` | `SELECT AVG(price) FROM orders` | 1.0 |
-| `mult * AGG(col)` | `SELECT 0.2 * SUM(qty) FROM lineitem` | 0.2 |
-| `AGG(col) * mult` | `SELECT SUM(qty) * 0.2 FROM lineitem` | 0.2 |
-
-Aggregates: `MIN`, `MAX`, `AVG`, `SUM`, `COUNT`.
-
-The inner table's PRICE statistics (histogram, summary, size) are queried to compute an estimate:
-- `MIN(col)` ≈ first bin edge of the histogram.
-- `MAX(col)` ≈ last bin edge.
-- `AVG(col)` ≈ histogram-weighted mean.
-- `SUM(col)` ≈ AVG × table size.
-- `COUNT(col)` ≈ table size − null count.
-
-The outer comparison `outer_col > (subq)` becomes `outer_col > <estimated_literal>`. The inner FROM tables and any correlated EQ/range conditions are also added to the outer query (so any join between outer and inner survives).
-
-### When estimation works
-
-- TPC-H q2: `p_size = (SELECT MIN(p_size) FROM part WHERE p_type = 'BRASS')` → `p_size = <min_p_size>`. PRICE uses the histogram min as an estimate. Reasonable cardinality.
-- TPC-H q17: `l_quantity < 0.2 * (SELECT AVG(l_quantity) FROM lineitem WHERE l_partkey = p_partkey)` → `l_quantity < 0.2 * <avg_l_quantity>`. The `l_partkey = p_partkey` correlation is preserved as an outer EQ join.
-
-### When estimation fails
-
-Returns tautology (drops the predicate entirely):
-- Inner SELECT projects multiple expressions → can't pick one to estimate.
-- Inner expression is not an aggregate (e.g., `(SELECT col FROM B LIMIT 1)`) → no statistical estimate.
-- Aggregate over an expression (`SUM(a + b)`) — can't be estimated from per-column stats.
-- Database stats not loaded for that column.
-
-Templates that lose predicates this way:
-- TPC-DS q92: subquery uses `SUM(ws_ext_discount_amt)` over a subset that can't be cheaply summarized.
-- TPC-H q15: scalar subquery references a CTE result; CTE-result stats aren't precomputed.
-
-### Correlation handling
-
-When the inner WHERE references an outer alias (correlated subquery), the EQ/range conditions are cloned into the outer WHERE alongside the inner FROM tables. So `WHERE l_partkey = p_partkey` from inside an inner subquery surfaces in the outer query and PRICE sees it as a normal join condition. NEQ / LIKE / non-EQ correlations don't survive.
-
----
-
-## CTEs (WITH clauses)
-
-Handled by `flatten_sql_for_price` (the sqlglot-based flattener that runs before `_preprocess_predicates`).
-
-A CTE is a named subquery declared once and referenced by name in the main query. PRICE inlines them by:
-
-1. Locating each `name AS (...)` block.
-2. Substituting the name with the body wherever it's referenced.
-3. The body's tables, WHERE, and projections become part of the outer query.
-
-### When it works
-
-For "simple" CTEs — single SELECT, base-relation FROM, conjunctive WHERE — the inlining produces a flat query that PRICE can ingest directly.
+Common failure reasons:
+- `has GROUP BY` (TPC-DS q1 `customer_total_return`, TPC-H q15 `revenue0`)
+- `has aggregates in projection` (same examples)
+- `multi-branch (UNION/INTERSECT/EXCEPT)` (TPC-DS q4 `year_total`)
+- `WITH RECURSIVE` (not present in TPC-H/DS but handled)
 
 **Example (TPC-DS q1)**:
-```sql
-WITH customer_total_return AS (
-  SELECT sr_customer_sk, sr_store_sk, SUM(sr_fee) AS ctr_total_return
-  FROM store_returns, date_dim
-  WHERE sr_returned_date_sk = d_date_sk AND d_year = 2000
-  GROUP BY sr_customer_sk, sr_store_sk
-)
-SELECT c_customer_id FROM customer_total_return ctr1, store, customer
-WHERE ctr1.ctr_total_return > (SELECT AVG(ctr_total_return) * 1.2 FROM customer_total_return ctr2 …)
-  AND s_store_sk = ctr1.ctr_store_sk
-  AND s_state = 'TN'
-  AND ctr1.ctr_customer_sk = c_customer_sk
-```
+The `customer_total_return` CTE has a `GROUP BY sr_customer_sk, sr_store_sk` and a `SUM(sr_fee)` projection — non-simple. Under PRICE_N it becomes residual. The transformed SQL has only the tables from the outer query that reference the CTE by name.
 
-Inlining produces `FROM store_returns, date_dim, store, customer WHERE sr_returned_date_sk = d_date_sk AND d_year = 2000 AND s_store_sk = … AND s_state = 'TN' AND sr_customer_sk = c_customer_sk`. PRICE sees 4 tables, 3 joins, 2 filter atoms. The inner GROUP BY is silently dropped (PRICE doesn't model aggregation), but the cardinality of the joined base tables is what matters.
+**Example (TPC-DS q4)**:
+The `year_total` CTE has 3 UNION ALL branches — non-simple. Nothing is inlined. The transformed SQL may reduce to a very simple base or fail, with the entire query going to LLM residual.
 
-### When it doesn't
+### Derived tables (FROM-clause subqueries)
 
-- **Multi-branch CTE (UNION)**: only the **first** SELECT branch flows through inlining. Other branches become residual constructs. **TPC-DS q4** is a notable case: its `year_total` CTE has 3 UNION ALL branches; PRICE sees only the store_sales branch, the catalog_sales and web_sales branches go to LLM residual.
-- **Recursive CTE** (`WITH RECURSIVE …`): not supported. None appear in TPC-H/DS, but they would fail.
-- **CTE referenced multiple times with different aliases** (TPC-DS q4: `t_s_firstyear`, `t_s_secyear`, `t_c_firstyear`, etc.): each alias gets its own copy of the inlined body, multiplying the table count. The transformed SQL ends up with 5 redundant joins on the same `customer.c_customer_id = customer.c_customer_id` self-equality and 18 copies of `d_year = 2001/2002`. Faithful but wasteful.
-- **CTE whose body is a complex aggregate**: GROUP BY / HAVING in the body get dropped; the projection becomes whatever the inner SELECT names. If the outer query references those projections in non-trivial ways, the cardinality estimate degrades.
+`FROM (SELECT … FROM B WHERE …) AS alias` — treated the same as CTEs: inlined only if the body is simple. Non-simple derived tables become `DerivedTable` residuals (same as before; the simple-body gate is new).
 
 ---
 
-## Derived tables (FROM-clause subqueries)
+## NEQ filter encoding (rule a extension)
 
-`FROM (SELECT … FROM B WHERE …) AS alias` — same idea as a CTE but inline. `flatten_sql_for_price` handles these by replacing the alias with the inner FROM tables and lifting the inner WHERE.
+When a `col != X` predicate survives into the flat transformed WHERE clause (which happens for outer-query NEQ predicates, not those inside residualized subqueries), it is encoded as **N+1 range slots** in the filter token:
 
-When the inner subquery is a **plain SELECT over base relations**, this works the same as a CTE inline. When it's an aggregate (`FROM (SELECT col, COUNT(*) FROM B GROUP BY col) AS x`), the alias's projections are aggregate results; the outer query's references to `x.col` and `x.cnt` lose their base-relation grounding.
+- The excluded values are sorted by their position in the column's natural ordering (numeric for continuous columns, SpaceSaving frequency-rank for discrete columns).
+- N+1 range slots cover the gaps between the exclusions:
+  - Below the first excluded value.
+  - Between each consecutive pair of excluded values.
+  - Above the last excluded value.
+- Each slot has `(lo_norm, hi_norm, selectivity)` just like IN-list slots.
+- The total selectivity across all slots approximates `1 - sum(sel(x_i)) - null_fraction`.
 
-In the analysis docs, these surface as `**DerivedTable**` residuals. They appear in many TPC-DS queries (q34, q39, q47, q57, q59, q64, …).
+This applies to both continuous and SpaceSaving-binned discrete columns. Multiple NEQ values naturally produce multiple gaps. No polarity bit is needed — the slot coverage itself represents the "not equal" semantics.
 
 ---
 
 ## UNION / INTERSECT / EXCEPT
 
-Set operations combine multiple SELECT branches. PRICE is a single-block model: only the **first** branch flows through to feature extraction. The other branches are tracked in `LLM Residual Constructs` as `Union` / `Intersect` / `Except` entries with their first-line snippet.
-
-This is a known approximation. The first-branch cardinality often differs from the union'd total by 2-5×. The downstream LLM residual encoder gets the textual representation of the dropped branches and the fusion Transformer can in principle correct the estimate.
+Set operations combine multiple SELECT branches. PRICE is a single-block model: only the **first** branch flows through to feature extraction. The other branches are tracked in `LLM Residual Constructs` as `Union` / `Intersect` / `Except` entries. This behavior is unchanged by the PRICE_N policy revision.
 
 Templates affected: TPC-DS q4, q5, q11, q14, q23, q33, q49, q54, q56, q60, q66, q71, q74, q75, q76, q77, q80 (UNION) and q8, q14, q38 (INTERSECT).
 
 ---
 
-## What deliberately becomes residual
+## Summary table: inlining decision under PRICE_N
 
-Even when a subquery shape *could* in principle be inlined, the inliner may decline if it would distort PRICE's token semantics too far:
-
-- **Subquery with LIMIT / OFFSET / ORDER BY**: changes which inner rows participate; can't fold into a flat join.
-- **Window functions inside a subquery**: per-partition computations; not a base-relation predicate.
-- **Recursive CTE**: unbounded depth.
-- **Subquery used in SELECT projection** (e.g., `SELECT col, (SELECT MAX(x) FROM B) AS m FROM A`): the scalar projection is a per-row computation; PRICE doesn't model projections.
-- **Subquery inside a CASE WHEN**: nested in a per-row decision; PRICE doesn't see WHERE-CASE either.
-- **Subquery comparing tuples** (`(a, b) IN (SELECT x, y …)`): only single-column flavors get inlined.
-
-These all surface as residual. The LLM-residual encoder (see [spec §9](../superpowers/specs/2026-05-02-price-n-parsing-rules-design.md)) gets the textual form and the downstream fusion Transformer learns to combine them with PRICE's statistical signal.
-
----
-
-## Summary table: inlining decision
-
-| Subquery shape | Inlined? | What survives | Failure mode |
+| Subquery shape | PRICE_N | What survives | Residual kind |
 |---|:---:|---|---|
-| `EXISTS (SELECT … WHERE EQ/range)` | ✅ | inner FROM + inner EQ/range | NEQ/LIKE in inner WHERE dropped |
-| `EXISTS (SELECT …)` empty WHERE | ✅ | inner FROM, no filters | becomes `1=1` |
-| `NOT EXISTS (...)` | ⚠ | same as EXISTS | negation silently dropped → over-estimate |
-| `col IN (SELECT col FROM …)` | ✅ | semi-join via equi-join + inner filters | non-EQ correlations dropped |
-| `col NOT IN (...)` | ⚠ | same as IN | negation silently dropped |
-| `(a, b) IN (subq)` | ⚠ | only `a = inner_first_col` | second column constraint lost |
-| `col op (SELECT AGG(col) FROM …)` scalar | ✅ | estimated literal + inner FROM + correlations | non-aggregate scalar → tautology |
-| `col op (SELECT col FROM … LIMIT 1)` | ❌ | tautology | not an aggregate; can't estimate |
-| `WITH name AS (SELECT …)` simple CTE | ✅ | inner FROM + inner filters | aggregates / GROUP BY dropped |
-| `WITH name AS (SELECT … UNION SELECT …)` | ⚠ | first branch only | other branches → residual |
-| `WITH RECURSIVE name AS (…)` | ❌ | n/a | not supported |
-| `FROM (SELECT … FROM B) AS alias` | ✅ | inner FROM + inner filters | aggregate projection → residual |
-| `FROM (SELECT col, AGG(...) FROM … GROUP BY col)` | ⚠ | base table inlined, aggregates dropped | cardinality of agg result misestimated |
-| `UNION` / `INTERSECT` / `EXCEPT` | ⚠ | first branch only | other branches → residual |
+| `EXISTS (SELECT … WHERE …)` | ❌ | n/a | `Exists` |
+| `NOT EXISTS (SELECT …)` | ❌ | n/a | `NotExists` |
+| `col IN (SELECT col FROM …)` | ❌ | n/a | `InSubquery` |
+| `col NOT IN (SELECT col FROM …)` | ❌ | n/a | `NotInSubquery` |
+| `col op (SELECT AGG(col) FROM …)` scalar | ❌ | n/a | `ScalarSubquery` |
+| `WITH name AS (SELECT …)` simple CTE | ✅ | inner FROM + inner filters | — |
+| `WITH name AS (SELECT … GROUP BY …)` | ❌ | n/a | `NonSimpleCTE` |
+| `WITH name AS (SELECT … UNION SELECT …)` | ❌ | n/a | `NonSimpleCTE` |
+| `WITH RECURSIVE name AS (…)` | ❌ | n/a | `NonSimpleCTE` |
+| `FROM (SELECT … FROM B) AS alias` simple | ✅ | inner FROM + inner filters | — |
+| `FROM (SELECT col, AGG(…) … GROUP BY col)` | ❌ | n/a | `DerivedTable` |
+| `UNION` / `INTERSECT` / `EXCEPT` | ⚠ | first branch only | `Union` / `Intersect` / `Except` |
 | Subquery in SELECT projection | ❌ | dropped | residual only |
 | Subquery in `CASE WHEN` | ❌ | dropped | residual only |
 | Subquery with window function inside | ❌ | dropped | residual only |
+| `col != X` (flat outer WHERE) | ✅ | range-pair slots in filter token | — |
 
-Legend: ✅ inlined cleanly · ⚠ inlined with semantic loss · ❌ not inlined; residual.
+Legend: ✅ inlined/encoded · ⚠ partial (first branch only) · ❌ not inlined; residual.
+
+For base PRICE / PRICE_S / PRICE_M (no `--price_n` flag), the old behavior is preserved: EXISTS and IN(subquery) are inlined with semantic loss, and scalar subqueries are estimated from statistics. Only PRICE_N (`--price_n` or `--price_n_parsing`) applies the stricter residual policy above.
 
 ---
 
@@ -279,12 +167,10 @@ In each `tpch/qN.md` and `tpcds/qN.md`:
 
 - The **"Transformed SQL (input to PRICE)"** block shows the final post-inlining SQL that PRICE actually ingests.
 - The **"What goes into PRICE"** section lists tables, joins, and atoms produced by the inlining.
-- The **"LLM Residual Constructs"** section lists everything that didn't make it through. Each entry has a kind (CTE, Union, DerivedTable, GroupBy, Aggregates, OrderBy, Limit, ScalarSubquery, etc.) and a snippet.
+- The **"LLM Residual Constructs"** section lists everything that didn't make it through. Under PRICE_N, entries with kind `Exists`, `NotExists`, `InSubquery`, `NotInSubquery`, `ScalarSubquery`, and `NonSimpleCTE` reflect the new stricter policy.
 - The **"Predicate Reordering"** section logs which transformations actually fired (NOT push-down, OR→IN, date-literal normalization).
 - The **"DNF (post-NNF)"** section shows the WHERE clause as a flat conjunction of atoms (or as multiple clauses if a disjunction survives all rewrites).
 
-When a query has many residuals or a transformed SQL with self-equalities like `c_customer_id = c_customer_id`, that's a fingerprint of multi-aliased CTE inlining (TPC-DS q4 is the canonical example).
-
 ---
 
-*See also: [INDEX.md](INDEX.md) for the per-template summary table, and [the PRICE_N design spec](../superpowers/specs/2026-05-02-price-n-parsing-rules-design.md) §10 for the boundary rules between statistics-grounded core and LLM residual.*
+*See also: [INDEX.md](INDEX.md) for the per-template summary table, and the PRICE_N design spec for the boundary rules between statistics-grounded core and LLM residual.*

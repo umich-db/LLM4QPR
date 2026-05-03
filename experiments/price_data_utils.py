@@ -634,11 +634,28 @@ def _literal_value(node):
     return None
 
 
+def _is_inside_subquery(node):
+    """True if node has any Subquery or Exists ancestor above it (not counting itself).
+
+    Used to skip atoms that originate inside non-inlined subqueries — those
+    subqueries become LLM residuals and their atoms should not be extracted.
+    """
+    p = node.parent
+    while p is not None:
+        if isinstance(p, (sqlglot_exp.Subquery, sqlglot_exp.Exists)):
+            return True
+        p = p.parent
+    return False
+
+
 def _extract_filter_atoms(ast):
     """Walk WHERE and collect per-column atoms for the PRICE_N filter token.
 
     Returns dict[full_col -> dict] using the schema from
     Sql2FeatureN.EMPTY_ATOMS.
+
+    Nodes that are descendants of a Subquery or Exists node are skipped —
+    they belong to non-inlined subqueries that go to LLM residual.
     """
     if not HAS_SQLGLOT:
         return {}
@@ -655,23 +672,41 @@ def _extract_filter_atoms(ast):
         })
 
     for in_node in where.find_all(sqlglot_exp.In):
+        if _is_inside_subquery(in_node):
+            continue
         col = _column_str(in_node.this)
         for v in in_node.expressions:
             val = _literal_value(v)
             if val is not None:
                 _ensure(col)["in_values"].append(val)
     for eq in where.find_all(sqlglot_exp.EQ):
+        if _is_inside_subquery(eq):
+            continue
         if isinstance(eq.expression, sqlglot_exp.Column):
             continue
         col = _column_str(eq.this)
         v = _literal_value(eq.expression)
         if v is not None:
             _ensure(col)["eq_values"].append(v)
+    # NEQ: col != X → range-pair encoding (rule a extension)
+    for neq in where.find_all(sqlglot_exp.NEQ):
+        if _is_inside_subquery(neq):
+            continue
+        if isinstance(neq.expression, sqlglot_exp.Column):
+            continue   # col-op-col, handled by pairwise extractors
+        if isinstance(neq.expression, sqlglot_exp.Subquery):
+            continue   # scalar subquery; residual
+        col = _column_str(neq.this)
+        v = _literal_value(neq.expression)
+        if v is not None:
+            _ensure(col)["not_in_values"].append(v)
     for cmp_cls, side in [
         (sqlglot_exp.GTE, "low"), (sqlglot_exp.GT, "low"),
         (sqlglot_exp.LTE, "high"), (sqlglot_exp.LT, "high"),
     ]:
         for cmp in where.find_all(cmp_cls):
+            if _is_inside_subquery(cmp):
+                continue
             if isinstance(cmp.expression, sqlglot_exp.Column):
                 continue
             col = _column_str(cmp.this)
@@ -686,6 +721,8 @@ def _extract_filter_atoms(ast):
                 entry["range_high"] = v if entry["range_high"] is None \
                                       else min(entry["range_high"], v)
     for is_node in where.find_all(sqlglot_exp.Is):
+        if _is_inside_subquery(is_node):
+            continue
         col = _column_str(is_node.this)
         rhs = is_node.expression
         if isinstance(rhs, sqlglot_exp.Null):
@@ -717,6 +754,8 @@ def _extract_pairwise_intra_atoms(ast):
     physical table alias.
 
     Returns list of (left_table, col_x, col_y, op, None, None).
+
+    Nodes inside Subquery/Exists ancestors are skipped (they are LLM residuals).
     """
     if not HAS_SQLGLOT:
         return []
@@ -726,6 +765,8 @@ def _extract_pairwise_intra_atoms(ast):
     out = []
     for cmp_cls, op_str in _PAIRWISE_OPS.items():
         for cmp in where.find_all(cmp_cls):
+            if _is_inside_subquery(cmp):
+                continue
             lhs, rhs = cmp.this, cmp.expression
             if not (isinstance(lhs, sqlglot_exp.Column)
                     and isinstance(rhs, sqlglot_exp.Column)):
@@ -777,6 +818,8 @@ def _extract_xtab_nonequi_atoms(ast):
     out = []
     for cmp_cls, op_str in _PAIRWISE_OPS.items():
         for cmp in where.find_all(cmp_cls):
+            if _is_inside_subquery(cmp):
+                continue
             lhs, rhs = cmp.this, cmp.expression
             if not (isinstance(lhs, sqlglot_exp.Column)
                     and isinstance(rhs, sqlglot_exp.Column)):
@@ -1320,6 +1363,102 @@ def _flatten_revenue0_query(start_date=None, end_date=None):
     return flat
 
 
+# --- PRICE_N CTE simple-body check and selective flattener ---
+
+
+def _check_cte_body_simple(node):
+    """Returns True iff node is a flat SELECT body suitable for lossless inlining.
+
+    A body is 'simple' iff it is a single SELECT over base relations with:
+    - No GROUP BY
+    - No HAVING
+    - No DISTINCT
+    - No window functions
+    - No ORDER BY+LIMIT combination (ORDER BY alone is allowed without LIMIT)
+    - Not itself a UNION/INTERSECT/EXCEPT
+    - No aggregate function calls in projections
+    """
+    if isinstance(node, (sqlglot_exp.Union, sqlglot_exp.Intersect, sqlglot_exp.Except)):
+        return False
+    if not isinstance(node, sqlglot_exp.Select):
+        return False
+    if node.args.get("group"):
+        return False
+    if node.args.get("having"):
+        return False
+    if node.args.get("distinct"):
+        return False
+    if node.args.get("limit") and node.args.get("order"):
+        return False
+    if any(node.find_all(sqlglot_exp.Window)):
+        return False
+    AGGS = (sqlglot_exp.Sum, sqlglot_exp.Avg, sqlglot_exp.Min,
+            sqlglot_exp.Max, sqlglot_exp.Count)
+    for expr in node.expressions:
+        e = expr.this if isinstance(expr, sqlglot_exp.Alias) else expr
+        if isinstance(e, AGGS):
+            return False
+        if any(e.find_all(AGGS)):
+            return False
+    return True
+
+
+def flatten_sql_for_price_n(sql, db_name=None):
+    """PRICE_N variant of flatten_sql_for_price: only inline CTEs/derived tables
+    whose body passes the simple-body check. Returns the SQL with simple CTEs
+    inlined; non-simple CTEs are left in place and become residuals downstream.
+
+    If the SQL has no WITH clause, delegates to flatten_sql_for_price.
+    If all CTEs are non-simple, returns sql unchanged.
+    If WITH RECURSIVE is detected, returns sql unchanged (everything residual).
+    """
+    if not HAS_SQLGLOT:
+        return sql
+    try:
+        ast = sqlglot.parse_one(sql)
+    except Exception:
+        return sql
+
+    with_node = ast.args.get("with")
+    if with_node is None:
+        # No CTEs to gate; behave like flatten_sql_for_price.
+        return flatten_sql_for_price(sql, db_name)
+
+    # Detect WITH RECURSIVE
+    if with_node.args.get("recursive"):
+        return sql  # Don't inline anything; leave as residual.
+
+    # Partition CTEs into simple (inline) vs non-simple (keep).
+    simple_ctes = []
+    non_simple_ctes = []
+    for cte in with_node.expressions:
+        body = cte.this
+        if isinstance(body, sqlglot_exp.Subquery):
+            body = body.this
+        if _check_cte_body_simple(body):
+            simple_ctes.append(cte)
+        else:
+            non_simple_ctes.append(cte)
+
+    if not simple_ctes:
+        return sql  # Nothing to inline; everything stays as residual.
+
+    # Build an intermediate SQL with only simple CTEs, then run the standard flattener.
+    new_with = with_node.copy()
+    new_with.set("expressions", [c.copy() for c in simple_ctes])
+    ast.set("with", new_with)
+    intermediate_sql = ast.sql()
+
+    # Call the standard flattener on the simplified-CTE SQL.
+    flattened = flatten_sql_for_price(intermediate_sql, db_name)
+    if flattened is None:
+        return sql
+
+    # Non-simple CTEs are detected by the residual collector via the original AST,
+    # not the post-transform parse, so we just return the flattened result.
+    return flattened
+
+
 # --- Subquery handling helpers ---
 
 
@@ -1648,9 +1787,13 @@ def _preprocess_predicates(sql, db_name=None, price_m=False, price_s=False,
     )
 
     # --- Phase 1: Subquery handling ---
-    _inline_exists_subqueries(ast, new_from_tables, tautology)
-    _inline_in_subqueries(ast, new_from_tables, tautology)
-    if db_name:
+    # Under PRICE_N, EXISTS/IN(subquery)/scalar subqueries go to LLM residual
+    # instead of being inlined (avoids semantic-loss approximations).
+    if not price_n_parsing:
+        _inline_exists_subqueries(ast, new_from_tables, tautology)
+    if not price_n_parsing:
+        _inline_in_subqueries(ast, new_from_tables, tautology)
+    if db_name and not price_n_parsing:
         _estimate_scalar_subqueries(ast, db_name, tautology, new_from_tables, new_conditions)
 
     # --- Phase 1.5: PRICE_N NNF / OR→IN / date normalisation ---
@@ -2889,7 +3032,10 @@ def transform_sql_for_price(sql, db_name, price_m=False, price_s=False,
                 needs_flattening = True
 
     if needs_flattening:
-        flattened = flatten_sql_for_price(sql, db_name)
+        if price_n_parsing:
+            flattened = flatten_sql_for_price_n(sql, db_name)
+        else:
+            flattened = flatten_sql_for_price(sql, db_name)
         use_flattened = False
         if flattened is not None:
             # Verify flattened SQL has real table names (not CTE names like v1, wscs)

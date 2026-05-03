@@ -6,7 +6,7 @@ Shows what PRICE can handle vs. what falls to the LLM residual encoder.
 ## Statistics
 
 - **TPCH**: 22 templates, 22 fully analyzed, 0 with pipeline errors
-- **TPCDS**: 99 templates, 97 fully analyzed, 2 with pipeline errors
+- **TPCDS**: 99 templates, 99 fully analyzed, 0 with pipeline errors
 
 ## TPC-H Queries
 
@@ -39,20 +39,20 @@ Shows what PRICE can handle vs. what falls to the LLM residual encoder.
 
 | Query | Tables | Joins | Filter cols | Residuals | Status |
 |-------|--------|-------|-------------|-----------|--------|
-| [q1](tpcds/q1.md) | 4 | 3 | 2 | 5 | OK |
-| [q2](tpcds/q2.md) | 2 | 2 | 1 | 8 | OK |
+| [q1](tpcds/q1.md) | 1 | 0 | 1 | 5 | OK |
+| [q2](tpcds/q2.md) | 1 | 0 | 1 | 8 | OK |
 | [q3](tpcds/q3.md) | 3 | 2 | 2 | 4 | OK |
-| [q4](tpcds/q4.md) | 5 | 7 | 1 | 5 | OK |
-| [q5](tpcds/q5.md) | 2 | 2 | 0 | 12 | OK |
+| [q4](tpcds/q4.md) | 1 | 0 | 1 | 5 | OK |
+| [q5](tpcds/q5.md) | 1 | 0 | 1 | 12 | OK |
 | [q6](tpcds/q6.md) | 5 | 4 | 0 | 5 | OK |
 | [q7](tpcds/q7.md) | 5 | 4 | 4 | 4 | OK |
 | [q8](tpcds/q8.md) | 3 | 2 | 2 | 8 | OK |
 | [q9](tpcds/q9.md) | 1 | 0 | 1 | 6 | OK |
 | [q10](tpcds/q10.md) | 3 | 2 | 1 | 7 | OK |
-| [q11](tpcds/q11.md) | 4 | 5 | 1 | 5 | OK |
+| [q11](tpcds/q11.md) | 1 | 0 | 1 | 5 | OK |
 | [q12](tpcds/q12.md) | 3 | 2 | 2 | 5 | OK |
 | [q13](tpcds/q13.md) | 6 | 2 | 1 | 1 | OK |
-| [q14](tpcds/q14.md) | 5 | 6 | 2 | 14 | OK |
+| [q14](tpcds/q14.md) | 1 | 0 | 1 | 14 | OK |
 | [q15](tpcds/q15.md) | 4 | 3 | 2 | 4 | OK |
 | [q16](tpcds/q16.md) | 4 | 3 | 3 | 5 | OK |
 | [q17](tpcds/q17.md) | 6 | 10 | 1 | 4 | OK |
@@ -61,17 +61,17 @@ Shows what PRICE can handle vs. what falls to the LLM residual encoder.
 | [q20](tpcds/q20.md) | 3 | 2 | 2 | 5 | OK |
 | [q21](tpcds/q21.md) | 4 | 3 | 2 | 4 | OK |
 | [q22](tpcds/q22.md) | 3 | 2 | 1 | 4 | OK |
-| [q23](tpcds/q23.md) | 6 | 5 | 2 | 14 | OK |
-| [q24](tpcds/q24.md) | 6 | 7 | 2 | 6 | OK |
+| [q23](tpcds/q23.md) | 1 | 0 | 1 | 14 | OK |
+| [q24](tpcds/q24.md) | 1 | 0 | 1 | 6 | OK |
 | [q25](tpcds/q25.md) | 6 | 10 | 2 | 4 | OK |
 | [q26](tpcds/q26.md) | 5 | 4 | 4 | 4 | OK |
 | [q27](tpcds/q27.md) | 5 | 4 | 5 | 4 | OK |
 | [q28](tpcds/q28.md) | 1 | 0 | 1 | 7 | OK |
 | [q29](tpcds/q29.md) | 6 | 10 | 2 | 4 | OK |
-| [q30](tpcds/q30.md) | 4 | 4 | 2 | 5 | OK |
-| [q31](tpcds/q31.md) | 4 | 5 | 2 | 4 | OK |
+| [q30](tpcds/q30.md) | 1 | 0 | 1 | 5 | OK |
+| [q31](tpcds/q31.md) | 1 | 0 | 1 | 4 | OK |
 | [q32](tpcds/q32.md) | 3 | 2 | 2 | 3 | OK |
-| [q33](tpcds/q33.md) | 6 | 9 | 3 | 12 | OK |
+| [q33](tpcds/q33.md) | 1 | 0 | 1 | 12 | OK |
 | [q34](tpcds/q34.md) | 4 | 3 | 2 | 3 | OK |
 | [q35](tpcds/q35.md) | 3 | 2 | 0 | 7 | OK |
 | [q36](tpcds/q36.md) | 4 | 3 | 2 | 6 | OK |
@@ -85,24 +85,24 @@ Shows what PRICE can handle vs. what falls to the LLM residual encoder.
 | [q44](tpcds/q44.md) | 1 | 0 | 1 | 11 | OK |
 | [q45](tpcds/q45.md) | 5 | 4 | 2 | 5 | OK |
 | [q46](tpcds/q46.md) | 5 | 4 | 2 | 4 | OK |
-| [q47](tpcds/q47.md) | 1 | 4 | 2 | 6 | OK |
+| [q47](tpcds/q47.md) | 1 | 0 | 1 | 6 | OK |
 | [q48](tpcds/q48.md) | 5 | 2 | 1 | 1 | OK |
 | [q49](tpcds/q49.md) | 7 | 9 | 14 | 12 | OK |
 | [q50](tpcds/q50.md) | 4 | 6 | 2 | 9 | OK |
-| [q51](tpcds/q51.md) | 3 | 4 | 1 | 8 | OK |
+| [q51](tpcds/q51.md) | 1 | 0 | 1 | 8 | OK |
 | [q52](tpcds/q52.md) | 3 | 2 | 3 | 4 | OK |
 | [q53](tpcds/q53.md) | 4 | 3 | 0 | 5 | OK |
-| [q54](tpcds/q54.md) | 5 | 5 | 2 | 9 | OK |
+| [q54](tpcds/q54.md) | 1 | 0 | 1 | 9 | OK |
 | [q55](tpcds/q55.md) | 3 | 2 | 3 | 4 | OK |
-| [q56](tpcds/q56.md) | 6 | 9 | 3 | 12 | OK |
-| [q57](tpcds/q57.md) | 1 | 3 | 2 | 6 | OK |
-| [q58](tpcds/q58.md) | 5 | 7 | 0 | 9 | OK |
-| [q59](tpcds/q59.md) | 3 | 3 | 1 | 6 | OK |
-| [q60](tpcds/q60.md) | 6 | 9 | 3 | 12 | OK |
+| [q56](tpcds/q56.md) | 1 | 0 | 1 | 12 | OK |
+| [q57](tpcds/q57.md) | 1 | 0 | 1 | 6 | OK |
+| [q58](tpcds/q58.md) | 1 | 0 | 1 | 9 | OK |
+| [q59](tpcds/q59.md) | 1 | 0 | 1 | 6 | OK |
+| [q60](tpcds/q60.md) | 1 | 0 | 1 | 12 | OK |
 | [q61](tpcds/q61.md) | 7 | 6 | 3 | 4 | OK |
 | [q62](tpcds/q62.md) | 5 | 4 | 1 | 9 | OK |
 | [q63](tpcds/q63.md) | 4 | 3 | 0 | 5 | OK |
-| [q64](tpcds/q64.md) | 12 | 20 | 3 | 5 | OK |
+| [q64](tpcds/q64.md) | 1 | 0 | 1 | 5 | OK |
 | [q65](tpcds/q65.md) | 2 | 3 | 0 | 6 | OK |
 | [q66](tpcds/q66.md) | 6 | 8 | 4 | 6 | OK |
 | [q67](tpcds/q67.md) | 4 | 3 | 1 | 6 | OK |
@@ -112,16 +112,16 @@ Shows what PRICE can handle vs. what falls to the LLM residual encoder.
 | [q71](tpcds/q71.md) | 2 | 2 | 1 | 5 | OK |
 | [q72](tpcds/q72.md) | 9 | 12 | 3 | 6 | OK |
 | [q73](tpcds/q73.md) | 4 | 3 | 3 | 3 | OK |
-| [q74](tpcds/q74.md) | 4 | 5 | 1 | 5 | OK |
-| [q75](tpcds/q75.md) | 8 | 12 | 2 | 6 | OK |
+| [q74](tpcds/q74.md) | 1 | 0 | 1 | 5 | OK |
+| [q75](tpcds/q75.md) | 1 | 0 | 1 | 6 | OK |
 | [q76](tpcds/q76.md) | 5 | 6 | 0 | 6 | OK |
-| [q77](tpcds/q77.md) | 0 | 0 | 0 | 12 | ERR |
-| [q78](tpcds/q78.md) | 7 | 8 | 1 | 6 | OK |
+| [q77](tpcds/q77.md) | 1 | 0 | 1 | 12 | OK |
+| [q78](tpcds/q78.md) | 1 | 0 | 1 | 6 | OK |
 | [q79](tpcds/q79.md) | 4 | 3 | 2 | 4 | OK |
-| [q80](tpcds/q80.md) | 0 | 0 | 0 | 9 | ERR |
-| [q81](tpcds/q81.md) | 4 | 4 | 2 | 5 | OK |
+| [q80](tpcds/q80.md) | 1 | 0 | 1 | 9 | OK |
+| [q81](tpcds/q81.md) | 1 | 0 | 1 | 5 | OK |
 | [q82](tpcds/q82.md) | 4 | 3 | 4 | 3 | OK |
-| [q83](tpcds/q83.md) | 5 | 7 | 0 | 12 | OK |
+| [q83](tpcds/q83.md) | 1 | 0 | 1 | 12 | OK |
 | [q84](tpcds/q84.md) | 6 | 5 | 3 | 2 | OK |
 | [q85](tpcds/q85.md) | 7 | 8 | 1 | 4 | OK |
 | [q86](tpcds/q86.md) | 3 | 2 | 1 | 6 | OK |
@@ -135,6 +135,6 @@ Shows what PRICE can handle vs. what falls to the LLM residual encoder.
 | [q94](tpcds/q94.md) | 4 | 3 | 3 | 5 | OK |
 | [q95](tpcds/q95.md) | 4 | 3 | 3 | 6 | OK |
 | [q96](tpcds/q96.md) | 4 | 3 | 4 | 3 | OK |
-| [q97](tpcds/q97.md) | 3 | 4 | 1 | 8 | OK |
+| [q97](tpcds/q97.md) | 1 | 0 | 1 | 8 | OK |
 | [q98](tpcds/q98.md) | 3 | 2 | 2 | 4 | OK |
 | [q99](tpcds/q99.md) | 5 | 4 | 1 | 9 | OK |

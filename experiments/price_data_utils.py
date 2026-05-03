@@ -1419,7 +1419,9 @@ def flatten_sql_for_price_n(sql, db_name=None):
     except Exception:
         return sql
 
-    with_node = ast.args.get("with")
+    # sqlglot 28+: the WITH clause lives under the "with_" key of a Select node.
+    # Older versions used "with". Use find() which works across all versions.
+    with_node = ast.find(sqlglot_exp.With)
     if with_node is None:
         # No CTEs to gate; behave like flatten_sql_for_price.
         return flatten_sql_for_price(sql, db_name)
@@ -1444,15 +1446,21 @@ def flatten_sql_for_price_n(sql, db_name=None):
         return sql  # Nothing to inline; everything stays as residual.
 
     # Build an intermediate SQL with only simple CTEs, then run the standard flattener.
+    # Use the version-correct key name: "with_" (sqlglot 28+) or "with" (older).
+    with_key = "with_" if "with_" in ast.args else "with"
     new_with = with_node.copy()
     new_with.set("expressions", [c.copy() for c in simple_ctes])
-    ast.set("with", new_with)
+    ast.set(with_key, new_with)
     intermediate_sql = ast.sql()
 
     # Call the standard flattener on the simplified-CTE SQL.
     flattened = flatten_sql_for_price(intermediate_sql, db_name)
     if flattened is None:
-        return sql
+        # Flattening failed (e.g., CTE body contains a nested subquery that
+        # flatten_sql_for_price can't reduce to base tables). Return None so
+        # the caller falls through to _ast_collect_predicates, which has
+        # broader heuristic coverage for complex CTE structures.
+        return None
 
     # Non-simple CTEs are detected by the residual collector via the original AST,
     # not the post-transform parse, so we just return the flattened result.
@@ -3005,6 +3013,31 @@ def transform_sql_for_price(sql, db_name, price_m=False, price_s=False,
         price_n_pairwise: Reserved for PRICE_N pairwise encoding (forwarded
             to _preprocess_predicates for future use).
     """
+    # --- PRICE_N early bail-out for non-simple CTEs ---
+    # When price_n_parsing is active, the pipeline only inlines CTEs whose bodies
+    # pass _check_cte_body_simple (no GROUP BY / aggregates / UNION / window fns).
+    # If the input SQL has non-simple CTEs, all downstream text-level rewriters
+    # (including _flatten_join_with_side which calls flatten_sql_for_price) would
+    # either produce mangled SQL or silently discard aggregation context.
+    # Detect this case early and return a safe sentinel so the PRICE_N residual
+    # collector can harvest CTEs / UNION / aggregates from the original AST.
+    if price_n_parsing and HAS_SQLGLOT:
+        try:
+            _ast_input = sqlglot.parse_one(sql)
+            _with_input = _ast_input.find(sqlglot_exp.With)
+            if _with_input is not None:
+                _has_non_simple_input = any(
+                    not _check_cte_body_simple(
+                        cte.this.this if isinstance(cte.this, sqlglot_exp.Subquery)
+                        else cte.this
+                    )
+                    for cte in _with_input.expressions
+                )
+                if _has_non_simple_input:
+                    return "SELECT COUNT(*) FROM dummy_table WHERE 1 = 1"
+        except Exception:
+            pass
+
     sides_collected = []
     if price_n_fanout:
         sql, sides_collected = _flatten_join_with_side(sql)
@@ -3034,6 +3067,29 @@ def transform_sql_for_price(sql, db_name, price_m=False, price_s=False,
     if needs_flattening:
         if price_n_parsing:
             flattened = flatten_sql_for_price_n(sql, db_name)
+            # Bail-out guard: if the result still has non-simple CTEs the outer
+            # query is structurally a WITH…SELECT — not a flat SELECT…FROM…WHERE.
+            # Applying the text-level alias rewriter below would grab the FIRST
+            # CTE body's FROM…WHERE (not the outer query's), producing mangled SQL.
+            # Return a safe sentinel instead; the PRICE_N residual collector will
+            # harvest all CTEs / UNION / GroupBy / etc. from the original AST.
+            if HAS_SQLGLOT and flattened is not None:
+                try:
+                    _ast_check = sqlglot.parse_one(flattened)
+                    # Use find() — compatible with sqlglot 28+ (key is "with_" not "with").
+                    _with_node = _ast_check.find(sqlglot_exp.With)
+                    if _with_node is not None:
+                        _has_non_simple = any(
+                            not _check_cte_body_simple(
+                                cte.this.this if isinstance(cte.this, sqlglot_exp.Subquery)
+                                else cte.this
+                            )
+                            for cte in _with_node.expressions
+                        )
+                        if _has_non_simple:
+                            return "SELECT COUNT(*) FROM dummy_table WHERE 1 = 1"
+                except Exception:
+                    pass
         else:
             flattened = flatten_sql_for_price(sql, db_name)
         use_flattened = False

@@ -73,7 +73,9 @@ class Sql2FeatureN(Sql2Feature):
     EMPTY_ATOMS = {
         "eq_values": [], "in_values": [], "not_in_values": [],
         "range_low": None, "range_high": None,
-        "is_null": False, "is_not_null": False, "like_keys": [],
+        "is_null": False, "is_not_null": False,
+        # Note: LIKE/NOT LIKE/ILIKE go to LLM residual under PRICE_N (rule a
+        # extension does not encode them).
     }
 
     def _value_selectivity_continuous(self, column: str, value) -> Tuple[float, float, float]:
@@ -254,8 +256,7 @@ class Sql2FeatureN(Sql2Feature):
         # Combine all multi-valued atoms (eq + in + like_keys minus not_in/not_like)
         # We treat eq + in + like as a positive list to populate the K slots.
         positive_values = list(atoms.get("eq_values", [])) + \
-                          list(atoms.get("in_values", [])) + \
-                          list(atoms.get("like_keys", []))
+                          list(atoms.get("in_values", []))
         not_in_values = list(atoms.get("not_in_values", []))
 
         if positive_values:

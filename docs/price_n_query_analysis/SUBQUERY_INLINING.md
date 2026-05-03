@@ -126,6 +126,20 @@ This applies to both continuous and SpaceSaving-binned discrete columns. Multipl
 
 ---
 
+## LIKE predicates (always residual)
+
+Under PRICE_N, `col LIKE 'pattern'`, `col NOT LIKE 'pattern'`, `col ILIKE 'pattern'`, and `col NOT ILIKE 'pattern'` are **always classified as LLM residual**, regardless of column type.
+
+**Rationale**: PRICE statistics can only approximate LIKE selectivity by matching the pattern against the column's top-39 SpaceSaving keys, which works well for low-cardinality discrete columns (e.g., TPC-H `p_type` with ~150 distinct values) but degrades sharply for high-cardinality text columns (e.g., IMDB `movie_companies.note` with millions of distinct strings). The signal is too noisy to model uniformly.
+
+**What flows to the LLM residual**: the column reference + the pattern string. The fusion Transformer learns pattern-specific selectivity from training labels — far better positioned than a SpaceSaving top-39 match.
+
+**Templates affected**: TPC-H q2, q9, q13, q14, q16, q20 (all `LIKE` patterns); TPC-DS q91 (the single `hd_buy_potential LIKE '0-500%'` predicate); all IMDB JOB queries (heavy `LIKE` use on `note` columns).
+
+**PRICE_S / PRICE_M parity**: not affected. PRICE_S/M continue to do SpaceSaving-key-matching and emit IN-list / bounding-box filter tokens for LIKE predicates. The change is PRICE_N-specific.
+
+---
+
 ## UNION / INTERSECT / EXCEPT
 
 Set operations combine multiple SELECT branches. PRICE is a single-block model: only the **first** branch flows through to feature extraction. The other branches are tracked in `LLM Residual Constructs` as `Union` / `Intersect` / `Except` entries. This behavior is unchanged by the PRICE_N policy revision.
@@ -154,6 +168,10 @@ Templates affected: TPC-DS q4, q5, q11, q14, q23, q33, q49, q54, q56, q60, q66, 
 | Subquery in `CASE WHEN` | ❌ | dropped | residual only |
 | Subquery with window function inside | ❌ | dropped | residual only |
 | `col != X` (flat outer WHERE) | ✅ | range-pair slots in filter token | — |
+| `col LIKE 'pattern'` | ❌ | n/a | `LikePredicate` |
+| `col NOT LIKE 'pattern'` | ❌ | n/a | `NotLikePredicate` |
+| `col ILIKE 'pattern'` | ❌ | n/a | `ILikePredicate` |
+| `col NOT ILIKE 'pattern'` | ❌ | n/a | `NotILikePredicate` |
 
 Legend: ✅ inlined/encoded · ⚠ partial (first branch only) · ❌ not inlined; residual.
 

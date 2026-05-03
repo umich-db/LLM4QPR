@@ -42,6 +42,7 @@ from price_data_utils import (
     _preprocess_predicates,
     flatten_sql_for_price,
     _check_cte_body_simple,
+    _is_inside_subquery,
 )
 
 
@@ -409,6 +410,32 @@ def _collect_llm_residuals(ast, sql):
             "snippet": lim.sql()[:40],
         })
         break
+
+    # LIKE / NOT LIKE / ILIKE / NOT ILIKE — always residual under PRICE_N
+    # Walk all Like and ILike nodes; if the parent is a Not, classify as
+    # Not*Predicate (and don't also emit a plain *Predicate for the inner node).
+    seen_like_parents = set()
+    for like_node in list(ast.find_all((_exp.Like, _exp.ILike))):
+        if _is_inside_subquery(like_node):
+            continue  # already counted under the parent CTE/Exists/InSubquery residual
+        parent = like_node.parent
+        is_negated = isinstance(parent, _exp.Not)
+        if is_negated:
+            node_id = id(parent)
+            if node_id in seen_like_parents:
+                continue  # avoid double-counting when both Like and ILike are children
+            seen_like_parents.add(node_id)
+            kind = ("NotILikePredicate" if isinstance(like_node, _exp.ILike)
+                    else "NotLikePredicate")
+            snippet = parent.sql()
+        else:
+            kind = "ILikePredicate" if isinstance(like_node, _exp.ILike) else "LikePredicate"
+            snippet = like_node.sql()
+        residuals.append({
+            "kind": kind,
+            "detail": f"{kind} predicate (always LLM residual under PRICE_N): {snippet[:120]}",
+            "snippet": snippet[:200],
+        })
 
     return residuals
 

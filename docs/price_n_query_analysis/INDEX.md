@@ -13,7 +13,7 @@ Shows what PRICE can handle vs. what falls to the LLM residual encoder.
 | Query | Tables | Joins | Filter cols | Residuals | Status |
 |-------|--------|-------|-------------|-----------|--------|
 | [q1](tpch/q1.md) | 1 | 0 | 1 | 3 | OK |
-| [q2](tpch/q2.md) | 5 | 4 | 2 | 2 | OK |
+| [q2](tpch/q2.md) | 5 | 4 | 2 | 3 | OK |
 | [q3](tpch/q3.md) | 3 | 2 | 3 | 3 | OK |
 | [q4](tpch/q4.md) | 1 | 0 | 1 | 4 | OK |
 | [q5](tpch/q5.md) | 6 | 6 | 2 | 3 | OK |
@@ -25,9 +25,9 @@ Shows what PRICE can handle vs. what falls to the LLM residual encoder.
 | [q11](tpch/q11.md) | 3 | 2 | 1 | 5 | OK |
 | [q12](tpch/q12.md) | 2 | 1 | 2 | 5 | OK |
 | [q13](tpch/q13.md) | 2 | 1 | 0 | 4 | OK |
-| [q14](tpch/q14.md) | 2 | 1 | 1 | 2 | OK |
+| [q14](tpch/q14.md) | 2 | 1 | 1 | 3 | OK |
 | [q15](tpch/q15.md) | 2 | 1 | 0 | 2 | OK |
-| [q16](tpch/q16.md) | 2 | 1 | 2 | 4 | OK |
+| [q16](tpch/q16.md) | 2 | 1 | 2 | 5 | OK |
 | [q17](tpch/q17.md) | 2 | 1 | 2 | 2 | OK |
 | [q18](tpch/q18.md) | 3 | 2 | 0 | 5 | OK |
 | [q19](tpch/q19.md) | 2 | 1 | 6 | 1 | OK |
@@ -129,7 +129,7 @@ Shows what PRICE can handle vs. what falls to the LLM residual encoder.
 | [q88](tpcds/q88.md) | 4 | 3 | 3 | 8 | OK |
 | [q89](tpcds/q89.md) | 4 | 3 | 1 | 5 | OK |
 | [q90](tpcds/q90.md) | 4 | 3 | 3 | 4 | OK |
-| [q91](tpcds/q91.md) | 7 | 6 | 2 | 3 | OK |
+| [q91](tpcds/q91.md) | 7 | 6 | 2 | 4 | OK |
 | [q92](tpcds/q92.md) | 3 | 2 | 2 | 4 | OK |
 | [q93](tpcds/q93.md) | 3 | 3 | 1 | 5 | OK |
 | [q94](tpcds/q94.md) | 4 | 3 | 3 | 5 | OK |

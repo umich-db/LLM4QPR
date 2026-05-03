@@ -1843,18 +1843,21 @@ def _preprocess_predicates(sql, db_name=None, price_m=False, price_s=False,
                 if or_expr is not None:
                     node.replace(sqlglot_exp.Paren(this=or_expr))
 
-    # Drop LIKE / NOT LIKE → 1 = 1
-    # PRICE_M/PRICE_S: preserve LIKE, ILIKE, NOT LIKE, NOT ILIKE for SpaceSaving encoding
+    # LIKE / NOT LIKE / ILIKE / NOT ILIKE handling:
+    #   - PRICE_M / PRICE_S: preserve in the SQL; the feature extractor matches
+    #     the pattern against SpaceSaving keys and encodes as IN-list-style.
+    #   - Base PRICE / PRICE_N: drop to 1=1; under PRICE_N the predicate is
+    #     classified as LLM residual by analyze_query_for_price_n's
+    #     _collect_llm_residuals (which inspects the original AST).
     if not (price_m or price_s):
         for node in list(ast.find_all(sqlglot_exp.Like)):
             node.replace(tautology.copy())
         for node in list(ast.find_all(sqlglot_exp.ILike)):
             node.replace(tautology.copy())
-    if not (price_m or price_s):
-        for node in list(ast.find_all(sqlglot_exp.Not)):
-            child = node.this
+        for not_node in list(ast.find_all(sqlglot_exp.Not)):
+            child = not_node.this
             if isinstance(child, (sqlglot_exp.Like, sqlglot_exp.ILike)):
-                node.replace(tautology.copy())
+                not_node.replace(tautology.copy())
 
     # Drop non-EQ comparisons on string literals
     for cmp_type in (sqlglot_exp.GT, sqlglot_exp.GTE, sqlglot_exp.LT,

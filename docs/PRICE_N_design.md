@@ -140,6 +140,12 @@ range-pair gap encoding), `col BETWEEN x AND y`, `col IS NULL`,
 `col IS NOT NULL`. For >K IN-values, the K most-selective populate slots
 explicitly and the rest fold into the tail bucket.
 
+For same-column OR chains (`c = v1 OR c < v2 OR c > v3`, including those
+produced by NNF expansion of `NOT BETWEEN`), the `or_atoms` field on the
+column's filter atom holds a list of `(op, value)` pairs; each pair becomes
+one IN-list slot via the `_atom_to_slot` mapping. See §5a for the DNF
+treatment.
+
 ### 4.5 Pairwise intra-table filter token (70 dims, NEW token type)
 
 Per `A.x op A.y` predicate (same-table column comparison) plus one
@@ -184,8 +190,11 @@ When `--price_n_parsing` is on, the AST passes through 9 phases:
 1. **Subquery handling** — see §6 below; under PRICE_N, the existing
    inliners are skipped and the subqueries become residuals.
 2. **NOT push-down → NNF** (rule i): De Morgan + per-comparator flips +
-   `IS NULL` / `IS NOT NULL` swap. After this pass, every `Not` wraps a
-   leaf predicate.
+   `IS NULL` / `IS NOT NULL` swap + `NOT BETWEEN` expansion to
+   `Or(LT, GT)` + `NOT IN (literal list)` expansion to `AND` of NEQs.
+   After this pass, the only surviving `Not` wrappers are on `Like`
+   / `ILike` (which go to residual under §7) and on `In(subquery)`
+   (which goes to residual under §6 as `NotInSubquery`).
 3. **Disjoint OR → IN** (rule e): collapses `(c=v1 OR c=v2 OR …)` chains
    on the same column into `c IN (v1, …, vk)`.
 4. BETWEEN → `>= AND <=` (existing).
@@ -204,6 +213,80 @@ When `--price_n_parsing` is on, the AST passes through 9 phases:
 
 Phases 6, 7, 8, 9 are gated on the corresponding structural flag — e.g.,
 date-arithmetic tagging only runs under `--price_n_pairwise`.
+
+---
+
+## 5a. Canonical form: NNF → per-column DNF
+
+After the pre-processor (§5), the WHERE clause is in **NNF**: every `NOT`
+wrapper is gone except where wrapping a `LIKE` (which goes to LLM residual)
+or where Phase 4's BETWEEN expansion temporarily introduces a non-NNF
+shape (Phase 2's NNF then handles it via the `Not(Between)` →
+`Or(LT, GT)` expansion).
+
+For PRICE's atom-based cardinality estimation, the *useful* canonical form
+is **DNF**: a disjunction of conjunctions, where each conjunction is a flat
+list of atoms over base relations. In DNF, the model can encode each clause
+independently and combine clause selectivities at the top level.
+
+PRICE_N takes a pragmatic approach to DNF rather than full distributive
+expansion (which can blow up exponentially — see §6.3 of the [original
+design](hybrid_price_llm_sql_representation_updated.md)):
+
+| Pattern | DNF treatment in PRICE_N |
+|---|---|
+| Pure conjunction `(a AND b AND c)` | Already in DNF (one clause). Encoded directly. |
+| Disjoint-column EQ chain `(c=v1 OR c=v2 OR …)` | Same-column OR; collapsed to a single clause via the rule-e IN-list rewrite. |
+| Same-column OR with mixed atom kinds `(c<5 OR c>10)` | Same-column OR; collapsed to a single clause via the `or_atoms` field on the column's filter atom (each leaf becomes one of the K=10 IN-list slots). |
+| Mixed-column OR `(a<5 OR b>10)` | Genuine multi-clause DNF; PRICE_N classifies the entire `Or` block as LLM residual. The fusion Transformer learns the disjunction from the textual residual + the conjunctive atoms in the surrounding query. |
+| Multi-clause DNF with shared atoms `((a AND b) OR (a AND c))` | Treated as the mixed-column case above — residual. The multi-clause encoder + OR aggregator from the original design (§6.5) is the principled solution and is **out of scope** for this implementation. |
+
+The implementation enforces this boundary in `_extract_filter_atoms`:
+
+- Walk every top-level `Or` block.
+- If all leaves are predicates on the **same** column, collapse them into
+  the column's `or_atoms` list (consumed by the filter-token encoder).
+- Otherwise, the `Or` block becomes residual.
+
+This keeps the formal "PRICE encodes one DNF clause" guarantee while
+covering the same-column case (which is the only DNF pattern that appears
+without exponential blowup in TPC-H/DS).
+
+### Example: NOT BETWEEN
+
+```sql
+WHERE c NOT BETWEEN 5 AND 10
+```
+
+Pipeline:
+
+1. NNF expansion (Phase 2): `Not(Between)` → `Or(LT(c, 5), GT(c, 10))`.
+2. Extractor (`_extract_filter_atoms`): top-level `Or`, both leaves on
+   column `c` → collapse to `or_atoms = [("<", 5), (">", 10)]` on `c`.
+3. Encoder: two range slots emitted: `(0, c-norm-5, sel_left)` and
+   `(c-norm-10, 1, sel_right)`. The `null_pred_flag` is 0.
+
+The result is a single DNF clause encoded as one filter token with two
+populated slots. No `Not` wrapper survives, no residual is generated.
+
+### Example: mixed-column OR
+
+```sql
+WHERE (c1 < 5 AND c2 > 10) OR (c3 = 'foo' AND c4 BETWEEN 1 AND 100)
+```
+
+Pipeline:
+
+1. NNF (no NOT to push).
+2. Extractor sees the top-level `Or` with mixed-column leaves.
+3. The `Or` block is **not** collapsed — it goes to LLM residual as `MixedColumnOr`.
+4. Any pure-conjunctive atoms outside the `Or` block (none in this example) are still extracted normally.
+5. The fusion Transformer combines PRICE's residual-rest atoms with the LLM-encoded textual `Or` representation.
+
+The full multi-clause DNF aggregator (§6.5 of the original design) would
+encode each branch separately and learn an OR-aggregator from training
+labels — that's the principled answer for these cases, but it requires the
+multi-clause infrastructure that PRICE_N intentionally defers.
 
 ---
 

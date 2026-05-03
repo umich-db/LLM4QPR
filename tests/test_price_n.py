@@ -625,3 +625,53 @@ def test_extract_filter_atoms_skips_atoms_inside_subquery():
     # The inner l2.l_orderkey = 42 should NOT be extracted
     assert not any("l_orderkey" in k for k in atoms), \
         f"Inner subquery atom l_orderkey should be skipped, got: {list(atoms.keys())}"
+
+
+def test_not_pushdown_eliminates_not_between():
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _push_not_to_nnf
+    import sqlglot
+    ast = sqlglot.parse_one("SELECT * FROM t WHERE NOT (t.a BETWEEN 5 AND 10)")
+    _push_not_to_nnf(ast)
+    sql = ast.sql().upper()
+    # No NOT wrapper should remain
+    cleaned = sql.replace("NOT NULL", "").replace("IS NOT", "")
+    assert "NOT" not in cleaned
+    assert " < 5" in sql or "<5" in sql
+    assert " > 10" in sql or ">10" in sql
+
+
+def test_not_pushdown_eliminates_not_in_literal_list():
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _push_not_to_nnf
+    import sqlglot
+    ast = sqlglot.parse_one("SELECT * FROM t WHERE NOT t.a IN (1, 2, 3)")
+    _push_not_to_nnf(ast)
+    sql = ast.sql().upper()
+    cleaned = sql.replace("NOT NULL", "").replace("IS NOT", "")
+    assert "NOT" not in cleaned
+    # Should have three NEQ atoms
+    assert sql.count("<>") + sql.count("!=") >= 3
+
+
+def test_extract_or_atoms_same_column_chain():
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _extract_filter_atoms
+    import sqlglot
+    ast = sqlglot.parse_one("SELECT * FROM tpch_l WHERE tpch_l.l_quantity < 5 OR tpch_l.l_quantity > 10")
+    atoms = _extract_filter_atoms(ast)
+    assert "tpch_l.l_quantity" in atoms
+    or_atoms = atoms["tpch_l.l_quantity"].get("or_atoms", [])
+    ops = sorted(op for op, _ in or_atoms)
+    assert ops == ["<", ">"]
+
+
+def test_extract_or_atoms_mixed_column_not_collapsed():
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _extract_filter_atoms
+    import sqlglot
+    ast = sqlglot.parse_one("SELECT * FROM t WHERE t.a < 5 OR t.b > 10")
+    atoms = _extract_filter_atoms(ast)
+    # Different columns — not collapsed; or_atoms empty for both
+    for col, entry in atoms.items():
+        assert entry.get("or_atoms", []) == []

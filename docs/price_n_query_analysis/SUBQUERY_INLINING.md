@@ -191,4 +191,8 @@ In each `tpch/qN.md` and `tpcds/qN.md`:
 
 ---
 
+Mixed-column OR blocks (where leaves of an `Or` are predicates on different
+columns) are residual; same-column OR chains are collapsed into a single
+multi-range filter atom (see §5a of `PRICE_N_design.md`).
+
 *See also: [INDEX.md](INDEX.md) for the per-template summary table, and the PRICE_N design spec for the boundary rules between statistics-grounded core and LLM residual.*

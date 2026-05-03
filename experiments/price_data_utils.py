@@ -483,7 +483,10 @@ def _push_not_to_nnf(ast):
       - NOT (x op y)   → flipped operator (= ↔ !=, < ↔ >=, etc.)
       - NOT (x IS NULL) → x IS NOT NULL
       - NOT (x IS NOT NULL) → x IS NULL
-      - NOT (x LIKE p), NOT (x IN ...), NOT (x BETWEEN ...) → preserved.
+      - NOT (col BETWEEN low AND high) → col < low OR col > high
+      - NOT col IN (v1, v2, ...) → col != v1 AND col != v2 AND ...
+        (value-list IN only; subquery IN is preserved as residual)
+      - NOT (x LIKE p), NOT (x IN(subquery)) → preserved.
     """
     if not HAS_SQLGLOT:
         return
@@ -547,8 +550,48 @@ def _push_not_to_nnf(ast):
                         expression=sqlglot_exp.Null()))
                     changed = True
                     continue
-            # NOT LIKE / NOT IN / NOT BETWEEN: leave as-is for the filter
-            # encoder to handle.
+            # NOT (col BETWEEN low AND high) → col < low OR col > high
+            if isinstance(child, sqlglot_exp.Between):
+                col = child.this
+                low = child.args.get('low')
+                high = child.args.get('high')
+                if col is not None and low is not None and high is not None:
+                    lt = sqlglot_exp.LT(this=col.copy(), expression=low.copy())
+                    gt = sqlglot_exp.GT(this=col.copy(), expression=high.copy())
+                    not_node.replace(sqlglot_exp.Or(this=lt, expression=gt))
+                    changed = True
+                    continue
+
+            # NOT col IN (v1, v2, ...) → col != v1 AND col != v2 AND ...
+            # Only expand value-list IN; subquery IN is residual.
+            if isinstance(child, sqlglot_exp.In) and child.args.get('query') is None:
+                col = child.this
+                values = child.expressions
+                if col is not None and values:
+                    atoms = [sqlglot_exp.NEQ(this=col.copy(), expression=v.copy())
+                             for v in values]
+                    result = atoms[0]
+                    for a in atoms[1:]:
+                        result = sqlglot_exp.And(this=result, expression=a)
+                    not_node.replace(sqlglot_exp.Paren(this=result))
+                    changed = True
+                    continue
+
+            # NOT LIKE / NOT IN(subquery): leave as-is for the filter
+            # encoder / residual handler.
+
+
+def _flatten_or(node):
+    """Flatten chained ORs into a list of leaf nodes (module-level helper).
+
+    Strips Paren wrappers at each level so that `(a) OR (b)` is treated
+    the same as `a OR b`.
+    """
+    while isinstance(node, sqlglot_exp.Paren):
+        node = node.this
+    if isinstance(node, sqlglot_exp.Or):
+        return _flatten_or(node.this) + _flatten_or(node.expression)
+    return [node]
 
 
 def _rewrite_disjoint_or_to_in(ast):
@@ -573,15 +616,6 @@ def _rewrite_disjoint_or_to_in(ast):
         if isinstance(rhs, sqlglot_exp.Column):
             return None  # join condition, not filter
         return (str(col), rhs)
-
-    def _flatten_or(node):
-        """Flatten chained ORs into a list of leaf nodes."""
-        # Strip Paren wrappers first
-        while isinstance(node, sqlglot_exp.Paren):
-            node = node.this
-        if isinstance(node, sqlglot_exp.Or):
-            return _flatten_or(node.this) + _flatten_or(node.expression)
-        return [node]
 
     changed = True
     while changed:
@@ -669,7 +703,66 @@ def _extract_filter_atoms(ast):
             "eq_values": [], "in_values": [], "not_in_values": [],
             "range_low": None, "range_high": None,
             "is_null": False, "is_not_null": False, "like_keys": [],
+            "or_atoms": [],   # list of (op, value) for same-column disjunctions
         })
+
+    # --- Pass 0: Collect same-column OR chains into or_atoms ---
+    # Walk every top-level Or block. If all leaves are predicates on the
+    # *same* column with literal RHS, collapse them to or_atoms (DNF).
+    # Nodes consumed here are tracked so the per-kind loops below don't
+    # double-count them.
+    _consumed_nodes = set()
+    _CMP_OP_MAP = {
+        sqlglot_exp.EQ:  "=",
+        sqlglot_exp.LT:  "<",
+        sqlglot_exp.LTE: "<=",
+        sqlglot_exp.GT:  ">",
+        sqlglot_exp.GTE: ">=",
+    }
+    for or_node in list(where.find_all(sqlglot_exp.Or)):
+        if _is_inside_subquery(or_node):
+            continue
+        # Skip if an ancestor Or already subsumed this node
+        if id(or_node) in _consumed_nodes:
+            continue
+        leaves = _flatten_or(or_node)
+        single_col = None
+        all_same_col = True
+        col_atoms = []
+        for leaf in leaves:
+            stripped = leaf
+            while isinstance(stripped, sqlglot_exp.Paren):
+                stripped = stripped.this
+            op = _CMP_OP_MAP.get(type(stripped))
+            if op is None:
+                all_same_col = False
+                break
+            col_node = stripped.args.get("this")
+            rhs = stripped.args.get("expression")
+            if not isinstance(col_node, sqlglot_exp.Column):
+                all_same_col = False
+                break
+            if isinstance(rhs, sqlglot_exp.Column):
+                all_same_col = False
+                break
+            v = _literal_value(rhs)
+            if v is None:
+                all_same_col = False
+                break
+            c = _column_str(col_node)
+            if single_col is None:
+                single_col = c
+            elif c != single_col:
+                all_same_col = False
+                break
+            col_atoms.append((op, v, stripped))
+        if all_same_col and single_col is not None and col_atoms:
+            entry = _ensure(single_col)
+            for op, v, node in col_atoms:
+                entry["or_atoms"].append((op, v))
+                _consumed_nodes.add(id(node))
+
+    # --- Per-atom-kind passes (skip nodes consumed by the Or pass) ---
 
     for in_node in where.find_all(sqlglot_exp.In):
         if _is_inside_subquery(in_node):
@@ -680,6 +773,8 @@ def _extract_filter_atoms(ast):
             if val is not None:
                 _ensure(col)["in_values"].append(val)
     for eq in where.find_all(sqlglot_exp.EQ):
+        if id(eq) in _consumed_nodes:
+            continue
         if _is_inside_subquery(eq):
             continue
         if isinstance(eq.expression, sqlglot_exp.Column):
@@ -705,6 +800,8 @@ def _extract_filter_atoms(ast):
         (sqlglot_exp.LTE, "high"), (sqlglot_exp.LT, "high"),
     ]:
         for cmp in where.find_all(cmp_cls):
+            if id(cmp) in _consumed_nodes:
+                continue
             if _is_inside_subquery(cmp):
                 continue
             if isinstance(cmp.expression, sqlglot_exp.Column):

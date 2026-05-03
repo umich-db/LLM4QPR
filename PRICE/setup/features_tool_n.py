@@ -75,6 +75,7 @@ class Sql2FeatureN(Sql2Feature):
         "eq_values": [], "in_values": [], "not_in_values": [],
         "range_low": None, "range_high": None,
         "is_null": False, "is_not_null": False,
+        "or_atoms": [],   # list of (op, value) tuples for same-column disjunctions
         # Note: LIKE/NOT LIKE/ILIKE go to LLM residual under PRICE_N (rule a
         # extension does not encode them).
     }
@@ -111,6 +112,82 @@ class Sql2FeatureN(Sql2Feature):
         high = (idx + 1) / self.bin_size
         sel = float(freq) / max(1.0, table_size)
         return low, high, max(0.0, min(1.0, sel))
+
+    def _atom_to_slot(self, op: str, value, column: str,
+                      is_discrete: bool, keys, vals, table_size: int
+                      ) -> Tuple[float, float, float]:
+        """Convert a single (op, value) atom to a (low, high, sel) range slot.
+
+        Used to encode same-column OR chains from the or_atoms field.
+        """
+        if is_discrete:
+            try:
+                idx = keys.index(value)
+                freq = vals[idx]
+            except ValueError:
+                idx = len(keys) - 1
+                freq = vals[-1]
+            bin_lo = idx / self.bin_size
+            bin_hi = (idx + 1) / self.bin_size
+            sel_unit = float(freq) / max(1.0, table_size)
+            if op == "=":
+                return bin_lo, bin_hi, max(0.0, min(1.0, sel_unit))
+            elif op in ("<", "<="):
+                # Everything before this bin
+                lo_norm = 0.0
+                hi_norm = bin_hi if op == "<=" else bin_lo
+                gap_sel = sum(float(vals[b]) for b in range(0, idx + (1 if op == "<=" else 0))
+                              if b < len(vals)) / max(1.0, table_size)
+                return lo_norm, hi_norm, max(0.0, min(1.0, gap_sel))
+            elif op in (">", ">="):
+                lo_norm = bin_lo if op == ">=" else bin_hi
+                hi_norm = 1.0
+                start = idx if op == ">=" else idx + 1
+                gap_sel = sum(float(vals[b]) for b in range(start, len(vals))) / max(1.0, table_size)
+                return lo_norm, hi_norm, max(0.0, min(1.0, gap_sel))
+            else:
+                return 0.0, 0.0, 0.0
+        else:
+            bin_edges = self.columns_bin_edges.get(column)
+            if bin_edges is None:
+                return 0.0, 0.0, 0.0
+            try:
+                v = float(value)
+            except (TypeError, ValueError):
+                return 0.0, 0.0, 0.0
+            lo_edge = float(bin_edges[0])
+            hi_edge = float(bin_edges[-1])
+            rng = max(1e-9, hi_edge - lo_edge)
+            dist = self.columns_distributions.get(column)
+            if dist is None:
+                return 0.0, 0.0, 0.0
+            dist_sum = max(1.0, float(dist.sum()))
+            v_norm = max(0.0, min(1.0, (v - lo_edge) / rng))
+
+            if op == "=":
+                lo_n = v_norm
+                hi_n = min(1.0, v_norm + 1e-5)
+                sel = self.calculate_hist_selectivity(dist, bin_edges, v, v + 1e-5)
+                sel = float(sel) / dist_sum
+            elif op == "<":
+                lo_n, hi_n = 0.0, v_norm
+                sel = self.calculate_hist_selectivity(dist, bin_edges, lo_edge, v)
+                sel = float(sel) / dist_sum
+            elif op == "<=":
+                lo_n, hi_n = 0.0, min(1.0, v_norm + 1e-5)
+                sel = self.calculate_hist_selectivity(dist, bin_edges, lo_edge, v + 1e-5)
+                sel = float(sel) / dist_sum
+            elif op == ">":
+                lo_n, hi_n = min(1.0, v_norm + 1e-5), 1.0
+                sel = self.calculate_hist_selectivity(dist, bin_edges, v + 1e-5, hi_edge)
+                sel = float(sel) / dist_sum
+            elif op == ">=":
+                lo_n, hi_n = v_norm, 1.0
+                sel = self.calculate_hist_selectivity(dist, bin_edges, v, hi_edge)
+                sel = float(sel) / dist_sum
+            else:
+                return 0.0, 0.0, 0.0
+            return lo_n, hi_n, max(0.0, min(1.0, sel))
 
     def _populate_range_pair_slots(self, column: str, not_in_values: Sequence,
                                    is_discrete: bool, keys, vals,
@@ -275,6 +352,33 @@ class Sql2FeatureN(Sql2Feature):
                 keys=keys if is_discrete else None,
                 vals=vals if is_discrete else None,
                 table_size=table_size)
+        elif atoms.get("or_atoms"):
+            # Same-column OR chain: each (op, value) pair becomes one slot.
+            # Used for NOT BETWEEN expansions and mixed-op same-column ORs.
+            or_atom_list = atoms["or_atoms"]
+            triples = []
+            for op, val in or_atom_list:
+                lo, hi, sel = self._atom_to_slot(
+                    op, val, filter_column, is_discrete,
+                    keys if is_discrete else None,
+                    vals if is_discrete else None,
+                    table_size)
+                triples.append((lo, hi, sel))
+            # Sort by selectivity descending; top K go to explicit slots.
+            triples.sort(key=lambda t: t[2], reverse=True)
+            top = triples[: self.K]
+            tail = triples[self.K:]
+            slot_floats = []
+            for lo, hi, sel in top:
+                slot_floats.extend([lo, hi, sel])
+            while len(slot_floats) < self.K * 3:
+                slot_floats.extend([0.0, 0.0, 0.0])
+            if tail:
+                slot_floats.extend([min(t[0] for t in tail),
+                                    max(t[1] for t in tail),
+                                    min(1.0, sum(t[2] for t in tail))])
+            else:
+                slot_floats.extend([0.0, 0.0, 0.0])
         elif atoms.get("range_low") is not None or atoms.get("range_high") is not None:
             # Range predicate: fill slot 1 only.
             bin_edges = self.columns_bin_edges.get(filter_column)

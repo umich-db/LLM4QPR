@@ -84,7 +84,7 @@ controllable, so a user can mix-and-match with PRICE_S / PRICE_M:
 | `--price_n_parsing` | Pre-processor rewrites: NOT push-down (NNF), disjoint-OR → IN-list, date / timestamp literal normalization, atom tagging for new token types | off |
 | `--price_n_filter` | 75-dim filter token (10 IN-list slots + tail bucket + null bits). Mutually exclusive with `--price_s`, `--price_m` | off |
 | `--price_n_fanout` | 42-dim fanout token (orphan fraction + outer-join preserve flag) | off |
-| `--price_n_pairwise` | 5th token type: 129-dim pairwise intra-table filter (same-table column comparisons + cross-table whitelist) | off |
+| `--price_n_pairwise` | 5th token type: 70-dim pairwise intra-table filter (same-table column comparisons + cross-table whitelist) | off |
 | `--price_n` | Convenience shorthand: enables all four above | off |
 
 Useful combinations:
@@ -140,23 +140,40 @@ range-pair gap encoding), `col BETWEEN x AND y`, `col IS NULL`,
 `col IS NOT NULL`. For >K IN-values, the K most-selective populate slots
 explicitly and the rest fold into the tail bucket.
 
-### 4.5 Pairwise intra-table filter token (129 dims, NEW token type)
+### 4.5 Pairwise intra-table filter token (70 dims, NEW token type)
 
 Per `A.x op A.y` predicate (same-table column comparison) plus one
 whitelisted cross-table case (`inv_quantity_on_hand × cs_quantity` from
 TPC-DS q72):
 ```
-[ H_xy 8×8 ordered (64 dims) ]
-[ M_op 8×8 mask  (64 dims) ]
-[ s_op (1 dim)            ]
+[ H_xy 8×8 anti-diagonal-ordered (64 dims) ]
+[ K = 2 range slots, each (low, high, sel) → 6 dims ]
 ```
 
-The 8×8 grid is region-ordered: 28 cells for `x<y`, 8 diagonal cells for
-`x≈y`, 28 cells for `x>y`. Each comparison operator selects a region
-combination via the mask. For discrete columns (TPC-DS `cd_marital_status`,
-`ca_city`), the 2D histogram is computed via the SpaceSaving outer-product
-trick, with OtHeRs dropped for high-cardinality columns to avoid diagonal
-mass inflation.
+The 64 cells are ordered by anti-diagonal level `d = j − i`, sweeping from
+`d = +7` (most extreme `x < y`) through the diagonal (`d = 0`, the 8 cells
+where `x ≈ y`) down to `d = −7` (most extreme `x > y`). This ordering makes
+each comparison operator's cells **consecutive in bin index**, so the
+binary mask is replaced by 1 or 2 range slots.
+
+| Op | Slot 1 range (0-indexed inclusive) | Slot 2 |
+|---|---|---|
+| `<` | `(0, 27)` | unused |
+| `<=` | `(0, 35)` | unused |
+| `=` | `(28, 35)` | unused |
+| `!=` | `(0, 27)` | `(36, 63)` |
+| `>` | `(36, 63)` | unused |
+| `>=` | `(28, 63)` | unused |
+
+A bonus from this ordering: date-arithmetic predicates `A.col > B.col + N`
+(rule d) translate to `j − i < −N`, which is **a single contiguous range**
+in the 64-vector. The encoder learns the offset N → range bound mapping
+naturally. Approximate-equality predicates `|A.x − A.y| ≤ k` are similarly
+single-range.
+
+For discrete columns (TPC-DS `cd_marital_status`, `ca_city`), the 2D
+histogram is computed via the SpaceSaving outer-product trick, with OtHeRs
+dropped for high-cardinality columns to avoid diagonal-mass inflation.
 
 ---
 
@@ -297,7 +314,7 @@ The PRICE encoder gains:
 
 - **`ScaleEmbedding.fanout_embeddings`**: `Linear(hist_dim+3, n_embd)` (was `+1`) to ingest the wider fanout token.
 - **`FilterEmbedding.filter_embeddings`**: `Linear(75, n_embd)` (was `Linear(43, n_embd)` for base, `Linear(61, ...)` for PRICE_M).
-- **`FilterEmbedding.pairwise_intra_embeddings`** (new): `Linear(129, n_embd)` for the 5th token type.
+- **`FilterEmbedding.pairwise_intra_embeddings`** (new): `Linear(70, n_embd)` for the 5th token type.
 
 Pretrained PRICE checkpoints load with `strict=False` and a partial-copy
 helper:
@@ -335,6 +352,7 @@ helper:
 
 Filter dim: 43 (base / S) → 61 (M) → 75 (N).
 Fanout dim: 40 (base / S / M) → 42 (N).
+Pairwise intra dim: 0 (base / S / M) → 70 (N, anti-diagonal range-slot format).
 New token type count: 4 (base / S / M) → 5 (N).
 
 ---

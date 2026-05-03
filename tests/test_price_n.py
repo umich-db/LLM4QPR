@@ -127,7 +127,7 @@ def test_sql2feature_n_skeleton_dims():
     f = Sql2FeatureN("tpch", 40, "finetune")
     assert f.filter_dim_n == 75
     assert f.fanout_dim_n == 42
-    assert f.pairwise_dim_n == 129
+    assert f.pairwise_dim_n == 70
     assert f.K == 10
     assert f.PAIRWISE_GRID == 8
 
@@ -183,30 +183,49 @@ def test_filter_token_is_not_null():
     assert tok[-1].item() == -1.0     # null_pred_flag = -1
 
 
-def test_pairwise_intra_token_lt():
+def test_pairwise_intra_token_lt_single_range():
     sys.path.insert(0, "/root/LLM4QPR/PRICE")
     from setup.features_tool_n import Sql2FeatureN
     f = Sql2FeatureN("tpch", 40, "finetune")
     tok = f._encode_pairwise_intra_token(
         "lineitem", "l_shipdate", "l_commitdate", "<")
-    assert tok.shape == (129,)
-    # Mask is 64 dims at offset 64; for "<" exactly the first 28 should be 1.
-    mask = tok[64:128]
-    assert mask[:28].sum().item() == 28.0
-    assert mask[28:].sum().item() == 0.0
+    assert tok.shape == (70,)
+    # Slot 1: bins 0-27 (x<y region)
+    low_1, high_1, sel_1 = tok[64].item(), tok[65].item(), tok[66].item()
+    assert abs(low_1 - 0.0) < 1e-6
+    assert abs(high_1 - 28 / 64) < 1e-6
+    # Slot 2 unused → zeros
+    low_2, high_2, sel_2 = tok[67].item(), tok[68].item(), tok[69].item()
+    assert low_2 == 0.0 and high_2 == 0.0 and sel_2 == 0.0
 
 
-def test_pairwise_intra_token_eq():
+def test_pairwise_intra_token_eq_diagonal_range():
     sys.path.insert(0, "/root/LLM4QPR/PRICE")
     from setup.features_tool_n import Sql2FeatureN
     f = Sql2FeatureN("tpch", 40, "finetune")
     tok = f._encode_pairwise_intra_token(
         "lineitem", "l_shipdate", "l_commitdate", "=")
-    mask = tok[64:128]
-    # Region-2 only (8 cells at indices 28..35).
-    assert mask[28:36].sum().item() == 8.0
-    assert mask[:28].sum().item() == 0.0
-    assert mask[36:].sum().item() == 0.0
+    assert tok.shape == (70,)
+    low_1, high_1 = tok[64].item(), tok[65].item()
+    assert abs(low_1 - 28 / 64) < 1e-6
+    assert abs(high_1 - 36 / 64) < 1e-6
+    # Slot 2 unused
+    assert tok[67].item() == 0.0 and tok[68].item() == 0.0
+
+
+def test_pairwise_intra_token_neq_two_ranges():
+    sys.path.insert(0, "/root/LLM4QPR/PRICE")
+    from setup.features_tool_n import Sql2FeatureN
+    f = Sql2FeatureN("tpch", 40, "finetune")
+    tok = f._encode_pairwise_intra_token(
+        "lineitem", "l_shipdate", "l_commitdate", "!=")
+    assert tok.shape == (70,)
+    # Slot 1: bins 0-27
+    low_1, high_1 = tok[64].item(), tok[65].item()
+    assert abs(low_1 - 0.0) < 1e-6 and abs(high_1 - 28 / 64) < 1e-6
+    # Slot 2: bins 36-63
+    low_2, high_2 = tok[67].item(), tok[68].item()
+    assert abs(low_2 - 36 / 64) < 1e-6 and abs(high_2 - 1.0) < 1e-6
 
 
 def test_pairwise_intra_token_xtab_falls_through_to_xtab_pkl():
@@ -216,7 +235,7 @@ def test_pairwise_intra_token_xtab_falls_through_to_xtab_pkl():
     tok = f._encode_pairwise_intra_token(
         "inventory", "inv_quantity_on_hand", "<",
         right_table="catalog_sales", right_col="cs_quantity")
-    assert tok.shape == (129,)
+    assert tok.shape == (70,)
 
 
 def test_fanout_ext_inner_join_zero_outer_bits():
@@ -425,15 +444,15 @@ def test_pad_and_cache_features_handles_pairwise_axis():
     from price_data_utils import pad_and_cache_features
     feats = [
         (torch.zeros(40), torch.zeros(2 * 42),
-         torch.zeros(8), torch.zeros(75 * 1), torch.zeros(129 * 0)),
+         torch.zeros(8), torch.zeros(75 * 1), torch.zeros(70 * 0)),
         (torch.zeros(40), torch.zeros(2 * 42),
-         torch.zeros(8), torch.zeros(75 * 1), torch.zeros(129 * 1)),
+         torch.zeros(8), torch.zeros(75 * 1), torch.zeros(70 * 1)),
     ]
     out = pad_and_cache_features(
         feats, n_join_cols=[1, 1], n_fanouts=[2, 2], n_tables=[2, 2],
         n_filter_cols=[1, 1], n_pairwise_intras=[0, 1],
         bin_size=40, table_dim=4, filter_dim=75,
-        pairwise_intra_dim=129, price_n_pairwise=True)
+        pairwise_intra_dim=70, price_n_pairwise=True)
     assert len(out) >= 6  # padded_features, masks, max counts (one extra for pairwise)
 
 
@@ -457,13 +476,13 @@ def test_regression_model_accepts_pairwise_intra_embedding_dim():
         n_join_col=2, n_fanout=4, n_table=2, n_filter_col=2,
         n_pairwise_intra=1,
         hist_dim=40, table_dim=4, filter_dim=75,
-        fanout_dim=42, pairwise_intra_dim=129,
+        fanout_dim=42, pairwise_intra_dim=70,
         n_embd=64, n_layers=2, n_heads=4, dropout_rate=0.1,
         query_hidden_dim=64,
         final_hidden_dim=64, output_dim=1)
     # Total flat width: 2*40 (joins) + 4*42 (fanout) + 2*4 (tables)
-    # + 2*75 (filter) + 1*129 (pairwise) = 80 + 168 + 8 + 150 + 129 = 535
-    x = torch.zeros(2, 535)
+    # + 2*75 (filter) + 1*70 (pairwise) = 80 + 168 + 8 + 150 + 70 = 476
+    x = torch.zeros(2, 476)
     pg_est_card = torch.zeros(2, 1)
     n_jc = torch.tensor([[2.0]] * 2)
     n_fo = torch.tensor([[4.0]] * 2)

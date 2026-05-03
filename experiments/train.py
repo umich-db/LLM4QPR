@@ -31,7 +31,7 @@ def _price_dims(argsP, bin_size):
         filter_dim = bin_size + 3                   # 43 (PRICE_S or base PRICE)
 
     fanout_dim = bin_size + 2 if getattr(argsP, "price_n_fanout", False) else bin_size
-    pairwise_intra_dim = (8 * 8 * 2 + 1) if getattr(argsP, "price_n_pairwise", False) else 0
+    pairwise_intra_dim = (64 + 2 * 3) if getattr(argsP, "price_n_pairwise", False) else 0   # 70 (was 8*8*2+1=129)
     return filter_dim, fanout_dim, pairwise_intra_dim
 
 

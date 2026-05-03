@@ -2,7 +2,7 @@
 
 filter_dim         = bin_size + 3*(K+1) + 2 = 75   (K = 10)
 fanout_dim         = bin_size + 2          = 42
-pairwise_intra_dim = 8*8 + 8*8 + 1         = 129
+pairwise_intra_dim = 64 + 2*3              = 70  (anti-diagonal range-slot format)
 
 See /root/LLM4QPR/docs/superpowers/specs/2026-05-02-price-n-parsing-rules-design.md
 for the full design.
@@ -55,7 +55,8 @@ class Sql2FeatureN(Sql2Feature):
 
     @property
     def pairwise_dim_n(self) -> int:
-        return self.PAIRWISE_GRID ** 2 * 2 + 1
+        # 64-dim anti-diagonal H_xy + 2 range slots × (low, high, sel) = 70
+        return 64 + 2 * 3
 
     def _safe_load_pkl(self, fname: str):
         """Load a stats pkl if present; return None if missing (lets pre-stats
@@ -361,51 +362,33 @@ class Sql2FeatureN(Sql2Feature):
 
     # ---- pairwise intra/cross-table filter token (rules h, j) ----
 
-    # Operator → mask region indices into the 64-vector
-    # Region_1 (x<y) is indices [0, 28), region_2 (x≈y) is [28, 36),
-    # region_3 (x>y) is [36, 64).
-    _REGION_BOUNDS = {"lt": (0, 28), "eq": (28, 36), "gt": (36, 64)}
-
-    @classmethod
-    def _op_to_regions(cls, op: str) -> Sequence[str]:
-        return {
-            "<":  ("lt",),
-            "<=": ("lt", "eq"),
-            "=":  ("eq",),
-            "!=": ("lt", "gt"),
-            ">":  ("gt",),
-            ">=": ("eq", "gt"),
-        }[op]
-
-    def _build_op_mask(self, op: str) -> np.ndarray:
-        mask = np.zeros(64, dtype=np.float32)
-        for region in self._op_to_regions(op):
-            lo, hi = self._REGION_BOUNDS[region]
-            mask[lo:hi] = 1.0
-        return mask
-
-    def _selectivity_for_op(self, op: str, s_lt: float, s_eq: float, s_gt: float) -> float:
-        regions = self._op_to_regions(op)
-        return sum({"lt": s_lt, "eq": s_eq, "gt": s_gt}[r] for r in regions)
+    # Operator → range slots in the anti-diagonal-ordered 64-vector.
+    # Format: list of (lo_bin, hi_bin) inclusive bounds.
+    _OP_RANGES = {
+        "<":  [(0, 27)],
+        "<=": [(0, 35)],
+        "=":  [(28, 35)],
+        "!=": [(0, 27), (36, 63)],
+        ">":  [(36, 63)],
+        ">=": [(28, 63)],
+    }
 
     def _encode_pairwise_intra_token(self, left_table: str, col_x: str,
                                      col_y: str, op: Optional[str] = None,
                                      right_table: Optional[str] = None,
                                      right_col: Optional[str] = None) -> torch.Tensor:
-        """Build a 129-dim pairwise filter token.
+        """Build a 70-dim pairwise filter token using anti-diagonal range slots.
 
-        For same-table pairs (right_table is None or == left_table), draws from
-        pairwise_intra40.pkl. For cross-table pairs, draws from
+        Format: H_xy[64] + 2 range slots (low, high, sel) = 70 dims.
+        For self-pairs (right_table is None or == left_table), draws H from
+        pairwise_intra40.pkl. For cross-table pairs (rule h), draws from
         nonequi_pair_xtab.pkl.
 
-        Caller is responsible for providing op ∈ {<, <=, =, !=, >, >=}.
-
-        For cross-table calls, col_y may hold the operator string when op is
-        omitted (i.e. called as _encode_pairwise_intra_token(t, cx, op,
-        right_table=rt, right_col=rc)).
+        The H_xy vector uses anti-diagonal ordering (see
+        _order_8x8_anti_diagonal in generate_price_stats_from_pg.py).
+        Operators map to 1 or 2 contiguous bin ranges via _OP_RANGES.
         """
-        # Normalise signature: when right_table is given and op is None,
-        # the caller passed op as the col_y positional argument.
+        # Auto-detect xtab calling convention (op passed as 3rd positional)
         if right_table is not None and right_table != left_table and op is None:
             op = col_y
             col_y = None
@@ -417,17 +400,27 @@ class Sql2FeatureN(Sql2Feature):
                 (left_table, col_x, right_table, right_col))
 
         if rec is None:
-            # Missing stats — emit a zero token so the caller can still
-            # proceed with a feature-shaped placeholder.
             return torch.zeros(self.pairwise_dim_n, dtype=torch.float32)
 
         H = torch.tensor(rec["H8x8_ordered"], dtype=torch.float32)
         if H.shape != (64,):
             H = H.flatten()[:64]
-        M = torch.tensor(self._build_op_mask(op), dtype=torch.float32)
-        s_op = self._selectivity_for_op(op, rec["s_lt"], rec["s_eq"], rec["s_gt"])
-        s_op_t = torch.tensor([s_op], dtype=torch.float32)
-        feature = torch.cat([H, M, s_op_t])
+
+        total_mass = float(H.sum().item()) or 1.0
+        ranges = self._OP_RANGES.get(op, [])
+
+        slots = []
+        for slot_idx in range(2):
+            if slot_idx < len(ranges):
+                lo_bin, hi_bin = ranges[slot_idx]
+                low = lo_bin / 64.0
+                high = (hi_bin + 1) / 64.0
+                sel = float(H[lo_bin:hi_bin + 1].sum().item()) / total_mass
+            else:
+                low, high, sel = 0.0, 0.0, 0.0
+            slots.extend([low, high, sel])
+
+        feature = torch.cat([H, torch.tensor(slots, dtype=torch.float32)])
         assert feature.shape[0] == self.pairwise_dim_n
         return feature
 

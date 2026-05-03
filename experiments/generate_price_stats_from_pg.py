@@ -870,26 +870,28 @@ def _compress_40_to_8(h40):
     return h8
 
 
-def _order_8x8_into_regions(h8):
-    """Flatten an 8x8 grid into the (region_1, region_2, region_3) order
-    used by PRICE_N's pairwise filter token.
+def _order_8x8_anti_diagonal(h8):
+    """Flatten an 8x8 grid into a 64-vector ordered by anti-diagonal level
+    d = j - i, sweeping from d = +7 (most x<y) through d = 0 (diagonal)
+    to d = -7 (most x>y). Within each anti-diagonal, cells ordered by
+    increasing i.
 
-      region_1: strict upper triangle (i<j) → 28 cells, x<y
-      region_2: main diagonal (i=j)         →  8 cells, x≈y
-      region_3: strict lower triangle (i>j) → 28 cells, x>y
+    Resulting layout (0-indexed):
+      bins 0-27 : x<y region (28 cells)
+      bins 28-35: diagonal x=y (8 cells)
+      bins 36-63: x>y region (28 cells)
 
-    Returns a 64-vector [region_1..., region_2..., region_3...].
+    Operators map to consecutive bin ranges (see _OP_RANGES in
+    features_tool_n.py).
     """
-    r1, r2, r3 = [], [], []
-    for i in range(8):
-        for j in range(8):
-            if i < j:
-                r1.append(h8[i, j])
-            elif i == j:
-                r2.append(h8[i, j])
-            else:
-                r3.append(h8[i, j])
-    out = np.array(r1 + r2 + r3, dtype=np.float32)
+    h8 = np.asarray(h8)
+    out = []
+    for d in range(7, -8, -1):
+        for i in range(8):
+            j = i + d
+            if 0 <= j < 8:
+                out.append(h8[i, j])
+    out = np.array(out, dtype=np.float32)
     assert out.shape == (64,)
     return out
 
@@ -1022,7 +1024,7 @@ def generate_pairwise_intra(conn, pairs, col_types=None):
                 by_i = max(1, min(40, int(by))) - 1
                 h40[bx_i, by_i] += cnt
             h8 = _compress_40_to_8(h40)
-            ordered = _order_8x8_into_regions(h8)
+            ordered = _order_8x8_anti_diagonal(h8)
             total = ordered.sum() or 1.0
             s_lt = float(ordered[:28].sum() / total)
             s_eq = float(ordered[28:36].sum() / total)
@@ -1113,7 +1115,7 @@ def generate_pairwise_xtab(conn, pairs, sample_n=1_000_000):
             h40 = np.outer(h_x, h_y)
 
             h8 = _compress_40_to_8(h40)
-            ordered = _order_8x8_into_regions(h8)
+            ordered = _order_8x8_anti_diagonal(h8)
             total = ordered.sum() or 1.0
             out[(tL, cL, tR, cR)] = {
                 "H8x8_ordered": ordered,

@@ -277,6 +277,7 @@ class PRICEFinetunWrapper(nn.Module):
     Wrapper for finetuning PRICE's RegressionModel on cardinality estimation.
 
     Accepts a tuple (price_feats, pg_est_cards, pad_masks, njcs, nfos, ntbs, nfcs)
+    or (price_feats, pg_est_cards, pad_masks, njcs, nfos, ntbs, nfcs, num_clauses)
     and unpacks it for RegressionModel.forward().
     """
 
@@ -285,6 +286,10 @@ class PRICEFinetunWrapper(nn.Module):
         self.model = regression_model
 
     def forward(self, x):
+        if len(x) == 8:
+            price_feats, pg_est_cards, pad_masks, njcs, nfos, ntbs, nfcs, num_clauses = x
+            return self.model(price_feats, pg_est_cards, pad_masks, njcs, nfos, ntbs, nfcs,
+                              num_clauses=num_clauses)
         price_feats, pg_est_cards, pad_masks, njcs, nfos, ntbs, nfcs = x
         return self.model(price_feats, pg_est_cards, pad_masks, njcs, nfos, ntbs, nfcs)
 

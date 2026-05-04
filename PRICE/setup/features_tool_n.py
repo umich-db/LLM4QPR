@@ -787,16 +787,38 @@ class Sql2FeatureN(Sql2Feature):
         assert feature.shape[0] == self.pairwise_dim_n
         return feature
 
-    def create_sql_features(self, sql: str, atoms_meta: Optional[dict] = None):
-        """PRICE_N feature builder. Returns
-            (feats_5tuple, n_join_col, n_fanout, n_table, n_filter_col,
-             n_pairwise_intra)
-        or None on failure.
+    def create_sql_features(self, sql: str, atoms_meta=None):
+        """Build PRICE_N feature tuple(s) for a query.
 
-        atoms_meta is the dict produced by the price_data_utils Phase 2-9
-        helpers (see spec §3 / §7.1). When None, defaults are used so the
-        builder can still be exercised in isolation.
+        Args:
+            sql: The transformed SQL string.
+            atoms_meta: Either:
+              - dict (single-clause, default): returns one 6-tuple.
+              - list[dict] (multi-clause): returns a list of 6-tuples per clause.
+              - None: defaults to single-clause empty atoms.
+
+        Returns:
+            Single mode: (feats_5tuple, n_jc, n_fo, n_tb, n_fc, n_pi)
+            Multi mode: list of the above tuple, one per clause.
         """
+        is_multi = isinstance(atoms_meta, list)
+        if not is_multi:
+            return self._create_features_single(sql, atoms_meta or {
+                "filter_atoms": {}, "pairwise_atoms": [], "join_sides": {}})
+
+        # Multi-clause: iterate over per-clause atoms_meta dicts.
+        # If any entry is the blowup sentinel (None), fall back to empty single-clause.
+        out = []
+        for clause_meta in atoms_meta:
+            if clause_meta is None:
+                # Sentinel from _extract_atoms_per_clause meaning "blowup → fall back".
+                return self._create_features_single(sql, {
+                    "filter_atoms": {}, "pairwise_atoms": [], "join_sides": {}})
+            out.append(self._create_features_single(sql, clause_meta))
+        return out
+
+    def _create_features_single(self, sql: str, atoms_meta: dict):
+        """Internal: build a single-clause 6-tuple for sql + atoms_meta dict."""
         if atoms_meta is None:
             atoms_meta = {"filter_atoms": {}, "join_sides": {}, "pairwise_atoms": []}
         filter_atoms = atoms_meta.get("filter_atoms", {})

@@ -883,3 +883,140 @@ def test_dnf_expansion_caps_blowup():
     where = sqlglot.parse_one(sql).args["where"].this
     clauses = _expand_to_dnf(where, max_clauses=16)
     assert clauses is None   # signals "too complex"
+
+
+# ---------------------------------------------------------------------------
+# DNF pipeline — per-clause atom extraction + end-to-end tests (Commit 3)
+# ---------------------------------------------------------------------------
+
+def test_extract_atoms_per_clause_distributes_dnf():
+    """A query with mixed-column OR produces multiple atoms_meta dicts."""
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _extract_atoms_per_clause
+    import sqlglot
+    ast = sqlglot.parse_one(
+        "SELECT * FROM t WHERE (t.a < 5 AND t.b > 10) OR (t.c = 'foo')")
+    metas = _extract_atoms_per_clause(ast)
+    assert len(metas) == 2
+    # Clause 1: a<5, b>10
+    clause_1 = metas[0]["filter_atoms"]
+    assert "t.a" in clause_1 and clause_1["t.a"]["range_high"] == 5
+    assert "t.b" in clause_1 and clause_1["t.b"]["range_low"] == 10
+    # Clause 2: c='foo'
+    clause_2 = metas[1]["filter_atoms"]
+    assert "t.c" in clause_2 and clause_2["t.c"]["eq_values"] == ["foo"]
+
+
+def test_extract_atoms_per_clause_blowup_returns_sentinel():
+    """If DNF expansion exceeds max_clauses, returns [None] sentinel."""
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _extract_atoms_per_clause
+    import sqlglot
+    sql = "SELECT * FROM t WHERE " + " AND ".join(
+        f"(t.a{i} = 1 OR t.a{i} = 2)" for i in range(5))
+    ast = sqlglot.parse_one(sql)
+    metas = _extract_atoms_per_clause(ast, max_clauses=16)
+    assert metas == [None]
+
+
+def test_create_sql_features_list_mode():
+    """Sql2FeatureN.create_sql_features accepts a list of atoms_meta."""
+    sys.path.insert(0, "/root/LLM4QPR/PRICE")
+    from setup.features_tool_n import Sql2FeatureN
+    f = Sql2FeatureN("tpch", 40, "finetune")
+    sql = ("select count(*) from tpch_l, tpch_o "
+           "where tpch_l.l_orderkey = tpch_o.o_orderkey")
+    meta_list = [
+        {"filter_atoms": {}, "pairwise_atoms": [], "join_sides": {}},
+        {"filter_atoms": {}, "pairwise_atoms": [], "join_sides": {}},
+    ]
+    out = f.create_sql_features(sql, atoms_meta=meta_list)
+    assert isinstance(out, list)
+    assert len(out) == 2
+    # Each element should be a 6-tuple
+    for item in out:
+        assert isinstance(item, tuple) and len(item) == 6
+
+
+def test_pad_and_cache_features_multi_clause():
+    """Multi-clause padding produces correct shapes and num_clauses tensor."""
+    import torch
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import pad_and_cache_features
+    # Build minimal 5-tuple features matching PRICE_N 5-tuple layout
+    bin_size = 40
+    fanout_dim = 42
+    filter_dim = 75
+    pairwise_dim = 70
+
+    def _make_feat(n_jc, n_fo, n_tb, n_fc, n_pi):
+        jh = torch.zeros(n_jc * bin_size)
+        fo = torch.zeros(n_fo * fanout_dim)
+        tb = torch.zeros(n_tb * 4)
+        fi = torch.zeros(n_fc * filter_dim)
+        pw = torch.zeros(n_pi * pairwise_dim) if n_pi > 0 else torch.zeros(0)
+        return (jh, fo, tb, fi, pw), n_jc, n_fo, n_tb, n_fc, n_pi
+
+    c1 = _make_feat(1, 2, 2, 2, 0)
+    c2 = _make_feat(1, 2, 2, 1, 0)
+    c3 = _make_feat(1, 2, 2, 2, 0)
+
+    multi = [
+        [c1, c2],   # query 0: 2 clauses
+        [c3],       # query 1: 1 clause
+    ]
+    out = pad_and_cache_features(
+        [], [], [], [], [],
+        bin_size=bin_size, table_dim=4, filter_dim=filter_dim,
+        fanout_dim=fanout_dim, pairwise_intra_dim=pairwise_dim,
+        price_n_pairwise=True, multi_clause_data=multi)
+    assert isinstance(out, dict)
+    assert "num_clauses" in out
+    assert "max_n_clauses" in out
+    nc = out["num_clauses"]
+    assert nc.shape == (2,)
+    assert nc[0].item() == 2
+    assert nc[1].item() == 1
+    assert out["max_n_clauses"] == 2
+    # padded_features: batch * max_n_clauses = 4 rows
+    assert len(out["padded_features"]) == 4
+
+
+def test_generate_price_features_with_price_n_or():
+    """When price_n_or=True, generate_price_features returns multi-clause batches."""
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import generate_price_features
+    sqls = [
+        "SELECT count(*) FROM lineitem l, orders o "
+        "WHERE l.l_orderkey = o.o_orderkey "
+        "AND (l.l_quantity = 10 OR l.l_quantity = 20)",
+    ]
+    out = generate_price_features(
+        "tpch_or_smoke", sqls, "tpch",
+        price_n_parsing=True, price_n_filter=True,
+        price_n_fanout=True, price_n_pairwise=True,
+        price_n_or=True)
+    # Returns (multi_clause_data, n_join_cols, n_fanouts, n_tables, n_filter_cols, n_pairwise_intras)
+    assert out is not None
+    multi_clause_data = out[0]
+    assert len(multi_clause_data) == 1   # one query
+    # Each entry is a list of 6-tuples
+    assert isinstance(multi_clause_data[0], list)
+    assert len(multi_clause_data[0]) >= 1
+    # Each clause result is a 6-tuple
+    for clause_result in multi_clause_data[0]:
+        assert isinstance(clause_result, tuple) and len(clause_result) == 6
+
+
+def test_extract_atoms_per_clause_single_conjunction():
+    """A pure conjunction produces exactly 1 clause."""
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _extract_atoms_per_clause
+    import sqlglot
+    ast = sqlglot.parse_one(
+        "SELECT * FROM t WHERE t.a < 5 AND t.b > 10 AND t.c = 'foo'")
+    metas = _extract_atoms_per_clause(ast)
+    assert len(metas) == 1
+    fa = metas[0]["filter_atoms"]
+    assert "t.a" in fa and fa["t.a"]["range_high"] == 5
+    assert "t.b" in fa and fa["t.b"]["range_low"] == 10

@@ -272,6 +272,27 @@ def price_only_collate(batch):
     nfcs = torch.tensor(nfc, dtype=torch.float32, device=device).unsqueeze(1)
     return (price_feats, pg_est_cards, pad_masks, njcs, nfos, ntbs, nfcs), labels_tensor
 
+
+def price_or_collate(batch):
+    """Collate function for PriceOnlyDataset with --price_n_or (multi-clause DNF).
+    Each item: (price_feat, pg_est_card, pad_mask, njc, nfo, ntb, nfc, num_clauses_i, label)
+    Returns: ((price_feats, pg_est_cards, pad_masks, njcs, nfos, ntbs, nfcs, num_clauses), labels_tensor)
+    where price_feats has shape (batch * max_n_clauses, flat_size).
+    """
+    pf, pgc, pm, njc, nfo, ntb, nfc, nc, labels = zip(*batch)
+    labels_tensor = torch.tensor(labels, dtype=torch.float32, device=device).unsqueeze(1)
+    price_feats = torch.stack([f if isinstance(f, torch.Tensor) else torch.tensor(f, dtype=torch.float32) for f in pf]).float().to(device)
+    pgc_raw = torch.tensor(pgc, dtype=torch.float32, device=device).unsqueeze(1)
+    pg_est_cards = torch.log(pgc_raw + 1) + 1
+    pad_masks = torch.stack([m if isinstance(m, torch.Tensor) else torch.tensor(m) for m in pm]).float().to(device)
+    njcs = torch.tensor(njc, dtype=torch.float32, device=device).unsqueeze(1)
+    nfos = torch.tensor(nfo, dtype=torch.float32, device=device).unsqueeze(1)
+    ntbs = torch.tensor(ntb, dtype=torch.float32, device=device).unsqueeze(1)
+    nfcs = torch.tensor(nfc, dtype=torch.float32, device=device).unsqueeze(1)
+    num_clauses = torch.tensor(nc, dtype=torch.long, device=device)
+    return (price_feats, pg_est_cards, pad_masks, njcs, nfos, ntbs, nfcs, num_clauses), labels_tensor
+
+
 def frozen_llm_price_collate(batch):
     """Collate function for FrozenLLMPriceDataset.
     Each item: (llm_emb, price_feat, pad_mask, njc, nfo, ntb, nfc, label)
@@ -353,13 +374,15 @@ elif argsP.algo == "price_finetune":
       dat_paths_train_list, dat_path_test, dat_dict['ds_info'], argsP
   )
   ds_info = dat_dict['ds_info']
+  # Use price_or_collate when --price_n_or is set to carry num_clauses through batching
+  _price_collate = price_or_collate if getattr(argsP, 'price_n_or', False) else price_only_collate
   train_loader = DataLoader(dataset=ds, batch_size=argsP.batch_size, shuffle=True,
-                            collate_fn=price_only_collate,
+                            collate_fn=_price_collate,
                             generator=torch.Generator().manual_seed(argsP.seed))
   val_loader = DataLoader(dataset=val_ds, batch_size=argsP.batch_size, shuffle=False,
-                          collate_fn=price_only_collate)
+                          collate_fn=_price_collate)
   test_loader = DataLoader(dataset=test_ds, batch_size=1, shuffle=False,
-                           collate_fn=price_only_collate)
+                           collate_fn=_price_collate)
   # Set dummy values for variables expected later
   train_roots = train_js_nodes = train_costs = None
   val_roots = val_js_nodes = val_costs_raw = None

@@ -3754,10 +3754,13 @@ class FrozenLLMPriceDataset(Dataset):
 class PriceOnlyDataset(Dataset):
     """
     Dataset for standalone PRICE finetuning on cardinality estimation.
-    Each item returns (price_feat, pg_est_card, pad_mask, njc, nfo, ntb, nfc, label).
+    Each item returns (price_feat, pg_est_card, pad_mask, njc, nfo, ntb, nfc, label)
+    or (price_feat, pg_est_card, pad_mask, njc, nfo, ntb, nfc, num_clauses_i, label)
+    when num_clauses_per_query is provided (--price_n_or mode).
     """
     def __init__(self, price_features, pg_est_cards, padding_masks,
-                 n_join_cols, n_fanouts, n_tables, n_filter_cols, labels):
+                 n_join_cols, n_fanouts, n_tables, n_filter_cols, labels,
+                 num_clauses_per_query=None):
         assert len(price_features) == len(labels)
         self.price_features = price_features
         self.pg_est_cards = pg_est_cards
@@ -3767,19 +3770,22 @@ class PriceOnlyDataset(Dataset):
         self.n_tables = n_tables
         self.n_filter_cols = n_filter_cols
         self.labels = labels
+        self.num_clauses_per_query = num_clauses_per_query  # list[int] or None
 
     def __len__(self):
         return len(self.labels)
 
     def __getitem__(self, idx):
-        return (self.price_features[idx],
+        base = (self.price_features[idx],
                 self.pg_est_cards[idx],
                 self.padding_masks[idx],
                 self.n_join_cols[idx],
                 self.n_fanouts[idx],
                 self.n_tables[idx],
-                self.n_filter_cols[idx],
-                self.labels[idx])
+                self.n_filter_cols[idx])
+        if self.num_clauses_per_query is not None:
+            return base + (self.num_clauses_per_query[idx], self.labels[idx])
+        return base + (self.labels[idx],)
 
 
 def get_price_only_ds_from_csv(dat_path_train_list, dat_path_test, ds_info, argsP):
@@ -3830,6 +3836,8 @@ def get_price_only_ds_from_csv(dat_path_train_list, dat_path_test, ds_info, args
     # ---- Step 3: Generate PRICE features ----
     print(f"[PRICE finetune] Step 3: Generating PRICE features for {len(sql_list)} queries...", flush=True)
     _price_n_pairwise_po = getattr(argsP, 'price_n_pairwise', False)
+    _price_n_or_po = getattr(argsP, 'price_n_or', False)
+    _price_n_or_max_clauses_po = getattr(argsP, 'price_n_or_max_clauses', 16)
     _gpf_out_po = pdu.generate_price_features(
         workload, sql_list, db_name, bin_size,
         price_m=getattr(argsP, 'price_m', False),
@@ -3838,8 +3846,13 @@ def get_price_only_ds_from_csv(dat_path_train_list, dat_path_test, ds_info, args
         price_n_filter=getattr(argsP, 'price_n_filter', False),
         price_n_fanout=getattr(argsP, 'price_n_fanout', False),
         price_n_pairwise=_price_n_pairwise_po,
+        price_n_or=_price_n_or_po,
+        price_n_or_max_clauses=_price_n_or_max_clauses_po,
     )
-    if _price_n_pairwise_po:
+    if _price_n_or_po:
+        multi_clause_data_po, n_join_cols, n_fanouts, n_tables, n_filter_cols, _n_pi_po = _gpf_out_po
+        data_features = multi_clause_data_po  # list[list[6-tuple]]
+    elif _price_n_pairwise_po:
         data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols, _n_pi_po = _gpf_out_po
     else:
         data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols = _gpf_out_po
@@ -3862,20 +3875,55 @@ def get_price_only_ds_from_csv(dat_path_train_list, dat_path_test, ds_info, args
                          ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise'))
         _pn_filter_dim_po = 75 if _use_pn_po else (
             (bin_size + 21) if getattr(argsP, 'price_m', False) else (bin_size + 3))
-        _pad_out_po_same = pdu.pad_and_cache_features(
-            data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols,
+        _pad_kwargs_po = dict(
             bin_size=bin_size,
             filter_dim=_pn_filter_dim_po,
             price_m=getattr(argsP, 'price_m', False),
             price_n_pairwise=_price_n_pairwise_po,
-            fanout_dim=42 if any(getattr(argsP, f, False) for f in ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise')) else None,
+            fanout_dim=42 if _use_pn_po else None,
             pairwise_intra_dim=129 if _price_n_pairwise_po else None,
             n_pairwise_intras=_n_pi_po,
         )
-        if _price_n_pairwise_po:
-            padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc, _max_n_pi_po_same = _pad_out_po_same
+        if _price_n_or_po:
+            _pad_kwargs_po["multi_clause_data"] = data_features
+            _pad_out_po_same = pdu.pad_and_cache_features(
+                [], [], [], [], [], **_pad_kwargs_po)
+            # multi-clause returns a dict
+            padded_features = _pad_out_po_same["padded_features"]
+            padding_masks = _pad_out_po_same["padding_masks"]
+            max_njc = _pad_out_po_same["max_n_join_col"]
+            max_nfo = _pad_out_po_same["max_n_fanout"]
+            max_ntb = _pad_out_po_same["max_n_table"]
+            max_nfc = _pad_out_po_same["max_n_filter_col"]
+            _num_clauses_all = _pad_out_po_same["num_clauses"].tolist()
+            max_n_clauses = _pad_out_po_same["max_n_clauses"]
+            # Reindex: padded_features has (batch * max_n_clauses) rows.
+            # Build per-query feature views by reshaping back.
+            # For dataset indexing, each query i gets rows [i*max_n_clauses : (i+1)*max_n_clauses].
+            # We store each query's slice as a stacked tensor.
+            pf_by_query = []
+            pm_by_query = []
+            n_queries = len(data_features)
+            for qi in range(n_queries):
+                slc = padded_features[qi * max_n_clauses: (qi + 1) * max_n_clauses]
+                pf_by_query.append(torch.stack([
+                    f if isinstance(f, torch.Tensor) else torch.tensor(f, dtype=torch.float32)
+                    for f in slc]))
+                pm_slc = padding_masks[qi * max_n_clauses: (qi + 1) * max_n_clauses]
+                pm_by_query.append(torch.stack([
+                    m if isinstance(m, torch.Tensor) else torch.tensor(m)
+                    for m in pm_slc]))
+            padded_features = pf_by_query
+            padding_masks = pm_by_query
         else:
-            padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc = _pad_out_po_same
+            _pad_out_po_same = pdu.pad_and_cache_features(
+                data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols,
+                **_pad_kwargs_po)
+            _num_clauses_all = None
+            if _price_n_pairwise_po:
+                padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc, _max_n_pi_po_same = _pad_out_po_same
+            else:
+                padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc = _pad_out_po_same
         train_ids, val_ids, test_ids = train_val_test(len(costs_all), argsP)
 
         def _subset(lst, ids):
@@ -3905,6 +3953,12 @@ def get_price_only_ds_from_csv(dat_path_train_list, dat_path_test, ds_info, args
         costs_train = _subset(costs_all, train_ids)
         costs_val = _subset(costs_all, val_ids)
         costs_test = _subset(costs_all, test_ids)
+        if _num_clauses_all is not None:
+            nc_train = _subset(_num_clauses_all, train_ids)
+            nc_val = _subset(_num_clauses_all, val_ids)
+            nc_test = _subset(_num_clauses_all, test_ids)
+        else:
+            nc_train = nc_val = nc_test = None
     else:
         # Separate train/test files — collect all features, pad together
         raw_feats_train, njc_train_all, nfo_train_all, ntb_train_all, nfc_train_all = [], [], [], [], []
@@ -4016,6 +4070,7 @@ def get_price_only_ds_from_csv(dat_path_train_list, dat_path_test, ds_info, args
         costs_train = _subset(costs_train_all, train_ids)
         costs_val = _subset(costs_train_all, val_ids)
         costs_test = costs_all
+        nc_train = nc_val = nc_test = None  # price_n_or not supported in multi-file path yet
 
     # Store max dims on argsP for model construction
     argsP.price_max_n_join_col = max_njc
@@ -4039,11 +4094,14 @@ def get_price_only_ds_from_csv(dat_path_train_list, dat_path_test, ds_info, args
     yte = ds_info.card_norm.normalize_labels(costs_test)
 
     ds_train = PriceOnlyDataset(pf_train, pgc_train, pm_train,
-                                njc_train, nfo_train, ntb_train, nfc_train, ytr)
+                                njc_train, nfo_train, ntb_train, nfc_train, ytr,
+                                num_clauses_per_query=nc_train)
     ds_val = PriceOnlyDataset(pf_val, pgc_val, pm_val,
-                              njc_val, nfo_val, ntb_val, nfc_val, yva)
+                              njc_val, nfo_val, ntb_val, nfc_val, yva,
+                              num_clauses_per_query=nc_val)
     ds_test = PriceOnlyDataset(pf_test, pgc_test, pm_test,
-                               njc_test, nfo_test, ntb_test, nfc_test, yte)
+                               njc_test, nfo_test, ntb_test, nfc_test, yte,
+                               num_clauses_per_query=nc_test)
 
     return ds_train, ds_val, ds_test, costs_val, costs_test
 

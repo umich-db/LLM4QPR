@@ -726,6 +726,168 @@ def _expand_to_dnf(where_ast, max_clauses=16):
     return _expand(where_ast)
 
 
+def _extract_atoms_per_clause(ast, max_clauses=16):
+    """Extract per-clause atoms_meta dicts via DNF expansion.
+
+    Returns a list of atoms_meta dicts, one per DNF clause. If DNF expansion
+    blows up beyond max_clauses, returns a single-element list with a
+    special marker so the caller can fall back to OR-residual handling.
+
+    Each atoms_meta dict has the same shape as today's single-clause output
+    (filter_atoms, pairwise_atoms, join_sides), but covers only its clause's
+    leaf atoms. Tables / joins / join-sides are query-level and computed
+    once, not per clause.
+    """
+    if not HAS_SQLGLOT:
+        return [_empty_atoms_meta()]
+
+    where = ast.args.get("where")
+    if where is None:
+        return [_empty_atoms_meta()]
+
+    expanded = _expand_to_dnf(where.this, max_clauses=max_clauses)
+    if expanded is None:
+        # Blowup → single clause containing all atoms; OR block becomes residual.
+        return [None]   # sentinel: "fall back to single-clause non-DNF extraction"
+
+    out = []
+    for leaves in expanded:
+        meta = _build_atoms_meta_from_leaves(leaves)
+        out.append(meta)
+    return out
+
+
+def _empty_atoms_meta():
+    return {"filter_atoms": {}, "pairwise_atoms": [], "join_sides": {}}
+
+
+def _build_atoms_meta_from_leaves(leaves):
+    """Walk a clause's leaf nodes and populate an atoms_meta dict.
+
+    `leaves` is a list of AST nodes (the conjunctive atoms of one DNF clause).
+    Reuses the per-node logic from _extract_filter_atoms / _extract_pairwise_intra_atoms
+    / _extract_xtab_nonequi_atoms but operates on a flat leaf list instead of
+    a WHERE subtree.
+    """
+    meta = _empty_atoms_meta()
+    filter_atoms = meta["filter_atoms"]
+    pairwise_atoms = meta["pairwise_atoms"]
+
+    def _ensure(col):
+        return filter_atoms.setdefault(col, {
+            "eq_values": [], "in_values": [], "not_in_values": [],
+            "range_low": None, "range_high": None,
+            "is_null": False, "is_not_null": False,
+            "or_atoms": [],
+        })
+
+    for leaf in leaves:
+        # Strip Paren
+        while isinstance(leaf, sqlglot_exp.Paren):
+            leaf = leaf.this
+
+        # IN
+        if isinstance(leaf, sqlglot_exp.In) and leaf.args.get("query") is None:
+            col = _column_str(leaf.this)
+            for v in leaf.expressions:
+                val = _literal_value(v)
+                if val is not None:
+                    _ensure(col)["in_values"].append(val)
+            continue
+
+        # EQ
+        if isinstance(leaf, sqlglot_exp.EQ):
+            if isinstance(leaf.expression, sqlglot_exp.Column):
+                continue   # join condition, handled at query level
+            col = _column_str(leaf.this)
+            v = _literal_value(leaf.expression)
+            if v is not None:
+                _ensure(col)["eq_values"].append(v)
+            continue
+
+        # NEQ
+        if isinstance(leaf, sqlglot_exp.NEQ):
+            if isinstance(leaf.expression, sqlglot_exp.Column):
+                # cross-column NEQ → pairwise atom on same-table or xtab
+                lt = getattr(leaf.this, "table", None)
+                rt = getattr(leaf.expression, "table", None)
+                if lt and rt and lt == rt:
+                    pairwise_atoms.append(
+                        (lt, str(leaf.this.name), str(leaf.expression.name), "!=", None, None))
+                continue
+            col = _column_str(leaf.this)
+            v = _literal_value(leaf.expression)
+            if v is not None:
+                _ensure(col)["not_in_values"].append(v)
+            continue
+
+        # Range comparisons (LT, LTE, GT, GTE) — same handling as before
+        matched_range = False
+        for cmp_cls, side in [
+            (sqlglot_exp.GTE, "low"), (sqlglot_exp.GT, "low"),
+            (sqlglot_exp.LTE, "high"), (sqlglot_exp.LT, "high"),
+        ]:
+            if isinstance(leaf, cmp_cls):
+                if isinstance(leaf.expression, sqlglot_exp.Column):
+                    # cross-column → pairwise atom (same-table or xtab)
+                    lt = getattr(leaf.this, "table", None)
+                    rt = getattr(leaf.expression, "table", None)
+                    op = {sqlglot_exp.GTE: ">=", sqlglot_exp.GT: ">",
+                          sqlglot_exp.LTE: "<=", sqlglot_exp.LT: "<"}[cmp_cls]
+                    if lt and rt and lt == rt:
+                        pairwise_atoms.append((lt, str(leaf.this.name),
+                                               str(leaf.expression.name), op, None, None))
+                    matched_range = True
+                    break
+                col = _column_str(leaf.this)
+                v = _literal_value(leaf.expression)
+                if v is None:
+                    matched_range = True
+                    break
+                entry = _ensure(col)
+                if side == "low":
+                    entry["range_low"] = v if entry["range_low"] is None \
+                                         else max(entry["range_low"], v)
+                else:
+                    entry["range_high"] = v if entry["range_high"] is None \
+                                          else min(entry["range_high"], v)
+                matched_range = True
+                break
+        if matched_range:
+            continue
+
+        # IS NULL / IS NOT NULL
+        if isinstance(leaf, sqlglot_exp.Is):
+            col = _column_str(leaf.this)
+            rhs = leaf.expression
+            if isinstance(rhs, sqlglot_exp.Null):
+                _ensure(col)["is_null"] = True
+            continue
+
+        # NOT (Is(NULL)) — IS NOT NULL representation
+        if isinstance(leaf, sqlglot_exp.Not):
+            child = leaf.this
+            if isinstance(child, sqlglot_exp.Is) and isinstance(child.expression, sqlglot_exp.Null):
+                col = _column_str(child.this)
+                _ensure(col)["is_not_null"] = True
+            continue
+
+        # Between
+        if isinstance(leaf, sqlglot_exp.Between):
+            col = _column_str(leaf.this)
+            low = _literal_value(leaf.args.get("low"))
+            high = _literal_value(leaf.args.get("high"))
+            if low is not None and high is not None:
+                entry = _ensure(col)
+                entry["range_low"] = low if entry["range_low"] is None \
+                                     else max(entry["range_low"], low)
+                entry["range_high"] = high if entry["range_high"] is None \
+                                      else min(entry["range_high"], high)
+            continue
+
+    return meta
+
+
 def _extract_filter_atoms(ast):
     """Walk WHERE and collect per-column atoms for the PRICE_N filter token.
 
@@ -3709,7 +3871,8 @@ def generate_price_features(workload, sql_list, db_name, bin_size=40,
                             price_m=False, price_s=False,
                             price_n_parsing=False, price_n_filter=False,
                             price_n_fanout=False, price_n_pairwise=False,
-                            already_price_format=False):
+                            already_price_format=False,
+                            price_n_or=False, price_n_or_max_clauses=16):
     """
     Generate PRICE features for each SQL query using Sql2Feature (or Sql2FeatureM/S/N).
 
@@ -3730,12 +3893,19 @@ def generate_price_features(workload, sql_list, db_name, bin_size=40,
         already_price_format: When True, SQL is already in PRICE alias format
             (from cross-workload plan reconstruction). Skip transform_sql_for_price()
             and most cleanup functions.
+        price_n_or: When True, expand mixed-column OR blocks into per-clause
+            atoms_meta lists and call create_sql_features in list mode.
+            Returns multi_clause_data list instead of data_features list.
+        price_n_or_max_clauses: Maximum DNF clauses per query (default 16).
 
     Returns:
-        When price_n_pairwise=False (default):
+        When price_n_or=False and price_n_pairwise=False (default):
             data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols
-        When price_n_pairwise=True:
+        When price_n_or=False and price_n_pairwise=True:
             data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols, n_pairwise_intras
+        When price_n_or=True:
+            multi_clause_data (list[list[6-tuple]]), n_join_cols, n_fanouts,
+            n_tables, n_filter_cols, n_pairwise_intras
         data_features is a list of 4-tuples (join_hist, fanout, table, filter) for
         non-PRICE_N modes, or 5-tuples (join_hist, fanout, table, filter, pairwise) under
         PRICE_N.
@@ -3747,6 +3917,7 @@ def generate_price_features(workload, sql_list, db_name, bin_size=40,
     if price_n_fanout:    parts.append("nfan")
     if price_n_pairwise:  parts.append("npw")
     if price_n_parsing:   parts.append("nprs")
+    if price_n_or:        parts.append("nor")
     mode_tag = ("_" + "_".join(parts)) if parts else ""
     xwl_tag = "_xwl" if already_price_format else ""
     cache_dir = os.path.join(os.path.dirname(__file__), "price_feature_cache")
@@ -3757,6 +3928,10 @@ def generate_price_features(workload, sql_list, db_name, bin_size=40,
         print(f"[PRICE{mode_tag.upper()}] Loading cached raw features from {cache_path} ({len(sql_list)} queries)")
         with open(cache_path, "rb") as f:
             cached = pickle.load(f)
+        if price_n_or and "multi_clause_data" in cached:
+            return (cached["multi_clause_data"], cached["n_join_cols"],
+                    cached["n_fanouts"], cached["n_tables"], cached["n_filter_cols"],
+                    cached["n_pairwise_intras"])
         if price_n_pairwise and "n_pairwise_intras" in cached:
             return (cached["data_features"], cached["n_join_cols"],
                     cached["n_fanouts"], cached["n_tables"], cached["n_filter_cols"],
@@ -3863,7 +4038,66 @@ def generate_price_features(workload, sql_list, db_name, bin_size=40,
                 success_count += 1
                 continue
 
-            if use_price_n:
+            if use_price_n and price_n_or:
+                # --- Multi-clause DNF path ---
+                try:
+                    import sqlglot as _sqlglot
+                    ast = _sqlglot.parse_one(transformed_sql)
+                except Exception:
+                    ast = None
+
+                # Query-level join_sides (shared across all clauses)
+                qlevel_sides = dict(
+                    ((l, r), s)
+                    for l, r, s in _PRICE_N_SIDE_CACHE.get(transformed_sql, [])
+                ) if price_n_fanout else {}
+
+                # Query-level pairwise atoms (structural, apply to every clause)
+                if ast and price_n_pairwise:
+                    qlevel_pairwise = (
+                        _extract_pairwise_intra_atoms(ast) +
+                        [(a[0], a[1], a[1], a[2], a[3], a[4])
+                         for a in _extract_xtab_nonequi_atoms(ast)]
+                    )
+                else:
+                    qlevel_pairwise = []
+
+                if ast is not None:
+                    meta_list = _extract_atoms_per_clause(
+                        ast, max_clauses=price_n_or_max_clauses)
+                else:
+                    meta_list = [None]
+
+                # Attach query-level pairwise atoms and join_sides to each clause
+                for meta in meta_list:
+                    if meta is None:
+                        continue
+                    existing_pw = meta.get("pairwise_atoms", [])
+                    meta["pairwise_atoms"] = list(qlevel_pairwise) + existing_pw
+                    meta["join_sides"] = qlevel_sides
+
+                result = sql2feat.create_sql_features(transformed_sql, atoms_meta=meta_list)
+
+                if result is None:
+                    raise ValueError(f"create_sql_features returned None for query {idx}")
+
+                # result is either a list of 6-tuples (multi-clause) or a single 6-tuple
+                if isinstance(result, list):
+                    clause_list = result
+                else:
+                    clause_list = [result]
+
+                data_features.append(clause_list)
+                # Use first clause counts as query-level representatives
+                _, n_jc, n_fo, n_tb, n_fc, n_pi = clause_list[0]
+                n_join_cols.append(n_jc)
+                n_fanouts.append(n_fo)
+                n_tables.append(n_tb)
+                n_filter_cols.append(n_fc)
+                n_pairwise_intras.append(n_pi)
+                success_count += 1
+
+            elif use_price_n:
                 try:
                     import sqlglot as _sqlglot
                     ast = _sqlglot.parse_one(transformed_sql)
@@ -3882,25 +4116,32 @@ def generate_price_features(workload, sql_list, db_name, bin_size=40,
                     ) if price_n_fanout else {},
                 }
                 result = sql2feat.create_sql_features(transformed_sql, atoms_meta=atoms_meta)
+
+                if result is None:
+                    raise ValueError(f"create_sql_features returned None for query {idx}")
+
+                feats, n_jc, n_fo, n_tb, n_fc, n_pi = result
+                n_pairwise_intras.append(n_pi)
+                data_features.append(feats)
+                n_join_cols.append(n_jc)
+                n_fanouts.append(n_fo)
+                n_tables.append(n_tb)
+                n_filter_cols.append(n_fc)
+                success_count += 1
             else:
                 result = _try_create_features(sql2feat, transformed_sql)
 
-            if result is None:
-                raise ValueError(f"create_sql_features returned None for query {idx}")
+                if result is None:
+                    raise ValueError(f"create_sql_features returned None for query {idx}")
 
-            if use_price_n:
-                feats, n_jc, n_fo, n_tb, n_fc, n_pi = result
-                n_pairwise_intras.append(n_pi)
-            else:
                 feats, n_jc, n_fo, n_tb, n_fc = result
                 n_pairwise_intras.append(0)
-
-            data_features.append(feats)
-            n_join_cols.append(n_jc)
-            n_fanouts.append(n_fo)
-            n_tables.append(n_tb)
-            n_filter_cols.append(n_fc)
-            success_count += 1
+                data_features.append(feats)
+                n_join_cols.append(n_jc)
+                n_fanouts.append(n_fo)
+                n_tables.append(n_tb)
+                n_filter_cols.append(n_fc)
+                success_count += 1
         except Exception as e:
             if fail_count < 5:
                 print(f"[PRICE{mode_tag.upper()}] Warning: Failed to generate features for query {idx}: {e}")
@@ -3912,7 +4153,14 @@ def generate_price_features(workload, sql_list, db_name, bin_size=40,
             zero_fanout = torch.zeros(bin_size * 2)  # 2 fanout placeholder
             zero_table = torch.zeros(4)  # 1 table with 4 features
             zero_filter = torch.zeros(filter_dim)  # 1 filter placeholder
-            if use_price_n:
+            if use_price_n and price_n_or:
+                zero_pairwise = torch.zeros(0)
+                zero_clause = [(
+                    (zero_join, zero_fanout, zero_table, zero_filter, zero_pairwise),
+                    1, 2, 1, 1, 0
+                )]
+                data_features.append(zero_clause)
+            elif use_price_n:
                 zero_pairwise = torch.zeros(0)
                 data_features.append((zero_join, zero_fanout, zero_table, zero_filter, zero_pairwise))
             else:
@@ -3933,12 +4181,18 @@ def generate_price_features(workload, sql_list, db_name, bin_size=40,
         "n_tables": n_tables,
         "n_filter_cols": n_filter_cols,
     }
-    if price_n_pairwise:
+    if price_n_or:
+        cache_dict["multi_clause_data"] = data_features
+        cache_dict["n_pairwise_intras"] = n_pairwise_intras
+    elif price_n_pairwise:
         cache_dict["n_pairwise_intras"] = n_pairwise_intras
     with open(cache_path, "wb") as f:
         pickle.dump(cache_dict, f)
     print(f"[PRICE{mode_tag.upper()}] Cached raw features to {cache_path}")
 
+    if price_n_or:
+        return (data_features, n_join_cols, n_fanouts, n_tables,
+                n_filter_cols, n_pairwise_intras)
     if price_n_pairwise:
         return (data_features, n_join_cols, n_fanouts, n_tables,
                 n_filter_cols, n_pairwise_intras)
@@ -3970,7 +4224,8 @@ def pad_and_cache_features(data_features, n_join_cols, n_fanouts, n_tables,
                            bin_size=40, table_dim=4, filter_dim=43,
                            fanout_dim=None, pairwise_intra_dim=None,
                            cache_path=None, price_m=False,
-                           price_n_pairwise=False):
+                           price_n_pairwise=False,
+                           multi_clause_data=None):
     """
     Pad variable-length features to uniform size and optionally cache.
 
@@ -4001,7 +4256,132 @@ def pad_and_cache_features(data_features, n_join_cols, n_fanouts, n_tables,
             (padded_features, padding_masks,
              max_n_join_col, max_n_fanout, max_n_table, max_n_filter_col,
              max_n_pairwise_intra)
+        When multi_clause_data is not None:
+            dict with keys: padded_features, padding_masks, max_n_join_col,
+            max_n_fanout, max_n_table, max_n_filter_col, max_n_pairwise_intra,
+            num_clauses (tensor of shape (batch,)), max_n_clauses (int).
+            padded_features has shape (batch * max_n_clauses, flat_size) for
+            direct use with RegressionModel.forward(num_clauses=...).
     """
+    # ----------------------------------------------------------------
+    # Multi-clause DNF path (--price_n_or)
+    # multi_clause_data: list[list[6-tuple]] — per-query list of per-clause
+    # feature tuples from Sql2FeatureN.create_sql_features in list mode.
+    # ----------------------------------------------------------------
+    if multi_clause_data is not None:
+        # Resolve dims
+        if price_m:
+            filter_dim = bin_size + 21
+        effective_fanout_dim = fanout_dim if fanout_dim is not None else bin_size
+        if pairwise_intra_dim is None:
+            pairwise_intra_dim = 129
+
+        # Gather all counts across all queries and all clauses to compute
+        # per-batch maxima.
+        all_n_jc, all_n_fo, all_n_tb, all_n_fc, all_n_pi = [], [], [], [], []
+        for clause_list in multi_clause_data:
+            for (feats, n_jc, n_fo, n_tb, n_fc, n_pi) in clause_list:
+                all_n_jc.append(n_jc)
+                all_n_fo.append(n_fo)
+                all_n_tb.append(n_tb)
+                all_n_fc.append(n_fc)
+                all_n_pi.append(n_pi)
+
+        max_n_jc = max(all_n_jc) if all_n_jc else 0
+        max_n_fo = max(all_n_fo) if all_n_fo else 0
+        max_n_tb = max(all_n_tb) if all_n_tb else 0
+        max_n_fc = max(all_n_fc) if all_n_fc else 0
+        max_n_pi = max(all_n_pi) if all_n_pi else 0
+        max_n_clauses = max(len(cl) for cl in multi_clause_data) if multi_clause_data else 1
+
+        padding_value = -1e3
+
+        def _pad_single_clause(feats, n_jc, n_fo, n_tb, n_fc, n_pi):
+            """Pad one clause's features to the batch-level maxima."""
+            join_hist, fanout_ext, table_feats, filter_feats, pairwise_feats = feats
+
+            if n_jc < max_n_jc:
+                pad = torch.full(((max_n_jc - n_jc) * bin_size,), padding_value)
+                join_hist = torch.cat([join_hist, pad])
+            if n_fo < max_n_fo:
+                pad = torch.full(((max_n_fo - n_fo) * effective_fanout_dim,), padding_value)
+                fanout_ext = torch.cat([fanout_ext, pad])
+            if n_tb < max_n_tb:
+                for _ in range(max_n_tb - n_tb):
+                    tok = torch.cat([torch.zeros(1),
+                                     torch.full((table_dim - 1,), padding_value)])
+                    table_feats = torch.cat([table_feats, tok])
+            if n_fc < max_n_fc:
+                pad = torch.full(((max_n_fc - n_fc) * filter_dim,), padding_value)
+                if filter_feats is not None and filter_feats.numel() > 0:
+                    filter_feats = torch.cat([filter_feats, pad])
+                else:
+                    filter_feats = pad
+            if n_pi < max_n_pi:
+                pad = torch.full(((max_n_pi - n_pi) * pairwise_intra_dim,), padding_value)
+                if pairwise_feats is not None and pairwise_feats.numel() > 0:
+                    pairwise_feats = torch.cat([pairwise_feats, pad])
+                else:
+                    pairwise_feats = pad
+
+            mask = (
+                [1]
+                + [1] * n_jc + [0] * (max_n_jc - n_jc)
+                + [1] * n_fo + [0] * (max_n_fo - n_fo)
+                + [1] * n_tb + [0] * (max_n_tb - n_tb)
+                + [1] * n_fc + [0] * (max_n_fc - n_fc)
+                + [1] * n_pi + [0] * (max_n_pi - n_pi)
+            )
+
+            parts = [join_hist, fanout_ext, table_feats]
+            if filter_feats is not None and filter_feats.numel() > 0:
+                parts.append(filter_feats)
+            if pairwise_feats is not None and pairwise_feats.numel() > 0:
+                parts.append(pairwise_feats)
+            flat = torch.cat(parts)
+            return flat, torch.tensor(mask)
+
+        # Determine the flat size from the first clause of the first query
+        first_feats, first_n_jc, first_n_fo, first_n_tb, first_n_fc, first_n_pi = (
+            multi_clause_data[0][0])
+        _dummy, _dummy_mask = _pad_single_clause(
+            first_feats, first_n_jc, first_n_fo, first_n_tb, first_n_fc, first_n_pi)
+        flat_size = _dummy.shape[0]
+        mask_size = _dummy_mask.shape[0]
+
+        # Build (batch * max_n_clauses, flat_size) padded features tensor list.
+        # Also build padding masks (batch * max_n_clauses, mask_size).
+        padded_features_mc = []
+        padding_masks_mc = []
+        num_clauses_list = []
+
+        for clause_list in multi_clause_data:
+            n_valid = len(clause_list)
+            num_clauses_list.append(n_valid)
+            # Pad valid clauses
+            for (feats, n_jc, n_fo, n_tb, n_fc, n_pi) in clause_list:
+                flat, mask = _pad_single_clause(feats, n_jc, n_fo, n_tb, n_fc, n_pi)
+                padded_features_mc.append(flat)
+                padding_masks_mc.append(mask)
+            # Zero-pad missing clauses
+            for _ in range(max_n_clauses - n_valid):
+                padded_features_mc.append(torch.zeros(flat_size))
+                padding_masks_mc.append(torch.zeros(mask_size, dtype=torch.long))
+
+        num_clauses_tensor = torch.tensor(num_clauses_list, dtype=torch.long)
+
+        return {
+            "padded_features": padded_features_mc,
+            "padding_masks": padding_masks_mc,
+            "max_n_join_col": max_n_jc,
+            "max_n_fanout": max_n_fo,
+            "max_n_table": max_n_tb,
+            "max_n_filter_col": max_n_fc,
+            "max_n_pairwise_intra": max_n_pi,
+            "num_clauses": num_clauses_tensor,
+            "max_n_clauses": max_n_clauses,
+        }
+
     # Auto-detect 5-tuple shape: Sql2FeatureN always outputs 5-tuples even
     # when price_n_pairwise=False.  When the input data is 5-tuples we must
     # use the PRICE_N padding path (which knows how to unpack 5-tuples).

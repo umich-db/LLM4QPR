@@ -675,3 +675,47 @@ def test_extract_or_atoms_mixed_column_not_collapsed():
     # Different columns — not collapsed; or_atoms empty for both
     for col, entry in atoms.items():
         assert entry.get("or_atoms", []) == []
+
+
+def test_extract_between_atom_conjunctive():
+    """BETWEEN in AND context → range_low / range_high populated directly."""
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _extract_filter_atoms
+    import sqlglot
+    ast = sqlglot.parse_one(
+        "SELECT * FROM tpch_l WHERE tpch_l.l_quantity BETWEEN 5 AND 25")
+    atoms = _extract_filter_atoms(ast)
+    assert "tpch_l.l_quantity" in atoms
+    entry = atoms["tpch_l.l_quantity"]
+    assert entry["range_low"] == 5
+    assert entry["range_high"] == 25
+
+
+def test_extract_between_atom_or_block():
+    """Two BETWEEN predicates on same column in OR → or_atoms with 3-tuples."""
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _extract_filter_atoms
+    import sqlglot
+    ast = sqlglot.parse_one(
+        "SELECT * FROM tpch_l WHERE tpch_l.l_quantity BETWEEN 1 AND 3 "
+        "OR tpch_l.l_quantity BETWEEN 7 AND 9")
+    atoms = _extract_filter_atoms(ast)
+    assert "tpch_l.l_quantity" in atoms
+    or_atoms = atoms["tpch_l.l_quantity"]["or_atoms"]
+    assert len(or_atoms) == 2
+    assert all(a[0] == "between" for a in or_atoms)
+    bounds = sorted([(a[1], a[2]) for a in or_atoms])
+    assert bounds == [(1, 3), (7, 9)]
+
+
+def test_preprocess_keeps_between_under_price_n():
+    """Under PRICE_N, BETWEEN should NOT be expanded to >= AND <=."""
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _preprocess_predicates
+    sql = "SELECT * FROM t WHERE t.a BETWEEN 5 AND 10"
+    out = _preprocess_predicates(sql, db_name="tpch", price_n_parsing=True)
+    out_sql = out if isinstance(out, str) else out.sql()
+    assert "BETWEEN" in out_sql.upper()
+    # Confirm >= / <= are NOT both present as BETWEEN expansion artifacts
+    # (note: one could appear for unrelated reasons, but the pair shouldn't)
+    assert not (">=" in out_sql and "<=" in out_sql)

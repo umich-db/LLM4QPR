@@ -507,13 +507,13 @@ def _compute_reordering_log(sql):
             "after": detail or _diff_snippet(after, before, ""),
         })
 
-    # Phase 2: BETWEEN → range (happens in _preprocess_predicates via the main pipeline)
-    # Check original SQL for BETWEEN
+    # Phase 2: BETWEEN — under PRICE_N, kept as a first-class filter atom
+    # (_extract_filter_atoms reads Between nodes directly; no expansion to >= / <=).
     if re.search(r'\bBETWEEN\b', sql, re.IGNORECASE):
         log.append({
-            "phase": "BETWEEN → AND-of-comparisons",
+            "phase": "BETWEEN → native range atom (PRICE_N)",
             "before": "col BETWEEN low AND high",
-            "after": "col >= low AND col <= high",
+            "after": "range_low=low, range_high=high  (no >= / <= expansion under PRICE_N)",
         })
 
     # LIKE → drop (if present in original)

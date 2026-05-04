@@ -114,12 +114,55 @@ class Sql2FeatureN(Sql2Feature):
         return low, high, max(0.0, min(1.0, sel))
 
     def _atom_to_slot(self, op: str, value, column: str,
-                      is_discrete: bool, keys, vals, table_size: int
+                      is_discrete: bool, keys, vals, table_size: int,
+                      high_value=None,
                       ) -> Tuple[float, float, float]:
-        """Convert a single (op, value) atom to a (low, high, sel) range slot.
+        """Convert a single atom to a (low, high, sel) range slot.
 
+        Accepts either a 2-tuple atom (op, value) or a 3-tuple atom
+        ("between", low, high) where high_value is passed separately.
         Used to encode same-column OR chains from the or_atoms field.
         """
+        if op == "between":
+            # 3-tuple BETWEEN atom: value=low_val, high_value=high_val
+            low_val = value
+            high_val = high_value
+            if is_discrete:
+                try:
+                    lo_idx = keys.index(low_val)
+                except ValueError:
+                    lo_idx = len(keys) - 1
+                try:
+                    hi_idx = keys.index(high_val)
+                except ValueError:
+                    hi_idx = len(keys) - 1
+                if lo_idx > hi_idx:
+                    lo_idx, hi_idx = hi_idx, lo_idx
+                low = lo_idx / self.bin_size
+                high = (hi_idx + 1) / self.bin_size
+                sel = float(sum(vals[i] for i in range(lo_idx, hi_idx + 1)
+                                if i < len(vals))) / max(1.0, table_size)
+                return low, high, max(0.0, min(1.0, sel))
+            else:
+                bin_edges = self.columns_bin_edges.get(column)
+                if bin_edges is None:
+                    return 0.0, 0.0, 0.0
+                try:
+                    lo_v = float(low_val)
+                    hi_v = float(high_val)
+                except (TypeError, ValueError):
+                    return 0.0, 0.0, 0.0
+                rng = max(1e-9, bin_edges[-1] - bin_edges[0])
+                low = max(0.0, min(1.0, (lo_v - bin_edges[0]) / rng))
+                high = max(0.0, min(1.0, (hi_v - bin_edges[0]) / rng))
+                if low > high:
+                    low, high = high, low
+                dist = self.columns_distributions.get(column)
+                if dist is None:
+                    return 0.0, 0.0, 0.0
+                sel = self.calculate_hist_selectivity(dist, bin_edges, lo_v, hi_v)
+                sel = float(sel) / max(1.0, dist.sum())
+                return low, high, max(0.0, min(1.0, sel))
         if is_discrete:
             try:
                 idx = keys.index(value)
@@ -353,16 +396,25 @@ class Sql2FeatureN(Sql2Feature):
                 vals=vals if is_discrete else None,
                 table_size=table_size)
         elif atoms.get("or_atoms"):
-            # Same-column OR chain: each (op, value) pair becomes one slot.
-            # Used for NOT BETWEEN expansions and mixed-op same-column ORs.
+            # Same-column OR chain: each atom becomes one slot.
+            # Atoms are (op, value) 2-tuples or ("between", low, high) 3-tuples.
             or_atom_list = atoms["or_atoms"]
             triples = []
-            for op, val in or_atom_list:
-                lo, hi, sel = self._atom_to_slot(
-                    op, val, filter_column, is_discrete,
-                    keys if is_discrete else None,
-                    vals if is_discrete else None,
-                    table_size)
+            for atom in or_atom_list:
+                if len(atom) == 3 and atom[0] == "between":
+                    _, low_val, high_val = atom
+                    lo, hi, sel = self._atom_to_slot(
+                        "between", low_val, filter_column, is_discrete,
+                        keys if is_discrete else None,
+                        vals if is_discrete else None,
+                        table_size, high_value=high_val)
+                else:
+                    op, val = atom[0], atom[1]
+                    lo, hi, sel = self._atom_to_slot(
+                        op, val, filter_column, is_discrete,
+                        keys if is_discrete else None,
+                        vals if is_discrete else None,
+                        table_size)
                 triples.append((lo, hi, sel))
             # Sort by selectivity descending; top K go to explicit slots.
             triples.sort(key=lambda t: t[2], reverse=True)

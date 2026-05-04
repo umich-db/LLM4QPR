@@ -733,6 +733,27 @@ def _extract_filter_atoms(ast):
             stripped = leaf
             while isinstance(stripped, sqlglot_exp.Paren):
                 stripped = stripped.this
+            # Between leaf in OR: treat as ("between", low, high) 3-tuple atom
+            if isinstance(stripped, sqlglot_exp.Between):
+                col_node = stripped.this
+                low_node = stripped.args.get('low')
+                high_node = stripped.args.get('high')
+                if not isinstance(col_node, sqlglot_exp.Column):
+                    all_same_col = False
+                    break
+                low_v = _literal_value(low_node) if low_node is not None else None
+                high_v = _literal_value(high_node) if high_node is not None else None
+                if low_v is None or high_v is None:
+                    all_same_col = False
+                    break
+                c = _column_str(col_node)
+                if single_col is None:
+                    single_col = c
+                elif c != single_col:
+                    all_same_col = False
+                    break
+                col_atoms.append(("between", low_v, high_v, stripped))
+                continue
             op = _CMP_OP_MAP.get(type(stripped))
             if op is None:
                 all_same_col = False
@@ -758,9 +779,15 @@ def _extract_filter_atoms(ast):
             col_atoms.append((op, v, stripped))
         if all_same_col and single_col is not None and col_atoms:
             entry = _ensure(single_col)
-            for op, v, node in col_atoms:
-                entry["or_atoms"].append((op, v))
-                _consumed_nodes.add(id(node))
+            for atom_tuple in col_atoms:
+                if atom_tuple[0] == "between":
+                    _, low_v, high_v, node = atom_tuple
+                    entry["or_atoms"].append(("between", low_v, high_v))
+                    _consumed_nodes.add(id(node))
+                else:
+                    op, v, node = atom_tuple
+                    entry["or_atoms"].append((op, v))
+                    _consumed_nodes.add(id(node))
 
     # --- Per-atom-kind passes (skip nodes consumed by the Or pass) ---
 
@@ -817,6 +844,29 @@ def _extract_filter_atoms(ast):
             else:
                 entry["range_high"] = v if entry["range_high"] is None \
                                       else min(entry["range_high"], v)
+    # Between conjunctive extraction: col BETWEEN low AND high → range_low / range_high.
+    # Only Between nodes NOT already consumed by the Or pass are handled here.
+    for between in where.find_all(sqlglot_exp.Between):
+        if id(between) in _consumed_nodes:
+            continue
+        if _is_inside_subquery(between):
+            continue
+        col_node = between.this
+        low_node = between.args.get('low')
+        high_node = between.args.get('high')
+        if not isinstance(col_node, sqlglot_exp.Column):
+            continue
+        low = _literal_value(low_node) if low_node is not None else None
+        high = _literal_value(high_node) if high_node is not None else None
+        if low is None or high is None:
+            continue
+        col = _column_str(col_node)
+        entry = _ensure(col)
+        # Conjunctive intersection (AND context)
+        entry["range_low"] = low if entry["range_low"] is None \
+                             else max(entry["range_low"], low)
+        entry["range_high"] = high if entry["range_high"] is None \
+                              else min(entry["range_high"], high)
     for is_node in where.find_all(sqlglot_exp.Is):
         if _is_inside_subquery(is_node):
             continue
@@ -1912,16 +1962,19 @@ def _preprocess_predicates(sql, db_name=None, price_m=False, price_s=False,
 
     # --- Phase 2: Predicate simplification ---
 
-    # BETWEEN → >= AND <=
-    for node in list(ast.find_all(sqlglot_exp.Between)):
-        col = node.this
-        low = node.args.get('low')
-        high = node.args.get('high')
-        if col and low and high:
-            gte = sqlglot_exp.GTE(this=col.copy(), expression=low.copy())
-            lte = sqlglot_exp.LTE(this=col.copy(), expression=high.copy())
-            and_expr = sqlglot_exp.And(this=gte, expression=lte)
-            node.replace(sqlglot_exp.Paren(this=and_expr))
+    # BETWEEN → >= AND <= (PRICE_S / PRICE_M / base PRICE only).
+    # Under PRICE_N the filter token's slot format encodes range bounds
+    # natively, so the BETWEEN node survives to _extract_filter_atoms.
+    if not price_n_parsing:
+        for node in list(ast.find_all(sqlglot_exp.Between)):
+            col = node.this
+            low = node.args.get('low')
+            high = node.args.get('high')
+            if col and low and high:
+                gte = sqlglot_exp.GTE(this=col.copy(), expression=low.copy())
+                lte = sqlglot_exp.LTE(this=col.copy(), expression=high.copy())
+                and_expr = sqlglot_exp.And(this=gte, expression=lte)
+                node.replace(sqlglot_exp.Paren(this=and_expr))
 
     # IN (value list) → OR equalities (subquery INs already handled in Phase 1)
     # PRICE_M/PRICE_S: preserve IN as-is for SpaceSaving encoding
@@ -3732,8 +3785,10 @@ def generate_price_features(workload, sql_list, db_name, bin_size=40,
                 transformed_sql = _collapse_self_joins(transformed_sql)
                 # Add missing tables to FROM when WHERE references known aliases not in FROM
                 transformed_sql = _add_missing_from_tables(transformed_sql, db_name)
-                # Convert BETWEEN to >= / <= range comparisons (before any AND-splitting)
-                transformed_sql = _convert_between_to_range(transformed_sql)
+                # Convert BETWEEN to >= / <= range comparisons (before any AND-splitting).
+                # Skipped under PRICE_N: _extract_filter_atoms reads Between nodes natively.
+                if not price_n_parsing:
+                    transformed_sql = _convert_between_to_range(transformed_sql)
                 # Strip same-table conditions and dangling references
                 transformed_sql = _strip_same_table_conditions(transformed_sql)
                 # Clean trailing SQL artifacts (GROUP BY, unbalanced parens, CASE, substring)

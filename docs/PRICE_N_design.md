@@ -197,7 +197,12 @@ When `--price_n_parsing` is on, the AST passes through 9 phases:
    (which goes to residual under §6 as `NotInSubquery`).
 3. **Disjoint OR → IN** (rule e): collapses `(c=v1 OR c=v2 OR …)` chains
    on the same column into `c IN (v1, …, vk)`.
-4. BETWEEN → `>= AND <=` (existing).
+4. **BETWEEN** — under PRICE_N, **left as-is** (the filter token's slot format
+   `(low, high, sel)` already encodes a range natively; `_extract_filter_atoms`
+   reads `Between(col, x, y)` directly and either populates `range_low` /
+   `range_high` for conjunctive context or appends `("between", x, y)` to
+   `or_atoms` for same-column OR blocks). Under PRICE_S / PRICE_M / base
+   PRICE the existing expansion to `Paren(And(GTE, LTE))` continues to run.
 5. **Date / timestamp literal parsing** (rule c): `DATE 'YYYY-MM-DD'`,
    `TIMESTAMP '…'`, and `DATE '…' ± INTERVAL 'N' DAY` all become integer
    epoch days.
@@ -220,9 +225,10 @@ date-arithmetic tagging only runs under `--price_n_pairwise`.
 
 After the pre-processor (§5), the WHERE clause is in **NNF**: every `NOT`
 wrapper is gone except where wrapping a `LIKE` (which goes to LLM residual)
-or where Phase 4's BETWEEN expansion temporarily introduces a non-NNF
-shape (Phase 2's NNF then handles it via the `Not(Between)` →
-`Or(LT, GT)` expansion).
+or a `NOT IN (subquery)` (which goes to residual under §6). `NOT BETWEEN`
+is handled by Phase 2's NNF pass (`Not(Between)` → `Or(LT, GT)`); positive
+`BETWEEN` nodes survive as first-class atoms and are read directly by
+`_extract_filter_atoms`.
 
 For PRICE's atom-based cardinality estimation, the *useful* canonical form
 is **DNF**: a disjunction of conjunctions, where each conjunction is a flat
@@ -235,9 +241,10 @@ design](hybrid_price_llm_sql_representation_updated.md)):
 
 | Pattern | DNF treatment in PRICE_N |
 |---|---|
-| Pure conjunction `(a AND b AND c)` | Already in DNF (one clause). Encoded directly. |
+| Pure conjunction `(a AND b AND c)` | Already in DNF (one clause). Encoded directly. `BETWEEN(col, x, y)` survives as-is and lands in `range_low` / `range_high`. |
 | Disjoint-column EQ chain `(c=v1 OR c=v2 OR …)` | Same-column OR; collapsed to a single clause via the rule-e IN-list rewrite. |
 | Same-column OR with mixed atom kinds `(c<5 OR c>10)` | Same-column OR; collapsed to a single clause via the `or_atoms` field on the column's filter atom (each leaf becomes one of the K=10 IN-list slots). |
+| Same-column BETWEEN OR `(c BETWEEN 1 AND 3 OR c BETWEEN 7 AND 9)` | Each `BETWEEN` leaf becomes a `("between", low, high)` 3-tuple in `or_atoms`; `_atom_to_slot` converts it to a `(low_norm, high_norm, sel)` range slot. |
 | Mixed-column OR `(a<5 OR b>10)` | Genuine multi-clause DNF; PRICE_N classifies the entire `Or` block as LLM residual. The fusion Transformer learns the disjunction from the textual residual + the conjunctive atoms in the surrounding query. |
 | Multi-clause DNF with shared atoms `((a AND b) OR (a AND c))` | Treated as the mixed-column case above — residual. The multi-clause encoder + OR aggregator from the original design (§6.5) is the principled solution and is **out of scope** for this implementation. |
 

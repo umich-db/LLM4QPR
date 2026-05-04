@@ -394,10 +394,11 @@ Pipeline:
 4. Any pure-conjunctive atoms outside the `Or` block (none in this example) are still extracted normally.
 5. The fusion Transformer combines PRICE's residual-rest atoms with the LLM-encoded textual `Or` representation.
 
-The full multi-clause DNF aggregator (§6.5 of the original design) would
-encode each branch separately and learn an OR-aggregator from training
-labels — that's the principled answer for these cases, but it requires the
-multi-clause infrastructure that PRICE_N intentionally defers.
+When `--price_n_or` is enabled, the parser instead expands mixed-column `Or`
+blocks into multiple DNF clauses (up to `--price_n_or_max_clauses`, default
+16), encodes each clause independently through `scale_encoder + filter_encoder`,
+and aggregates the per-clause embeddings via the OR Transformer (§4.6). The
+residual path above applies only when `--price_n_or` is off (the default).
 
 ---
 
@@ -509,7 +510,7 @@ The PRICE encoder gains:
 - **`ScaleEmbedding.fanout_embeddings`**: `Linear(hist_dim+3, n_embd)` (was `+1`) to ingest the wider fanout token.
 - **`FilterEmbedding.filter_embeddings`**: `Linear(75, n_embd)` (was `Linear(43, n_embd)` for base, `Linear(61, ...)` for PRICE_M).
 - **`FilterEmbedding.pairwise_intra_embeddings`** (new): `Linear(70, n_embd)` for the 5th token type.
-- **`OrTransformer`** (new, design-only as of this implementation): the third encoder stage, applied uniformly to every query (§4.6). 2-layer multi-head self-attention block with a learned [CLS] token; CLS position-0 output is the statistics-core embedding. Input is a variable-length sequence of per-clause embeddings produced by the existing `scale_encoder + filter_encoder` pair. For single-clause queries the layer is degenerate (length-1 sequence + CLS) but still runs to keep embedding semantics uniform across queries.
+- **`OrTransformer`** (new): the third encoder stage, applied uniformly to every query (§4.6). 2-layer multi-head self-attention block with a learned [CLS] token; CLS position-0 output is the statistics-core embedding. Input is a variable-length sequence of per-clause embeddings produced by the existing `scale_encoder + filter_encoder` pair. For single-clause queries the layer is degenerate (length-1 sequence + CLS) but still runs to keep embedding semantics uniform across queries. Instantiated automatically whenever any PRICE_N structural flag (`--price_n_parsing`, `--price_n_filter`, `--price_n_fanout`, `--price_n_pairwise`, or `--price_n`) is enabled. Always starts random-init (no pretrained PRICE counterpart); the partial-copy helper skips its weights. The `--price_n_or` flag controls parser-side DNF expansion to feed multiple clauses per query — orthogonal to the OR Transformer module's presence.
 
 Pretrained PRICE checkpoints load with `strict=False` and a partial-copy
 helper:
@@ -546,7 +547,7 @@ helper:
 | Same-table col-op-col | drop | drop | drop | pairwise token (rule j) |
 | Subquery inlining | best-effort | best-effort | best-effort | simple-body only |
 | EXISTS / IN(subq) / scalar | inlined | inlined | inlined | residual |
-| Multi-clause DNF (mixed-column OR) | residual | residual | residual | per-clause encoding + OR Transformer aggregator |
+| Multi-clause DNF (mixed-column OR) | residual | residual | residual | per-clause encoding + OR Transformer aggregator (`--price_n_or`) |
 
 Filter dim: 43 (base / S) → 61 (M) → 75 (N).
 Fanout dim: 40 (base / S / M) → 42 (N).

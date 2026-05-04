@@ -788,3 +788,98 @@ def test_filter_token_contradictory_atoms_yield_zero():
     slot_sels = tok[42:42 + 30:3]
     total_sel = slot_sels.sum().item() + tok[40 + 30 + 2].item()
     assert total_sel < 0.001, f"expected near-zero total selectivity, got {total_sel}"
+
+
+# ---------------------------------------------------------------------------
+# OR Transformer — model-side tests (Commit 1)
+# ---------------------------------------------------------------------------
+
+def test_or_transformer_single_clause_runs():
+    """OrTransformer handles single-clause input (the degenerate case)."""
+    import torch
+    sys.path.insert(0, "/root/LLM4QPR/PRICE")
+    from model.module import OrTransformer
+    or_t = OrTransformer(n_embd=64, n_layers=2, n_heads=4)
+    clause_embs = torch.randn(2, 1, 64)
+    out = or_t(clause_embs)
+    assert out.shape == (2, 64)
+
+
+def test_or_transformer_multi_clause_pooling():
+    """OrTransformer aggregates variable-length clause sequences with a mask."""
+    import torch
+    sys.path.insert(0, "/root/LLM4QPR/PRICE")
+    from model.module import OrTransformer
+    or_t = OrTransformer(n_embd=64, n_layers=2, n_heads=4)
+    clause_embs = torch.randn(3, 5, 64)
+    clause_mask = torch.zeros(3, 5, dtype=torch.bool)
+    clause_mask[0, 3:] = True   # query 0 has only 3 valid clauses
+    clause_mask[1, 2:] = True   # query 1 has only 2
+    out = or_t(clause_embs, clause_mask)
+    assert out.shape == (3, 64)
+
+
+def test_regression_model_with_or_transformer_single_clause():
+    """RegressionModel with use_or_transformer=True runs on single-clause input."""
+    import torch
+    sys.path.insert(0, "/root/LLM4QPR/PRICE")
+    from model.encoder import RegressionModel
+    rm = RegressionModel(
+        n_join_col=2, n_fanout=4, n_table=2, n_filter_col=2,
+        n_pairwise_intra=0,
+        hist_dim=40, table_dim=4, filter_dim=75,
+        fanout_dim=42, pairwise_intra_dim=0,
+        n_embd=64, n_layers=2, n_heads=4, dropout_rate=0.1,
+        query_hidden_dim=64, final_hidden_dim=64, output_dim=1,
+        use_or_transformer=True)
+    # Single-clause input: same shape as without OR Transformer
+    x = torch.zeros(2, 2 * 40 + 4 * 42 + 2 * 4 + 2 * 75)
+    pg_est_card = torch.zeros(2, 1)
+    n_jc = torch.tensor([[2.0]] * 2)
+    n_fo = torch.tensor([[4.0]] * 2)
+    n_tb = torch.tensor([[2.0]] * 2)
+    n_fc = torch.tensor([[2.0]] * 2)
+    out = rm(x, pg_est_card=pg_est_card,
+             n_join_col=n_jc, n_fanout=n_fo, n_table=n_tb, n_filter_col=n_fc)
+    assert out.shape == (2, 1)
+
+
+# ---------------------------------------------------------------------------
+# DNF expansion — parser-side tests (Commit 2)
+# ---------------------------------------------------------------------------
+
+def test_dnf_expansion_simple_or():
+    """A top-level OR of two atoms produces two clauses."""
+    import sqlglot
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _expand_to_dnf
+    where = sqlglot.parse_one("SELECT * FROM t WHERE t.a = 1 OR t.b = 2").args["where"].this
+    clauses = _expand_to_dnf(where)
+    assert clauses is not None
+    assert len(clauses) == 2
+
+
+def test_dnf_expansion_distributes_and_over_or():
+    """(a=1 OR a=2) AND b=3 distributes to two clauses."""
+    import sqlglot
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _expand_to_dnf
+    where = sqlglot.parse_one(
+        "SELECT * FROM t WHERE (t.a = 1 OR t.a = 2) AND t.b = 3"
+    ).args["where"].this
+    clauses = _expand_to_dnf(where)
+    assert clauses is not None
+    assert len(clauses) == 2   # (a=1 AND b=3) OR (a=2 AND b=3)
+
+
+def test_dnf_expansion_caps_blowup():
+    """5 binary ORed pairs → 2^5 = 32 clauses, exceeds max_clauses=16 → None."""
+    import sqlglot
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _expand_to_dnf
+    sql = "SELECT * FROM t WHERE " + " AND ".join(
+        f"(t.a{i} = 1 OR t.a{i} = 2)" for i in range(5)
+    )
+    where = sqlglot.parse_one(sql).args["where"].this
+    clauses = _expand_to_dnf(where, max_clauses=16)
+    assert clauses is None   # signals "too complex"

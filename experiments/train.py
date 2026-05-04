@@ -519,6 +519,12 @@ elif argsP.algo == "llm_price" and not _retrain_mlp_cache_hit:
     _price_n_embd = getattr(argsP, 'price_n_embd', 256)
     _price_n_heads = getattr(argsP, 'price_n_heads', 8)
     _price_ffn_ratio = getattr(argsP, 'price_ffn_ratio', 4.0)
+    _use_or_transformer = any([
+        getattr(argsP, "price_n_pairwise", False),
+        getattr(argsP, "price_n_filter", False),
+        getattr(argsP, "price_n_fanout", False),
+        getattr(argsP, "price_n_parsing", False),
+    ])
     price_model = RegressionModel(
         n_join_col=max_njc, n_fanout=max_nfo, n_table=max_ntb, n_filter_col=max_nfc,
         n_pairwise_intra=getattr(argsP, "price_max_n_pairwise_intra", 8)
@@ -527,7 +533,8 @@ elif argsP.algo == "llm_price" and not _retrain_mlp_cache_hit:
         fanout_dim=fanout_dim, pairwise_intra_dim=pairwise_intra_dim,
         query_hidden_dim=512, final_hidden_dim=1024, output_dim=1,
         n_embd=_price_n_embd, n_layers=getattr(argsP, 'price_n_layers', 6), n_heads=_price_n_heads,
-        dropout_rate=0.1, ffn_ratio=_price_ffn_ratio
+        dropout_rate=0.1, ffn_ratio=_price_ffn_ratio,
+        use_or_transformer=_use_or_transformer
     )
 
     if pws == "bi_cross_attn_joint" and getattr(argsP, 'inflate_price', False):
@@ -636,6 +643,12 @@ elif argsP.algo == "llm_price_finetune":
   _price_n_embd = getattr(argsP, 'price_n_embd', 256)
   _price_n_heads = getattr(argsP, 'price_n_heads', 8)
   _price_ffn_ratio = getattr(argsP, 'price_ffn_ratio', 4.0)
+  _use_or_transformer = any([
+      getattr(argsP, "price_n_pairwise", False),
+      getattr(argsP, "price_n_filter", False),
+      getattr(argsP, "price_n_fanout", False),
+      getattr(argsP, "price_n_parsing", False),
+  ])
   price_model = RegressionModel(
       n_join_col=max_njc, n_fanout=max_nfo, n_table=max_ntb, n_filter_col=max_nfc,
       n_pairwise_intra=getattr(argsP, "price_max_n_pairwise_intra", 8)
@@ -644,7 +657,8 @@ elif argsP.algo == "llm_price_finetune":
       fanout_dim=fanout_dim, pairwise_intra_dim=pairwise_intra_dim,
       query_hidden_dim=512, final_hidden_dim=1024, output_dim=1,
       n_embd=_price_n_embd, n_layers=getattr(argsP, 'price_n_layers', 6), n_heads=_price_n_heads,
-      dropout_rate=0.1, ffn_ratio=_price_ffn_ratio
+      dropout_rate=0.1, ffn_ratio=_price_ffn_ratio,
+      use_or_transformer=_use_or_transformer
   )
   # Load weights with partial init for PRICE_M (histogram bins shared, operator dims differ)
   def _load_price_sd(model, ckpt_sd, label=""):
@@ -819,6 +833,12 @@ elif argsP.algo == "price_finetune":
   _price_n_embd = getattr(argsP, 'price_n_embd', 256)
   _price_n_heads = getattr(argsP, 'price_n_heads', 8)
   _price_ffn_ratio = getattr(argsP, 'price_ffn_ratio', 4.0)
+  _use_or_transformer = any([
+      getattr(argsP, "price_n_pairwise", False),
+      getattr(argsP, "price_n_filter", False),
+      getattr(argsP, "price_n_fanout", False),
+      getattr(argsP, "price_n_parsing", False),
+  ])
   price_model = RegressionModel(
       n_join_col=max_njc, n_fanout=max_nfo, n_table=max_ntb, n_filter_col=max_nfc,
       n_pairwise_intra=getattr(argsP, "price_max_n_pairwise_intra", 8)
@@ -827,7 +847,8 @@ elif argsP.algo == "price_finetune":
       fanout_dim=fanout_dim, pairwise_intra_dim=pairwise_intra_dim,
       query_hidden_dim=512, final_hidden_dim=1024, output_dim=1,
       n_embd=_price_n_embd, n_layers=getattr(argsP, 'price_n_layers', 6), n_heads=_price_n_heads,
-      dropout_rate=0.1, ffn_ratio=_price_ffn_ratio
+      dropout_rate=0.1, ffn_ratio=_price_ffn_ratio,
+      use_or_transformer=_use_or_transformer
   )
   # Load with partial init for PRICE_M (histogram bins shared, operator dims differ)
   def _load_price_sd_ft(model, ckpt_sd, label=""):

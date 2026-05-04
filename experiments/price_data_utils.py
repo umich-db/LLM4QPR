@@ -682,6 +682,50 @@ def _is_inside_subquery(node):
     return False
 
 
+def _expand_to_dnf(where_ast, max_clauses=16):
+    """Distribute the WHERE expression to DNF (a flat list of conjunctive clauses).
+
+    Returns a list of clauses. Each clause is a list of leaf atoms (the
+    conjunction of the leaves IS the clause). The number of clauses is
+    bounded by max_clauses; if expansion would produce more, returns None
+    to signal "too complex, treat as residual."
+
+    Assumes the WHERE is already in NNF (no compound NOTs). Distribution
+    walks AND/OR nodes recursively:
+      - DNF(AND(a, b)) = [c1 + c2 for c1 in DNF(a) for c2 in DNF(b)]
+      - DNF(OR(a, b)) = DNF(a) + DNF(b)
+      - DNF(leaf) = [[leaf]]
+    """
+    def _expand(node):
+        # Strip Paren
+        while isinstance(node, sqlglot_exp.Paren):
+            node = node.this
+        if isinstance(node, sqlglot_exp.And):
+            left = _expand(node.this)
+            right = _expand(node.expression)
+            if left is None or right is None:
+                return None
+            out = []
+            for c1 in left:
+                for c2 in right:
+                    out.append(c1 + c2)
+                    if len(out) > max_clauses:
+                        return None
+            return out
+        if isinstance(node, sqlglot_exp.Or):
+            left = _expand(node.this)
+            right = _expand(node.expression)
+            if left is None or right is None:
+                return None
+            combined = left + right
+            if len(combined) > max_clauses:
+                return None
+            return combined
+        # Leaf
+        return [[node]]
+    return _expand(where_ast)
+
+
 def _extract_filter_atoms(ast):
     """Walk WHERE and collect per-column atoms for the PRICE_N filter token.
 

@@ -146,6 +146,17 @@ def parse_args():
                         help="PRICE_N shorthand: equivalent to "
                              "--price_n_parsing --price_n_filter "
                              "--price_n_fanout --price_n_pairwise.")
+    parser.add_argument("--price_n_or", action="store_true", default=False,
+                        help="PRICE_N DNF expansion: expand mixed-column OR blocks into "
+                             "multiple DNF clauses (up to --price_n_or_max_clauses), each "
+                             "encoded independently by scale_encoder + filter_encoder, then "
+                             "aggregated by the OR Transformer. When off (default), "
+                             "mixed-column ORs are routed to LLM residual. The OR Transformer "
+                             "module is always present in the model when any PRICE_N structural "
+                             "flag is enabled; this flag controls only the parser-side expansion.")
+    parser.add_argument("--price_n_or_max_clauses", type=int, default=16,
+                        help="Maximum DNF clauses per query for OR Transformer batching "
+                             "(default 16). Queries that would exceed this are sent to LLM residual.")
     parser.add_argument("--price_max_n_pairwise_intra", type=int, default=8,
                         help="Pad pairwise intra-table tokens to this count.")
     parser.add_argument("--price_random_init", action="store_true", default=False,

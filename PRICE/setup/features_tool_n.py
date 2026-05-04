@@ -348,6 +348,266 @@ class Sql2FeatureN(Sql2Feature):
             slots.extend([0.0, 0.0, 0.0])
         return slots  # 3*(K+1) = 33 floats
 
+    # ---- Interval arithmetic for unified atom combination ----
+
+    # A "region" is a (low_norm, high_norm) tuple in [0, 1] coordinates.
+    # A "regions list" is a sorted list of disjoint regions.
+
+    EPS = 1e-9   # numerical guard
+
+    @staticmethod
+    def _intersect_one(r1, r2):
+        """Intersect two regions; return None if empty."""
+        lo = max(r1[0], r2[0])
+        hi = min(r1[1], r2[1])
+        if lo >= hi:
+            return None
+        return (lo, hi)
+
+    @classmethod
+    def _intersect_with_region(cls, regions, r):
+        """Intersect every region in `regions` with single region `r`."""
+        out = []
+        for x in regions:
+            i = cls._intersect_one(x, r)
+            if i is not None:
+                out.append(i)
+        return out
+
+    @classmethod
+    def _intersect_with_union(cls, regions, region_list):
+        """Intersect `regions` with the union of `region_list`."""
+        if not region_list:
+            return []
+        out = []
+        for r in region_list:
+            for x in regions:
+                i = cls._intersect_one(x, r)
+                if i is not None:
+                    out.append(i)
+        return cls._normalize_regions(out)
+
+    @classmethod
+    def _subtract_region(cls, regions, r):
+        """Remove region `r` from each region in `regions`. Splits regions as needed."""
+        out = []
+        lo_r, hi_r = r
+        for x in regions:
+            lo, hi = x
+            if hi_r <= lo or lo_r >= hi:
+                out.append(x)   # no overlap
+                continue
+            if lo_r > lo:
+                out.append((lo, lo_r))
+            if hi_r < hi:
+                out.append((hi_r, hi))
+        return out
+
+    @staticmethod
+    def _normalize_regions(regions):
+        """Sort regions and merge overlapping/touching ones."""
+        if not regions:
+            return []
+        sorted_r = sorted(regions)
+        out = [sorted_r[0]]
+        for lo, hi in sorted_r[1:]:
+            prev_lo, prev_hi = out[-1]
+            if lo <= prev_hi:
+                out[-1] = (prev_lo, max(prev_hi, hi))
+            else:
+                out.append((lo, hi))
+        return out
+
+    def _value_to_region_continuous(self, column, value):
+        """Map a single literal value v to a tiny point region (v_norm, v_norm + ε)."""
+        bin_edges = self.columns_bin_edges[column]
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            return None
+        rng = max(1e-9, bin_edges[-1] - bin_edges[0])
+        v_norm = (v - bin_edges[0]) / rng
+        if v_norm < 0.0 or v_norm > 1.0:
+            return None   # outside histogram range; treat as no contribution
+        lo = max(0.0, v_norm)
+        hi = min(1.0, v_norm + 1e-5)
+        if lo >= hi:
+            hi = min(1.0, lo + 1e-9)
+        return (lo, hi)
+
+    def _value_to_region_discrete(self, column, value, keys):
+        """Map a SpaceSaving-key value to a single-bin region (idx/B, (idx+1)/B)."""
+        try:
+            idx = keys.index(value)
+        except ValueError:
+            idx = len(keys) - 1   # OtHeRs
+        return (idx / self.bin_size, (idx + 1) / self.bin_size)
+
+    def _range_to_region_continuous(self, column, low_v, high_v):
+        """Map [low_v, high_v] (with None = unbounded) to a normalized region."""
+        bin_edges = self.columns_bin_edges[column]
+        try:
+            low_f = float(low_v) if low_v is not None else bin_edges[0]
+            high_f = float(high_v) if high_v is not None else bin_edges[-1]
+        except (TypeError, ValueError):
+            return None
+        rng = max(1e-9, bin_edges[-1] - bin_edges[0])
+        lo = max(0.0, min(1.0, (low_f - bin_edges[0]) / rng))
+        hi = max(0.0, min(1.0, (high_f - bin_edges[0]) / rng))
+        if lo > hi:
+            return None
+        return (lo, hi)
+
+    def _region_selectivity_continuous(self, column, lo_norm, hi_norm):
+        """Compute the histogram selectivity for a normalized [lo, hi] region."""
+        bin_edges = self.columns_bin_edges[column]
+        rng = bin_edges[-1] - bin_edges[0]
+        lo_v = bin_edges[0] + lo_norm * rng
+        hi_v = bin_edges[0] + hi_norm * rng
+        distribution = self.columns_distributions[column]
+        sel = self.calculate_hist_selectivity(distribution, bin_edges, lo_v, hi_v)
+        total = max(1.0, distribution.sum())
+        return float(sel) / total
+
+    def _region_selectivity_discrete(self, lo_norm, hi_norm, keys, vals, table_size):
+        """Sum SpaceSaving frequencies for bins covered by [lo_norm, hi_norm)."""
+        lo_idx = max(0, int(round(lo_norm * self.bin_size)))
+        hi_idx = min(self.bin_size, int(round(hi_norm * self.bin_size)))
+        if lo_idx >= hi_idx:
+            return 0.0
+        total = max(1.0, float(table_size))
+        return float(sum(vals[i] for i in range(lo_idx, hi_idx))) / total
+
+    def _atom_to_region(self, atom, column, is_discrete, keys, vals):
+        """Convert a 2-tuple (op, value) or 3-tuple ('between', low, high) atom
+        to a normalized region. Returns None on failure."""
+        if len(atom) == 3 and atom[0] == "between":
+            _, low_v, high_v = atom
+            if is_discrete:
+                r1 = self._value_to_region_discrete(column, low_v, keys)
+                r2 = self._value_to_region_discrete(column, high_v, keys)
+                if r1 is None or r2 is None:
+                    return None
+                return (min(r1[0], r2[0]), max(r1[1], r2[1]))
+            return self._range_to_region_continuous(column, low_v, high_v)
+
+        op, val = atom[0], atom[1]
+        if is_discrete:
+            pt = self._value_to_region_discrete(column, val, keys)
+        else:
+            pt = self._value_to_region_continuous(column, val)
+        if pt is None:
+            return None
+
+        if op == "=":
+            return pt
+        if op == "<":
+            return (0.0, pt[0])
+        if op == "<=":
+            return (0.0, pt[1])
+        if op == ">":
+            return (pt[1], 1.0)
+        if op == ">=":
+            return (pt[0], 1.0)
+        return None
+
+    def _compute_regions(self, column, atoms, is_discrete, keys, vals, table_size):
+        """Run interval arithmetic over all atoms on `column` to produce a
+        sorted list of disjoint (low_norm, high_norm, sel) regions.
+
+        Combines per-kind atoms via:
+          - EQ values (AND semantics): each value independently intersects the
+            current region set (c=5 AND c=10 → empty; c=5 alone → {5}).
+          - IN values (OR semantics): intersect current regions with the union
+            of all IN-list point regions (c IN (1,2,3) → {1}∪{2}∪{3}).
+          - When both EQ and IN are present, EQ is applied first (each value
+            intersects), then IN (union intersects); combined this correctly
+            handles c=5 AND c IN (1,2,3) → {5}∩{1,2,3} = empty if 5∉{1,2,3}.
+          - Range bounds (range_low, range_high): intersect with the range region.
+          - or_atoms (same-column OR block): intersect with the union of their regions.
+          - NEQ / NOT IN values: subtract each value's point region.
+          - NULL atoms: orthogonal (handled separately via null_pred_flag).
+        """
+        # Start with the universal region.
+        regions = [(0.0, 1.0)]
+
+        # 1a. EQ values: AND semantics — each value narrows the region.
+        eq_vals = list(atoms.get("eq_values", []))
+        for v in eq_vals:
+            if is_discrete:
+                pt = self._value_to_region_discrete(column, v, keys)
+            else:
+                pt = self._value_to_region_continuous(column, v)
+            if pt is not None:
+                regions = self._intersect_with_region(regions, pt)
+            else:
+                regions = []   # value out of range → impossible predicate
+            if not regions:
+                break
+
+        # 1b. IN values: OR semantics — intersect with the union of point regions.
+        in_vals = list(atoms.get("in_values", []))
+        if in_vals:
+            in_regions = []
+            for v in in_vals:
+                if is_discrete:
+                    pt = self._value_to_region_discrete(column, v, keys)
+                else:
+                    pt = self._value_to_region_continuous(column, v)
+                if pt is not None:
+                    in_regions.append(pt)
+            if in_regions:
+                regions = self._intersect_with_union(regions, in_regions)
+            else:
+                regions = []   # all IN values out of range
+
+        # 2. Range bounds: intersect with [range_low, range_high].
+        rl = atoms.get("range_low")
+        rh = atoms.get("range_high")
+        if rl is not None or rh is not None:
+            if is_discrete:
+                # For discrete columns, range bounds aren't well-defined (lex order
+                # is meaningless under SpaceSaving rank). Skip for now.
+                pass
+            else:
+                range_r = self._range_to_region_continuous(column, rl, rh)
+                if range_r is not None:
+                    regions = self._intersect_with_region(regions, range_r)
+
+        # 3. or_atoms: intersect with union of their regions (each or_atom is a
+        #    same-column predicate, the OR makes their disjunction).
+        or_atoms = atoms.get("or_atoms", [])
+        if or_atoms:
+            or_regions = []
+            for a in or_atoms:
+                r = self._atom_to_region(a, column, is_discrete, keys, vals)
+                if r is not None:
+                    or_regions.append(r)
+            if or_regions:
+                regions = self._intersect_with_union(regions, or_regions)
+
+        # 4. NEQ / NOT IN values: subtract each value's point region.
+        not_in = atoms.get("not_in_values", [])
+        for v in not_in:
+            if is_discrete:
+                pt = self._value_to_region_discrete(column, v, keys)
+            else:
+                pt = self._value_to_region_continuous(column, v)
+            if pt is not None:
+                regions = self._subtract_region(regions, pt)
+
+        regions = self._normalize_regions(regions)
+
+        # Compute selectivity per region.
+        out = []
+        for lo, hi in regions:
+            if is_discrete:
+                sel = self._region_selectivity_discrete(lo, hi, keys, vals, table_size)
+            else:
+                sel = self._region_selectivity_continuous(column, lo, hi)
+            out.append((lo, hi, max(0.0, min(1.0, sel))))
+        return out
+
     def _encode_filter_token(self, filter_column: str, atoms: dict) -> torch.Tensor:
         """Build a 75-dim filter token from the atoms dict produced by the
         AST tag pass.
@@ -355,106 +615,53 @@ class Sql2FeatureN(Sql2Feature):
         atoms keys:
           eq_values    : list  — single-equality literal(s)
           in_values    : list  — IN-list literals
-          not_in_values: list  — NOT IN literals (selectivity 1 - matched)
+          not_in_values: list  — NOT IN literals
           range_low    : float | None
           range_high   : float | None
           is_null      : bool
           is_not_null  : bool
-          like_keys    : list  — SpaceSaving keys matched by LIKE/NOT LIKE
+          or_atoms     : list  — same-column OR chain atoms
         """
         col_table = filter_column.split(".")[0]
         col_name = filter_column.split(".")[-1]
+        raw_table = self._alias_to_table.get(col_table, col_table)
         table_size = self.get_table_size(col_table)
         is_discrete = col_name in self.information_coltype['col_type'][col_table]['dsct']
 
         if is_discrete:
             keys, vals = self.space_saving_summary(filter_column)
-            histogram = (torch.tensor(vals, dtype=torch.float32) / max(1.0, table_size))
+            histogram = (torch.tensor(vals, dtype=torch.float32)
+                         / max(1.0, table_size))
         else:
+            keys, vals = None, None
             histogram = torch.tensor(
-                self.get_column_histograms(filter_column), dtype=torch.float32)
+                self.get_column_histograms(filter_column),
+                dtype=torch.float32)
 
-        # Combine all multi-valued atoms (eq + in + like_keys minus not_in/not_like)
-        # We treat eq + in + like as a positive list to populate the K slots.
-        positive_values = list(atoms.get("eq_values", [])) + \
-                          list(atoms.get("in_values", []))
-        not_in_values = list(atoms.get("not_in_values", []))
+        # Run interval arithmetic over all atoms.
+        regions = self._compute_regions(filter_column, atoms, is_discrete,
+                                        keys, vals, table_size)
 
-        if positive_values:
-            # Positive path dominates: EQ/IN is more selective than NEQ.
-            # If both positive and NEQ are present, prefer positive (degenerate case).
-            slot_floats = self._populate_in_slots(
-                filter_column, positive_values, is_discrete,
-                keys=keys if is_discrete else None,
-                vals=vals if is_discrete else None,
-                table_size=table_size)
-        elif not_in_values:
-            # NEQ range-pair encoding: col != X (rule a extension).
-            slot_floats = self._populate_range_pair_slots(
-                filter_column, not_in_values, is_discrete,
-                keys=keys if is_discrete else None,
-                vals=vals if is_discrete else None,
-                table_size=table_size)
-        elif atoms.get("or_atoms"):
-            # Same-column OR chain: each atom becomes one slot.
-            # Atoms are (op, value) 2-tuples or ("between", low, high) 3-tuples.
-            or_atom_list = atoms["or_atoms"]
-            triples = []
-            for atom in or_atom_list:
-                if len(atom) == 3 and atom[0] == "between":
-                    _, low_val, high_val = atom
-                    lo, hi, sel = self._atom_to_slot(
-                        "between", low_val, filter_column, is_discrete,
-                        keys if is_discrete else None,
-                        vals if is_discrete else None,
-                        table_size, high_value=high_val)
-                else:
-                    op, val = atom[0], atom[1]
-                    lo, hi, sel = self._atom_to_slot(
-                        op, val, filter_column, is_discrete,
-                        keys if is_discrete else None,
-                        vals if is_discrete else None,
-                        table_size)
-                triples.append((lo, hi, sel))
-            # Sort by selectivity descending; top K go to explicit slots.
-            triples.sort(key=lambda t: t[2], reverse=True)
-            top = triples[: self.K]
-            tail = triples[self.K:]
-            slot_floats = []
-            for lo, hi, sel in top:
-                slot_floats.extend([lo, hi, sel])
-            while len(slot_floats) < self.K * 3:
-                slot_floats.extend([0.0, 0.0, 0.0])
-            if tail:
-                slot_floats.extend([min(t[0] for t in tail),
-                                    max(t[1] for t in tail),
-                                    min(1.0, sum(t[2] for t in tail))])
-            else:
-                slot_floats.extend([0.0, 0.0, 0.0])
-        elif atoms.get("range_low") is not None or atoms.get("range_high") is not None:
-            # Range predicate: fill slot 1 only.
-            bin_edges = self.columns_bin_edges.get(filter_column)
-            slot_floats = [0.0] * (3 * (self.K + 1))
-            if bin_edges is not None:
-                lo = atoms.get("range_low")
-                hi = atoms.get("range_high")
-                lo_v = float(lo) if lo is not None else float(bin_edges[0])
-                hi_v = float(hi) if hi is not None else float(bin_edges[-1])
-                rng = max(1e-9, bin_edges[-1] - bin_edges[0])
-                lo_n = max(0.0, min(1.0, (lo_v - bin_edges[0]) / rng))
-                hi_n = max(0.0, min(1.0, (hi_v - bin_edges[0]) / rng))
-                if lo_n > hi_n: lo_n = hi_n
-                dist = self.columns_distributions[filter_column]
-                sel = self.calculate_hist_selectivity(dist, bin_edges, lo_v, hi_v)
-                sel = float(sel) / max(1.0, dist.sum())
-                slot_floats[0:3] = [lo_n, hi_n, max(0.0, min(1.0, sel))]
+        # Sort by selectivity descending; top K populate slots, rest fold to tail.
+        regions.sort(key=lambda t: t[2], reverse=True)
+        top = regions[: self.K]
+        tail = regions[self.K:]
+
+        slot_floats = []
+        for lo, hi, sel in top:
+            slot_floats.extend([lo, hi, sel])
+        while len(slot_floats) < self.K * 3:
+            slot_floats.extend([0.0, 0.0, 0.0])
+
+        if tail:
+            tail_lo = min(t[0] for t in tail)
+            tail_hi = max(t[1] for t in tail)
+            tail_sel = sum(t[2] for t in tail)
+            slot_floats.extend([tail_lo, tail_hi, min(1.0, tail_sel)])
         else:
-            # Pure NULL or empty atoms: all slots zero.
-            slot_floats = [0.0] * (3 * (self.K + 1))
+            slot_floats.extend([0.0, 0.0, 0.0])
 
-        # NULL bits (rule b)
-        # null_fraction keys use raw table names; resolve alias via _alias_to_table
-        raw_table = self._alias_to_table.get(col_table, col_table)
+        # NULL bits (rule b) — orthogonal to interval arithmetic.
         null_fraction = float(self._null_fraction.get((raw_table, col_name), 0.0))
         if atoms.get("is_null"):
             null_pred_flag = 1.0

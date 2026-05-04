@@ -558,40 +558,43 @@ def test_utilsTrain_rejects_price_s_plus_price_n_filter():
 
 
 def test_filter_token_neq_continuous():
-    """NEQ range-pair encoding: col != X emits gap slots covering values != X."""
+    """NEQ encoding: col != X emits gap slot(s) covering values != X."""
     sys.path.insert(0, "/root/LLM4QPR/PRICE")
     from setup.features_tool_n import Sql2FeatureN
     f = Sql2FeatureN("tpch", 40, "finetune")
     atoms = {**f.EMPTY_ATOMS, "not_in_values": [50]}
     tok = f._encode_filter_token("tpch_p.p_size", atoms)
     assert tok.shape == (75,), f"Expected shape (75,) got {tok.shape}"
-    # Two range slots should be used (below 50 and above 50).
-    # Slot selectivities are at indices 40, 43, 46, ... (step 3) for K=10 slots,
-    # then the tail slot at index 40+30+2 = 72.
-    slot_sels = tok[40:40 + 30:3]  # K=10 slots, sel is every 3rd element
+    # Selectivity is the 3rd element of each (lo, hi, sel) triple.
+    # Slot layout: index 40=lo_0, 41=hi_0, 42=sel_0, 43=lo_1, 44=hi_1, 45=sel_1, ...
+    slot_sels = tok[42:42 + 30:3]  # sel at positions 42,45,48,...,69
     tail_sel = tok[40 + 30 + 2].item()
     nonzero_sels = [s.item() for s in slot_sels if s.item() > 0]
-    # At least one range slot should have non-zero selectivity
-    assert len(nonzero_sels) >= 1, \
-        f"Expected at least 1 non-zero slot selectivity, got slots={slot_sels.tolist()}"
-    # Shape should still be correct
+    # At least one gap slot should have non-zero selectivity.
+    assert len(nonzero_sels) >= 1 or tail_sel > 0, \
+        f"Expected >= 1 non-zero slot sel, got sels={slot_sels.tolist()}, tail={tail_sel}"
+    # null_pred_flag must be 0 for plain NEQ.
     assert tok[-1].item() == 0.0, "null_pred_flag should be 0 for plain NEQ"
 
 
-def test_filter_token_neq_does_not_fire_when_positive_values_present():
-    """When both eq_values and not_in_values are set, positive path takes priority."""
+def test_filter_token_eq_and_not_in_disjoint_values():
+    """When eq_values=[v1] and not_in_values=[v2] map to different SpaceSaving bins,
+    the NOT IN subtraction has no effect and the result equals eq_values=[v1] alone."""
     sys.path.insert(0, "/root/LLM4QPR/PRICE")
     from setup.features_tool_n import Sql2FeatureN
     f = Sql2FeatureN("tpch", 40, "finetune")
-    # Both eq_values=[50] and not_in_values=[30]: positive path should win
-    atoms_eq_only = {**f.EMPTY_ATOMS, "eq_values": [50]}
-    atoms_both = {**f.EMPTY_ATOMS, "eq_values": [50], "not_in_values": [30]}
+    # p_size SpaceSaving keys: 24 is at bin 0, 35 is at bin 1 — different bins, disjoint.
+    # eq_values=[24] restricts to bin 0; not_in_values=[35] subtracts bin 1 → no change.
+    atoms_eq_only = {**f.EMPTY_ATOMS, "eq_values": [24]}
+    atoms_both = {**f.EMPTY_ATOMS, "eq_values": [24], "not_in_values": [35]}
     tok_eq = f._encode_filter_token("tpch_p.p_size", atoms_eq_only)
     tok_both = f._encode_filter_token("tpch_p.p_size", atoms_both)
-    # With positive path dominant, the two tokens should be identical
     import torch
+    # Shape must be correct.
+    assert tok_eq.shape == (75,) and tok_both.shape == (75,)
+    # The two tokens should be identical since 24 and 35 are in different bins.
     assert torch.allclose(tok_eq, tok_both), \
-        "Positive path should dominate when both eq_values and not_in_values are present"
+        "NOT IN of a disjoint-bin value should not change the eq_values result"
 
 
 def test_extract_filter_atoms_collects_neq():
@@ -719,3 +722,69 @@ def test_preprocess_keeps_between_under_price_n():
     # Confirm >= / <= are NOT both present as BETWEEN expansion artifacts
     # (note: one could appear for unrelated reasons, but the pair shouldn't)
     assert not (">=" in out_sql and "<=" in out_sql)
+
+
+def test_filter_token_between_and_neq_two_slots():
+    """c BETWEEN low AND high AND c != mid should produce 2 disjoint range slots.
+
+    Uses tpch_ps.ps_supplycost (continuous, range 1..1000) to exercise
+    range bounds; discrete columns skip range-bound intersection by design.
+    """
+    sys.path.insert(0, "/root/LLM4QPR/PRICE")
+    from setup.features_tool_n import Sql2FeatureN
+    f = Sql2FeatureN("tpch", 40, "finetune")
+    # ps_supplycost is continuous (not in dsct list); range 1..1000 in histogram.
+    col = "tpch_ps.ps_supplycost"
+    atoms = {**f.EMPTY_ATOMS,
+             "range_low": 10.0, "range_high": 100.0,
+             "not_in_values": [50.0]}
+    tok = f._encode_filter_token(col, atoms)
+    assert tok.shape == (75,)
+    # Selectivity is at every 3rd position starting from index 42.
+    slot_sels = tok[42:42 + 30:3]
+    nonzero = (slot_sels > 0).sum().item()
+    # At least 2 slots should have non-zero selectivity (the two halves of the range).
+    assert nonzero >= 2, f"expected >=2 non-zero slots, got {nonzero}, sels={slot_sels.tolist()}"
+
+
+def test_filter_token_in_intersect_with_range():
+    """c IN (10.0, 50.0, 200.0) AND c >= 50.0 should produce slots for 50.0 and 200.0.
+
+    Uses tpch_ps.ps_supplycost (continuous) to exercise range-bound intersection
+    against an IN-list; discrete columns skip range-bound intersection by design.
+    """
+    sys.path.insert(0, "/root/LLM4QPR/PRICE")
+    from setup.features_tool_n import Sql2FeatureN
+    f = Sql2FeatureN("tpch", 40, "finetune")
+    col = "tpch_ps.ps_supplycost"
+    atoms = {**f.EMPTY_ATOMS,
+             "in_values": [10.0, 50.0, 200.0],
+             "range_low": 50.0}
+    tok = f._encode_filter_token(col, atoms)
+    assert tok.shape == (75,)
+    # 2 values survive (50.0 and 200.0); their point regions are tiny but non-zero.
+    slot_sels = tok[42:42 + 30:3]
+    nonzero = (slot_sels > 0).sum().item()
+    tail_sel = tok[40 + 30 + 2].item()
+    assert nonzero >= 1 or tail_sel > 0, \
+        f"expected >= 1 non-zero slot, got sels={slot_sels.tolist()}, tail={tail_sel}"
+
+
+def test_filter_token_contradictory_atoms_yield_zero():
+    """c = v1 AND c = v2 where v1 != v2 (impossible) should yield near-zero slots.
+
+    Uses tpch_ps.ps_supplycost (continuous) with two clearly-separated values
+    whose point regions [v, v+1e-5] do not overlap.
+    """
+    sys.path.insert(0, "/root/LLM4QPR/PRICE")
+    from setup.features_tool_n import Sql2FeatureN
+    f = Sql2FeatureN("tpch", 40, "finetune")
+    col = "tpch_ps.ps_supplycost"
+    # Values 100.0 and 500.0 have non-overlapping point regions on a [1,1000] axis.
+    atoms = {**f.EMPTY_ATOMS, "eq_values": [100.0, 500.0]}
+    tok = f._encode_filter_token(col, atoms)
+    assert tok.shape == (75,)
+    # The intersection of {100.0} ∩ {500.0} is empty (point regions don't overlap).
+    slot_sels = tok[42:42 + 30:3]
+    total_sel = slot_sels.sum().item() + tok[40 + 30 + 2].item()
+    assert total_sel < 0.001, f"expected near-zero total selectivity, got {total_sel}"

@@ -142,9 +142,33 @@ explicitly and the rest fold into the tail bucket.
 
 For same-column OR chains (`c = v1 OR c < v2 OR c > v3`, including those
 produced by NNF expansion of `NOT BETWEEN`), the `or_atoms` field on the
-column's filter atom holds a list of `(op, value)` pairs; each pair becomes
-one IN-list slot via the `_atom_to_slot` mapping. See §5a for the DNF
-treatment.
+column's filter atom holds a list of `(op, value)` pairs; each pair is
+converted to a region via `_atom_to_region` and the union is intersected
+with the current region set. See §5a for the DNF treatment.
+
+**Multi-atom AND combination via interval arithmetic.** When a column has
+multiple AND-connected atoms (e.g., `c BETWEEN 5 AND 25 AND c != 15`),
+`_compute_regions` runs interval arithmetic to produce a sorted list of
+disjoint sub-ranges:
+
+1. Start with the universal region `[0, 1]` (normalized).
+2. EQ + IN values → intersect with the union of their point regions.
+3. Range bounds → intersect with `[range_low, range_high]`.
+4. `or_atoms` (same-column OR block) → intersect with the union of their regions.
+5. NEQ / NOT IN values → subtract each value's point region.
+
+The final region list is sorted by selectivity descending; the top `K = 10`
+populate the explicit slots, the remainder folds into the tail bucket.
+NULL atoms are orthogonal (encoded via `null_pred_flag`).
+
+This unifies the encoder around a single principle: slots represent the
+*result* of the column's AND filter as a union of disjoint sub-ranges. No
+per-kind branching, no silently-dropped atoms.
+
+Example: `c BETWEEN 5 AND 25 AND c != 15` produces 2 slots covering
+`[5, 15)` and `(15, 25]`. `c IN (1, 2, 3) AND c >= 2` produces 2 slots
+(values 2 and 3 survive). `c = 5 AND c = 10` (contradictory) produces
+all-zero slots.
 
 ### 4.5 Pairwise intra-table filter token (70 dims, NEW token type)
 
@@ -241,7 +265,7 @@ design](hybrid_price_llm_sql_representation_updated.md)):
 
 | Pattern | DNF treatment in PRICE_N |
 |---|---|
-| Pure conjunction `(a AND b AND c)` | Already in DNF (one clause). Encoded directly. `BETWEEN(col, x, y)` survives as-is and lands in `range_low` / `range_high`. |
+| Pure conjunction `(a AND b AND c)` | Already in DNF (one clause). Per-column atoms combined via interval arithmetic in `_compute_regions`; output is a list of disjoint sub-ranges packed into the column's filter token slots. Naturally handles AND combinations like `BETWEEN x AND y AND col != z` (produces gap-range slots) and `IN (...) AND col >= k` (produces intersection slots). `BETWEEN(col, x, y)` survives as-is and lands in `range_low` / `range_high`. |
 | Disjoint-column EQ chain `(c=v1 OR c=v2 OR …)` | Same-column OR; collapsed to a single clause via the rule-e IN-list rewrite. |
 | Same-column OR with mixed atom kinds `(c<5 OR c>10)` | Same-column OR; collapsed to a single clause via the `or_atoms` field on the column's filter atom (each leaf becomes one of the K=10 IN-list slots). |
 | Same-column BETWEEN OR `(c BETWEEN 1 AND 3 OR c BETWEEN 7 AND 9)` | Each `BETWEEN` leaf becomes a `("between", low, high)` 3-tuple in `or_atoms`; `_atom_to_slot` converts it to a `(low_norm, high_norm, sel)` range slot. |

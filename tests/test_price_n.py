@@ -1072,3 +1072,43 @@ def test_per_clause_pairwise_distributes_when_in_top_conjunction():
         assert any(a[0] == "tpch_l" and a[1] == "l_shipdate"
                    and a[2] == "l_commitdate" for a in pairwise_atoms), \
             f"pairwise atom missing from clause {i}: {meta}"
+
+
+# ---------------------------------------------------------------------------
+# Alias-to-physical-name resolution in pairwise atom extractors
+# ---------------------------------------------------------------------------
+
+def test_extract_pairwise_intra_resolves_alias_to_physical():
+    """For a query using a SQL alias, the atom's first field must be the
+    physical table name (matching the stats pkl key)."""
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _extract_pairwise_intra_atoms
+    import sqlglot
+    ast = sqlglot.parse_one(
+        "SELECT * FROM lineitem tpch_l "
+        "WHERE tpch_l.l_shipdate < tpch_l.l_commitdate")
+    atoms = _extract_pairwise_intra_atoms(ast)
+    # Atom uses "lineitem" (physical), NOT "tpch_l" (alias).
+    assert ("lineitem", "l_shipdate", "l_commitdate", "<", None, None) in atoms
+    assert not any(a[0] == "tpch_l" for a in atoms), \
+        f"alias leaked into atom tuple: {atoms}"
+
+
+def test_build_atoms_per_clause_resolves_alias_in_pairwise():
+    """Per-clause extraction also resolves aliases to physical names."""
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _extract_atoms_per_clause
+    import sqlglot
+    ast = sqlglot.parse_one(
+        "SELECT * FROM lineitem tpch_l "
+        "WHERE tpch_l.l_quantity = 5 OR tpch_l.l_shipdate < tpch_l.l_commitdate")
+    metas = _extract_atoms_per_clause(ast)
+    assert len(metas) == 2
+    found = False
+    for meta in metas:
+        for atom in meta.get("pairwise_atoms", []):
+            if atom[0] == "lineitem":
+                found = True
+            assert atom[0] != "tpch_l", \
+                f"alias leaked: {atom}"
+    assert found, "pairwise atom not found in any clause"

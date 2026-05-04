@@ -745,6 +745,8 @@ def _extract_atoms_per_clause(ast, max_clauses=16):
     if where is None:
         return [_empty_atoms_meta()]
 
+    alias_map = _build_alias_map(ast)   # resolve aliases to physical table names
+
     expanded = _expand_to_dnf(where.this, max_clauses=max_clauses)
     if expanded is None:
         # Blowup → single clause containing all atoms; OR block becomes residual.
@@ -752,7 +754,7 @@ def _extract_atoms_per_clause(ast, max_clauses=16):
 
     out = []
     for leaves in expanded:
-        meta = _build_atoms_meta_from_leaves(leaves)
+        meta = _build_atoms_meta_from_leaves(leaves, alias_map=alias_map)
         out.append(meta)
     return out
 
@@ -761,13 +763,16 @@ def _empty_atoms_meta():
     return {"filter_atoms": {}, "pairwise_atoms": [], "join_sides": {}}
 
 
-def _build_atoms_meta_from_leaves(leaves):
+def _build_atoms_meta_from_leaves(leaves, alias_map=None):
     """Walk a clause's leaf nodes and populate an atoms_meta dict.
 
     `leaves` is a list of AST nodes (the conjunctive atoms of one DNF clause).
     Reuses the per-node logic from _extract_filter_atoms / _extract_pairwise_intra_atoms
     / _extract_xtab_nonequi_atoms but operates on a flat leaf list instead of
     a WHERE subtree.
+
+    `alias_map` maps SQL alias → physical table name (from _build_alias_map).
+    When provided, pairwise atom tuples use physical names to match stats pkl keys.
     """
     meta = _empty_atoms_meta()
     filter_atoms = meta["filter_atoms"]
@@ -809,8 +814,10 @@ def _build_atoms_meta_from_leaves(leaves):
         if isinstance(leaf, sqlglot_exp.NEQ):
             if isinstance(leaf.expression, sqlglot_exp.Column):
                 # cross-column NEQ → pairwise atom on same-table or xtab
-                lt = getattr(leaf.this, "table", None)
-                rt = getattr(leaf.expression, "table", None)
+                lt_raw = getattr(leaf.this, "table", None)
+                rt_raw = getattr(leaf.expression, "table", None)
+                lt = alias_map.get(lt_raw, lt_raw) if alias_map else lt_raw
+                rt = alias_map.get(rt_raw, rt_raw) if alias_map else rt_raw
                 if lt and rt and lt == rt:
                     pairwise_atoms.append(
                         (lt, str(leaf.this.name), str(leaf.expression.name), "!=", None, None))
@@ -830,24 +837,20 @@ def _build_atoms_meta_from_leaves(leaves):
             if isinstance(leaf, cmp_cls):
                 if isinstance(leaf.expression, sqlglot_exp.Column):
                     # cross-column → pairwise atom (same-table or xtab whitelist)
-                    lt = getattr(leaf.this, "table", None)
-                    rt = getattr(leaf.expression, "table", None)
+                    lt_raw = getattr(leaf.this, "table", None)
+                    rt_raw = getattr(leaf.expression, "table", None)
+                    lt = alias_map.get(lt_raw, lt_raw) if alias_map else lt_raw
+                    rt = alias_map.get(rt_raw, rt_raw) if alias_map else rt_raw
                     op = {sqlglot_exp.GTE: ">=", sqlglot_exp.GT: ">",
                           sqlglot_exp.LTE: "<=", sqlglot_exp.LT: "<"}[cmp_cls]
                     if lt and rt and lt == rt:
-                        # Same-table pairwise (rule j)
+                        # Same-table pairwise (rule j) — atom uses physical name.
                         pairwise_atoms.append((lt, str(leaf.this.name),
                                                str(leaf.expression.name), op, None, None))
                     elif lt and rt:
                         # Different tables — check xtab whitelist (rule h).
-                        # Note: alias resolution (alias→physical table name) that
-                        # _extract_xtab_nonequi_atoms performs at the whole-AST level
-                        # is not available here (we only have the leaf node).  For
-                        # post-transform PRICE-aliased queries the alias IS the physical
-                        # name, so the direct comparison works.  For queries where the
-                        # user provides short aliases (e.g., "inv", "cs") the key will
-                        # not match the whitelist — those fall through silently and rely
-                        # on the query-level non-OR path instead.
+                        # alias_map already resolved aliases to physical names,
+                        # so the whitelist key lookup is consistent.
                         key = (lt, str(leaf.this.name), rt, str(leaf.expression.name))
                         if key in _XTAB_NONEQUI_WHITELIST:
                             pairwise_atoms.append((lt, str(leaf.this.name),
@@ -1111,6 +1114,23 @@ def _extract_filter_atoms(ast):
 # Rule h: intra-table column-vs-column predicate extraction
 # ---------------------------------------------------------------------------
 
+def _build_alias_map(ast):
+    """Map alias → physical table name from the AST's FROM clause.
+
+    Used by pairwise / xtab atom extractors to ensure atom tuples use
+    physical table names (matching the stats pkl keys).
+    """
+    if not HAS_SQLGLOT:
+        return {}
+    alias_map = {}
+    for tbl in ast.find_all(sqlglot_exp.Table):
+        if tbl.alias:
+            alias_map[tbl.alias] = str(tbl.name)
+        else:
+            alias_map[str(tbl.name)] = str(tbl.name)
+    return alias_map
+
+
 _PAIRWISE_OPS = {
     sqlglot_exp.LT: "<",   sqlglot_exp.LTE: "<=",
     sqlglot_exp.EQ: "=",   sqlglot_exp.NEQ: "!=",
@@ -1124,6 +1144,9 @@ def _extract_pairwise_intra_atoms(ast):
 
     Returns list of (left_table, col_x, col_y, op, None, None).
 
+    Atom tuples use the **physical** table name (not the SQL alias), so they
+    match the stats pkl keys which are keyed by physical name.
+
     Nodes inside Subquery/Exists ancestors are skipped (they are LLM residuals).
     """
     if not HAS_SQLGLOT:
@@ -1131,6 +1154,7 @@ def _extract_pairwise_intra_atoms(ast):
     where = ast.args.get("where")
     if where is None:
         return []
+    alias_map = _build_alias_map(ast)
     out = []
     for cmp_cls, op_str in _PAIRWISE_OPS.items():
         for cmp in where.find_all(cmp_cls):
@@ -1140,8 +1164,10 @@ def _extract_pairwise_intra_atoms(ast):
             if not (isinstance(lhs, sqlglot_exp.Column)
                     and isinstance(rhs, sqlglot_exp.Column)):
                 continue
-            lt = getattr(lhs, "table", None)
-            rt = getattr(rhs, "table", None)
+            lt_raw = getattr(lhs, "table", None)
+            rt_raw = getattr(rhs, "table", None)
+            lt = alias_map.get(lt_raw, lt_raw)
+            rt = alias_map.get(rt_raw, rt_raw)
             if lt and rt and lt == rt:
                 out.append((lt, str(lhs.name), str(rhs.name), op_str, None, None))
     return out
@@ -1177,13 +1203,7 @@ def _extract_xtab_nonequi_atoms(ast):
     where = ast.args.get("where")
     if where is None:
         return []
-    # Build alias → physical-table map.
-    alias_to_phys = {}
-    for tbl in ast.find_all(sqlglot_exp.Table):
-        if tbl.alias:
-            alias_to_phys[tbl.alias] = str(tbl.name)
-        else:
-            alias_to_phys[str(tbl.name)] = str(tbl.name)
+    alias_map = _build_alias_map(ast)
     out = []
     for cmp_cls, op_str in _PAIRWISE_OPS.items():
         for cmp in where.find_all(cmp_cls):
@@ -1195,8 +1215,8 @@ def _extract_xtab_nonequi_atoms(ast):
                 continue
             raw_lt = getattr(lhs, "table", None)
             raw_rt = getattr(rhs, "table", None)
-            lt = alias_to_phys.get(raw_lt) if raw_lt else None
-            rt = alias_to_phys.get(raw_rt) if raw_rt else None
+            lt = alias_map.get(raw_lt) if raw_lt else None
+            rt = alias_map.get(raw_rt) if raw_rt else None
             if not (lt and rt) or lt == rt:
                 continue
             key = (lt, str(lhs.name), rt, str(rhs.name))

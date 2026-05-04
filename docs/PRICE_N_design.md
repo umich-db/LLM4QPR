@@ -101,7 +101,11 @@ filter_dim).
 
 ## 4. What PRICE encodes statistically
 
-PRICE_N's encoder consumes five token types per query:
+PRICE_N's encoder consumes five token types per query, processed by a
+three-stage pipeline (`scale_encoder` → `filter_encoder` → `OR Transformer`).
+Each DNF clause goes through the first two stages independently to produce
+a per-clause embedding; the OR Transformer aggregates per-clause embeddings
+into the single statistics-core embedding that downstream consumers see.
 
 ### 4.1 Join histogram (40 dims, unchanged)
 
@@ -205,6 +209,81 @@ For discrete columns (TPC-DS `cd_marital_status`, `ca_city`), the 2D
 histogram is computed via the SpaceSaving outer-product trick, with OtHeRs
 dropped for high-cardinality columns to avoid diagonal-mass inflation.
 
+### 4.6 OR Transformer (statistics-core composition)
+
+The OR Transformer is the third and final stage of the PRICE encoder,
+**applied uniformly to every query** regardless of clause count. Its input
+is a variable-length list of per-clause embeddings produced by the existing
+`scale_encoder + filter_encoder` pair, one per DNF clause. Its output is
+the single statistics-core embedding that downstream consumers (fusion
+Transformer + MLP) see. Downstream code never sees the raw `filter_encoder`
+output directly.
+
+Architecture: 2-layer multi-head self-attention block with a learned [CLS]
+token. The CLS token attends to the per-clause sequence; its position-0
+output is the statistics-core embedding.
+
+**Why it always runs.** If the OR Transformer were skipped for single-clause
+queries (Identity dispatch by clause count), single-clause queries would
+produce one statistical regime (raw `filter_encoder` output) and
+multi-clause queries would produce a different one (post-OR-aggregation).
+The downstream consumer would see two embedding distributions, training
+would be inconsistent, and the OR Transformer's weights would be updated
+only by rare multi-clause queries. Always-applied semantics avoid all three
+problems. For single-clause input the layer is degenerate — attention over
+a length-1 non-CLS sequence reduces to a learned linear projection of the
+clause embedding plus the CLS bias — but it is still applied, and its
+weights are updated by every query.
+
+**DNF blowup mitigation.** The parser caps DNF expansion at a configurable
+threshold (default `max_clauses = 16`). Queries that would produce more
+than `max_clauses` get the entire mixed-column `Or` block routed to LLM
+residual; the surrounding conjunctive atoms still flow through PRICE as a
+single clause. The OR Transformer always sees ≥ 1 clause input.
+
+### 4.7 Empty-token regimes (no-join, no-filter, no-pairwise queries)
+
+PRICE handles queries with empty token categories gracefully — both
+`scale_encoder` and `filter_encoder` always run, with whatever tokens they
+actually have plus a few placeholders for shape consistency.
+
+| Token type | Possible counts | Placeholder behavior |
+|---|---|---|
+| Virtual [CLS] (in scale stage) | always 1 | hardcoded by `ScaleEmbedding.virtual_token_embedding` |
+| Join histograms | 0 if single-table; else ≥ 1 per join column | for single-table queries, `_create_single_table_features` injects a zero-padded placeholder so `n_jc = 1` |
+| Fanout | 0 if single-table; else `2 × n_joins` | same — zero-padded placeholder, `n_fo = 2` |
+| Tables | always ≥ 1 | every query has at least one FROM table |
+| Filters | 0 if no filter atoms | nothing appended; `n_fc = 0` is fine — the `for i in range(n_filter_col)` loop iterates zero times |
+| Pairwise intra | 0 if no col-op-col atoms | nothing appended; `n_pi = 0` is fine |
+
+The architectural invariant: **every query produces a per-clause embedding
+via `scale_encoder → filter_encoder`, regardless of how many of each token
+type it actually has**. Empty filter / pairwise / join sets are first-class
+cases.
+
+For batching across queries with different counts, `pad_and_cache_features`
+pads to the batch maximum and emits a padding mask; the transformer's
+attention literally ignores padded positions.
+
+The most trivial query (`SELECT count(*) FROM t`) flows through the
+pipeline as one DNF clause:
+
+```
+scale stage:    [CLS, zero_join_placeholder, zero_fanout_L→R, zero_fanout_R→L]
+                → scale_encoder → scale_output (length 4)
+
+filter stage:   [scale_output, table_t]
+                → filter_encoder → emb_1
+
+OR Transformer: [CLS_or, emb_1]
+                → statistics-core embedding
+```
+
+The placeholder zero tokens carry no information (zero embeddings produce
+zero contributions via attention), but they keep the encoder's invariant
+intact: every stage processes a non-empty token sequence, and the output
+shape is fixed.
+
 ---
 
 ## 5. SQL pre-processor pipeline
@@ -269,8 +348,9 @@ design](hybrid_price_llm_sql_representation_updated.md)):
 | Disjoint-column EQ chain `(c=v1 OR c=v2 OR …)` | Same-column OR; collapsed to a single clause via the rule-e IN-list rewrite. |
 | Same-column OR with mixed atom kinds `(c<5 OR c>10)` | Same-column OR; collapsed to a single clause via the `or_atoms` field on the column's filter atom (each leaf becomes one of the K=10 IN-list slots). |
 | Same-column BETWEEN OR `(c BETWEEN 1 AND 3 OR c BETWEEN 7 AND 9)` | Each `BETWEEN` leaf becomes a `("between", low, high)` 3-tuple in `or_atoms`; `_atom_to_slot` converts it to a `(low_norm, high_norm, sel)` range slot. |
-| Mixed-column OR `(a<5 OR b>10)` | Genuine multi-clause DNF; PRICE_N classifies the entire `Or` block as LLM residual. The fusion Transformer learns the disjunction from the textual residual + the conjunctive atoms in the surrounding query. |
-| Multi-clause DNF with shared atoms `((a AND b) OR (a AND c))` | Treated as the mixed-column case above — residual. The multi-clause encoder + OR aggregator from the original design (§6.5) is the principled solution and is **out of scope** for this implementation. |
+| Mixed-column OR `(a<5 OR b>10)` | Genuine multi-clause DNF. Distribute to two clauses, each encoded independently by the `scale_encoder + filter_encoder` pair → two per-clause embeddings; the OR Transformer (§4.6) composes them into the final statistics-core embedding. |
+| Multi-clause DNF with shared atoms `((a AND b) OR (a AND c))` | After distribution → two clauses `(a AND b)` and `(a AND c)`. Each PRICE-encoded independently, then OR-aggregated. The shared `a` atom appears in both clauses; the OR Transformer learns the redundancy implicitly. |
+| Multi-clause DNF beyond `max_clauses` (default 16) | Residual — the entire `Or` block is encoded by the LLM tokenizer to avoid combinatorial blowup. Surrounding conjunctive atoms still flow through PRICE as one clause. |
 
 The implementation enforces this boundary in `_extract_filter_atoms`:
 
@@ -429,6 +509,7 @@ The PRICE encoder gains:
 - **`ScaleEmbedding.fanout_embeddings`**: `Linear(hist_dim+3, n_embd)` (was `+1`) to ingest the wider fanout token.
 - **`FilterEmbedding.filter_embeddings`**: `Linear(75, n_embd)` (was `Linear(43, n_embd)` for base, `Linear(61, ...)` for PRICE_M).
 - **`FilterEmbedding.pairwise_intra_embeddings`** (new): `Linear(70, n_embd)` for the 5th token type.
+- **`OrTransformer`** (new, design-only as of this implementation): the third encoder stage, applied uniformly to every query (§4.6). 2-layer multi-head self-attention block with a learned [CLS] token; CLS position-0 output is the statistics-core embedding. Input is a variable-length sequence of per-clause embeddings produced by the existing `scale_encoder + filter_encoder` pair. For single-clause queries the layer is degenerate (length-1 sequence + CLS) but still runs to keep embedding semantics uniform across queries.
 
 Pretrained PRICE checkpoints load with `strict=False` and a partial-copy
 helper:
@@ -439,6 +520,8 @@ helper:
   (`hist_sum + raw_hist[40]`); the two new scalars start zero-initialized
   and are trained from labels.
 - Pairwise embedding starts fully random.
+- OR Transformer starts fully random (no pretrained counterpart in base
+  PRICE).
 
 ---
 
@@ -463,11 +546,13 @@ helper:
 | Same-table col-op-col | drop | drop | drop | pairwise token (rule j) |
 | Subquery inlining | best-effort | best-effort | best-effort | simple-body only |
 | EXISTS / IN(subq) / scalar | inlined | inlined | inlined | residual |
+| Multi-clause DNF (mixed-column OR) | residual | residual | residual | per-clause encoding + OR Transformer aggregator |
 
 Filter dim: 43 (base / S) → 61 (M) → 75 (N).
 Fanout dim: 40 (base / S / M) → 42 (N).
 Pairwise intra dim: 0 (base / S / M) → 70 (N, anti-diagonal range-slot format).
 New token type count: 4 (base / S / M) → 5 (N).
+Encoder stages: 2 (base / S / M: scale + filter) → 3 (N: scale + filter + OR).
 
 ---
 

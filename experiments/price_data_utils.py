@@ -829,14 +829,30 @@ def _build_atoms_meta_from_leaves(leaves):
         ]:
             if isinstance(leaf, cmp_cls):
                 if isinstance(leaf.expression, sqlglot_exp.Column):
-                    # cross-column → pairwise atom (same-table or xtab)
+                    # cross-column → pairwise atom (same-table or xtab whitelist)
                     lt = getattr(leaf.this, "table", None)
                     rt = getattr(leaf.expression, "table", None)
                     op = {sqlglot_exp.GTE: ">=", sqlglot_exp.GT: ">",
                           sqlglot_exp.LTE: "<=", sqlglot_exp.LT: "<"}[cmp_cls]
                     if lt and rt and lt == rt:
+                        # Same-table pairwise (rule j)
                         pairwise_atoms.append((lt, str(leaf.this.name),
                                                str(leaf.expression.name), op, None, None))
+                    elif lt and rt:
+                        # Different tables — check xtab whitelist (rule h).
+                        # Note: alias resolution (alias→physical table name) that
+                        # _extract_xtab_nonequi_atoms performs at the whole-AST level
+                        # is not available here (we only have the leaf node).  For
+                        # post-transform PRICE-aliased queries the alias IS the physical
+                        # name, so the direct comparison works.  For queries where the
+                        # user provides short aliases (e.g., "inv", "cs") the key will
+                        # not match the whitelist — those fall through silently and rely
+                        # on the query-level non-OR path instead.
+                        key = (lt, str(leaf.this.name), rt, str(leaf.expression.name))
+                        if key in _XTAB_NONEQUI_WHITELIST:
+                            pairwise_atoms.append((lt, str(leaf.this.name),
+                                                   str(leaf.expression.name), op,
+                                                   rt, str(leaf.expression.name)))
                     matched_range = True
                     break
                 col = _column_str(leaf.this)
@@ -4052,28 +4068,19 @@ def generate_price_features(workload, sql_list, db_name, bin_size=40,
                     for l, r, s in _PRICE_N_SIDE_CACHE.get(transformed_sql, [])
                 ) if price_n_fanout else {}
 
-                # Query-level pairwise atoms (structural, apply to every clause)
-                if ast and price_n_pairwise:
-                    qlevel_pairwise = (
-                        _extract_pairwise_intra_atoms(ast) +
-                        [(a[0], a[1], a[1], a[2], a[3], a[4])
-                         for a in _extract_xtab_nonequi_atoms(ast)]
-                    )
-                else:
-                    qlevel_pairwise = []
-
                 if ast is not None:
                     meta_list = _extract_atoms_per_clause(
                         ast, max_clauses=price_n_or_max_clauses)
                 else:
                     meta_list = [None]
 
-                # Attach query-level pairwise atoms and join_sides to each clause
+                # Attach join_sides (query-level, FROM clause is shared across
+                # all DNF clauses) to each clause.  Pairwise atoms are NOT
+                # attached here — they are WHERE-clause leaf predicates and are
+                # already populated per-clause by _build_atoms_meta_from_leaves.
                 for meta in meta_list:
                     if meta is None:
                         continue
-                    existing_pw = meta.get("pairwise_atoms", [])
-                    meta["pairwise_atoms"] = list(qlevel_pairwise) + existing_pw
                     meta["join_sides"] = qlevel_sides
 
                 result = sql2feat.create_sql_features(transformed_sql, atoms_meta=meta_list)

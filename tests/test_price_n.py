@@ -1020,3 +1020,55 @@ def test_extract_atoms_per_clause_single_conjunction():
     fa = metas[0]["filter_atoms"]
     assert "t.a" in fa and fa["t.a"]["range_high"] == 5
     assert "t.b" in fa and fa["t.b"]["range_low"] == 10
+
+
+# ---------------------------------------------------------------------------
+# Per-clause pairwise attribution — bug-fix tests (DNF patch)
+# ---------------------------------------------------------------------------
+
+def test_per_clause_pairwise_only_in_clause_with_pairwise():
+    """Pairwise atom (A.x < A.y) inside one OR disjunct should land in
+    only that clause's atoms_meta, not be duplicated across all clauses."""
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _extract_atoms_per_clause
+    import sqlglot
+    ast = sqlglot.parse_one(
+        "SELECT * FROM tpch_l "
+        "WHERE (tpch_l.l_shipdate < tpch_l.l_commitdate AND tpch_l.l_quantity = 5) "
+        "OR tpch_l.l_quantity = 99")
+    metas = _extract_atoms_per_clause(ast)
+    assert len(metas) == 2
+
+    # Find which clause(s) have the pairwise atom (l_shipdate < l_commitdate)
+    pairwise_present_in = []
+    for i, meta in enumerate(metas):
+        for atom in meta.get("pairwise_atoms", []):
+            if atom[0] == "tpch_l" and atom[1] == "l_shipdate" \
+               and atom[2] == "l_commitdate":
+                pairwise_present_in.append(i)
+
+    # Should appear in exactly ONE clause (not duplicated across both).
+    assert len(pairwise_present_in) == 1, (
+        f"Expected pairwise atom in exactly 1 clause, found in clauses: "
+        f"{pairwise_present_in}")
+
+
+def test_per_clause_pairwise_distributes_when_in_top_conjunction():
+    """When pairwise atom is in top-level AND with the OR block, distributive
+    law correctly puts it in BOTH DNF clauses."""
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _extract_atoms_per_clause
+    import sqlglot
+    ast = sqlglot.parse_one(
+        "SELECT * FROM tpch_l "
+        "WHERE tpch_l.l_shipdate < tpch_l.l_commitdate "
+        "AND (tpch_l.l_quantity = 5 OR tpch_l.l_quantity = 99)")
+    metas = _extract_atoms_per_clause(ast)
+    assert len(metas) == 2
+
+    # Both clauses should have the pairwise atom (top-level AND distributes).
+    for i, meta in enumerate(metas):
+        pairwise_atoms = meta.get("pairwise_atoms", [])
+        assert any(a[0] == "tpch_l" and a[1] == "l_shipdate"
+                   and a[2] == "l_commitdate" for a in pairwise_atoms), \
+            f"pairwise atom missing from clause {i}: {meta}"

@@ -250,12 +250,37 @@ def get_new(args1, dat_path, dat_path_train_list, dat_path_test):
     ds_info.get_columns(col_min_max)
 
     if len(dat_path_train_list)==1 and dat_path_train_list[0]==dat_path_test:
-        # Split by queries 
+        # Split by queries
         total_rows = len(df)
-        indices = list(range(total_rows))
-        # train 0.7, val 0.15, test 0.15
-        train_ids, temp_ids = train_test_split(indices, test_size=0.33, random_state=42)
-        val_ids, test_ids = train_test_split(temp_ids, test_size=0.5, random_state=42)
+
+        workload_test = getattr(args1, 'workload_test', None)
+        # TPC-DS template-based split: 90 templates × 10 queries each = 900 rows.
+        # 9 templates → test (90 queries held out), 81 templates → train+val (810 queries).
+        # Within the 81 train+val templates, 10% of queries → val, 90% → train.
+        # Templates are inferred from row order: rows [t*10, t*10+10) belong to template t.
+        if workload_test == 'tpcds' and total_rows == 900:
+            import random as _random
+            _rng = _random.Random(42)
+            _all_templates = list(range(90))
+            _rng.shuffle(_all_templates)
+            test_template_ids = sorted(_all_templates[:9])
+            trainval_template_ids = sorted(_all_templates[9:])
+
+            test_ids = []
+            for t in test_template_ids:
+                test_ids.extend(range(t * 10, t * 10 + 10))
+
+            trainval_ids = []
+            for t in trainval_template_ids:
+                trainval_ids.extend(range(t * 10, t * 10 + 10))
+
+            train_ids, val_ids = train_test_split(
+                trainval_ids, test_size=0.1, random_state=42)
+        else:
+            indices = list(range(total_rows))
+            # train 0.7, val 0.15, test 0.15
+            train_ids, temp_ids = train_test_split(indices, test_size=0.33, random_state=42)
+            val_ids, test_ids = train_test_split(temp_ids, test_size=0.5, random_state=42)
     else:
         train_rows = len(df_train)
         test_rows = len(df_test)

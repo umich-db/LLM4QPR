@@ -97,6 +97,14 @@ A single mutual-exclusion guard at parse time enforces that at most one of
 `{--price_s, --price_m, --price_n_filter}` is set (they all change
 filter_dim).
 
+**Pretrained PRICE checkpoint compatibility for discrete columns**: under
+lex-order the per-dim semantic of the histogram segment shifts from
+"frequency rank" to "lex rank" for discrete columns. For PRICE_N runs,
+prefer `--price_random_init` so that filter-embedding weights for discrete
+columns are trained from scratch rather than inheriting frequency-ranked
+pretrained weights. Numeric columns are unaffected (their histogram ordering
+is unchanged).
+
 ---
 
 ## 4. What PRICE encodes statistically
@@ -143,6 +151,20 @@ Encodes `col = X`, `col IN (X1, …, Xn)`, `col != X` (rule a extension via
 range-pair gap encoding), `col BETWEEN x AND y`, `col IS NULL`,
 `col IS NOT NULL`. For >K IN-values, the K most-selective populate slots
 explicitly and the rest fold into the tail bucket.
+
+For **discrete (varchar / categorical) columns**, PRICE_N applies lex-order
+to the top-39 SpaceSaving keys (OtHeRs stays at bin 39 as the catch-all).
+This makes range queries (`col </<=/>/>= 'string'`, `col BETWEEN 'A' AND
+'B'`) first-class: they map to a contiguous range of lex-sorted bins,
+encoded as a single `(low, high, sel)` slot. Selectivity sums the
+frequencies of all top-39 lex-bracket-matching bins; the OtHeRs
+lex-below-X contribution is dropped for simplicity (acceptable when OtHeRs
+mass is small or when the literal is in top-39).
+
+Frequency-rank ordering in PRICE_S / PRICE_M / base PRICE is unchanged;
+only PRICE_N's `Sql2FeatureN.space_saving_summary` overrides the ordering.
+Stats files (`summary40.pkl`) are unchanged — the lex re-sort is applied at
+load time in PRICE_N only.
 
 For same-column OR chains (`c = v1 OR c < v2 OR c > v3`, including those
 produced by NNF expansion of `NOT BETWEEN`), the `or_atoms` field on the
@@ -548,6 +570,7 @@ helper:
 | Subquery inlining | best-effort | best-effort | best-effort | simple-body only |
 | EXISTS / IN(subq) / scalar | inlined | inlined | inlined | residual |
 | Multi-clause DNF (mixed-column OR) | residual | residual | residual | per-clause encoding + OR Transformer aggregator (`--price_n_or`) |
+| Range filter on discrete column (`col < 'string'`) | drop | drop | drop | **lex-order range slot (top-39 contribution; OtHeRs dropped)** |
 
 Filter dim: 43 (base / S) → 61 (M) → 75 (N).
 Fanout dim: 40 (base / S / M) → 42 (N).

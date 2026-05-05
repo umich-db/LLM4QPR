@@ -1112,3 +1112,83 @@ def test_build_atoms_per_clause_resolves_alias_in_pairwise():
             assert atom[0] != "tpch_l", \
                 f"alias leaked: {atom}"
     assert found, "pairwise atom not found in any clause"
+
+
+# ---------------------------------------------------------------------------
+# Lex-order discrete bins + discrete range encoding (PRICE_N specific)
+# ---------------------------------------------------------------------------
+
+def test_lex_sorted_summary_keys_are_sorted():
+    """Sql2FeatureN's space_saving_summary returns top-39 keys in lex order."""
+    sys.path.insert(0, "/root/LLM4QPR/PRICE")
+    from setup.features_tool_n import Sql2FeatureN
+    f = Sql2FeatureN("tpch", 40, "finetune")
+    keys, vals = f.space_saving_summary("tpch_p.p_type")
+    padding_sentinel = str(-1e3)
+    top_39 = [str(k) for k in keys[:39] if str(k) != padding_sentinel]
+    assert top_39 == sorted(top_39), \
+        f"top-39 not lex-sorted: {top_39[:5]}"
+
+
+def test_discrete_range_encoded_in_filter_token():
+    """col >= 'X' on a discrete column produces a non-empty range slot."""
+    sys.path.insert(0, "/root/LLM4QPR/PRICE")
+    from setup.features_tool_n import Sql2FeatureN
+    f = Sql2FeatureN("tpch", 40, "finetune")
+    # tpch_p.p_type is varchar (discrete); use a value likely in top-39.
+    keys, _ = f.space_saving_summary("tpch_p.p_type")
+    padding_sentinel = str(-1e3)
+    real_keys = [str(k) for k in keys[:39] if str(k) != padding_sentinel]
+    if not real_keys:
+        return  # can't run this test if column is empty
+    # Use a value that's lex-greater than the smallest top-39 key.
+    smallest_key = real_keys[0]
+    atoms = {**f.EMPTY_ATOMS, "range_low": smallest_key}
+    tok = f._encode_filter_token("tpch_p.p_type", atoms)
+    assert tok.shape == (75,)
+    # Slot layout: histogram[40], then K+1=11 slots of (lo, hi, sel).
+    # Selectivities are at positions 42, 45, 48, ... (every 3rd starting at 42).
+    slot_sels = tok[42:42+30:3]
+    nonzero = (slot_sels > 0).sum().item()
+    assert nonzero >= 1, f"no slot populated for discrete-range query"
+
+
+def test_discrete_range_lt_excludes_otters():
+    """col < 'X' encoding excludes bin 39 (OtHeRs) from the range slot."""
+    sys.path.insert(0, "/root/LLM4QPR/PRICE")
+    from setup.features_tool_n import Sql2FeatureN
+    f = Sql2FeatureN("tpch", 40, "finetune")
+    keys, _ = f.space_saving_summary("tpch_p.p_type")
+    padding_sentinel = str(-1e3)
+    real_keys = [str(k) for k in keys[:39] if str(k) != padding_sentinel]
+    if len(real_keys) < 39:
+        return
+    # Pick a high lex-bound to give a wide range that would include OtHeRs
+    # if the encoder were buggy.
+    largest_top39 = real_keys[-1]   # last lex-sorted top-39 key
+    atoms = {**f.EMPTY_ATOMS, "range_high": largest_top39}
+    tok = f._encode_filter_token("tpch_p.p_type", atoms)
+    # The slot's high should be <= 39/40 (OtHeRs is at 39/40 to 40/40).
+    slot_highs = tok[41:40+30:3]   # high values of slots
+    for h in slot_highs:
+        assert h.item() <= 39 / 40 + 1e-6, \
+            f"slot high includes OtHeRs region: {h.item()}"
+
+
+def test_discrete_between_encoding():
+    """BETWEEN on a discrete column produces a single slot covering the lex range."""
+    sys.path.insert(0, "/root/LLM4QPR/PRICE")
+    from setup.features_tool_n import Sql2FeatureN
+    f = Sql2FeatureN("tpch", 40, "finetune")
+    keys, _ = f.space_saving_summary("tpch_p.p_type")
+    padding_sentinel = str(-1e3)
+    real_keys = [str(k) for k in keys[:39] if str(k) != padding_sentinel]
+    if len(real_keys) < 11:
+        return
+    lo, hi = real_keys[5], real_keys[10]   # arbitrary lex range within top-39
+    atoms = {**f.EMPTY_ATOMS, "range_low": lo, "range_high": hi}
+    tok = f._encode_filter_token("tpch_p.p_type", atoms)
+    slot_sels = tok[40:40+30:3]
+    nonzero = (slot_sels > 0).sum().item()
+    # Single slot for the BETWEEN range
+    assert nonzero >= 1

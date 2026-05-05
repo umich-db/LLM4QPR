@@ -44,6 +44,8 @@ class Sql2FeatureN(Sql2Feature):
         # (used to look up null_fraction keys which use raw table names)
         abbrev = self.information_coltype.get("abbrev", {})
         self._alias_to_table = {v: k for k, v in abbrev.items()}
+        # Cache for lex-sorted SpaceSaving summaries (populated lazily).
+        self._lex_sorted_summary = {}
 
     @property
     def filter_dim_n(self) -> int:
@@ -68,6 +70,32 @@ class Sql2FeatureN(Sql2Feature):
             return None
         with open(path, 'rb') as f:
             return pickle.load(f)
+
+    def space_saving_summary(self, column):
+        """PRICE_N override: returns top-39 keys sorted lexicographically
+        (OtHeRs stays at bin 39 as the catch-all).
+
+        Range queries on discrete columns map to contiguous bins under this
+        ordering, so col </<=/>/>= literal can be encoded as a single range slot.
+        The frequencies themselves (vals[i]) are unchanged; only the bin
+        assignment (which key sits at which index) is reordered to follow lex.
+
+        Key types are preserved (not coerced to str) so that existing callers
+        using keys.index(value) with integer lookups continue to work.
+        The sort uses str(k) solely as the comparison key.
+        """
+        if column in self._lex_sorted_summary:
+            return self._lex_sorted_summary[column]
+        keys, vals = super().space_saving_summary(column)
+        # keys is length bin_size = 40. keys[39] is 'OtHeRs' (or padding).
+        # Sort top-39 by lex using str(k) as the sort key, but preserve original
+        # key types so that existing index lookups remain compatible.
+        top_pairs = list(zip(keys[:39], vals[:39]))
+        top_pairs.sort(key=lambda kv: str(kv[0]))
+        sorted_keys = [k for k, _ in top_pairs] + [keys[39]]
+        sorted_vals = [v for _, v in top_pairs] + [vals[39]]
+        self._lex_sorted_summary[column] = (sorted_keys, sorted_vals)
+        return self._lex_sorted_summary[column]
 
     # ---- filter token (rules a, b) ----
 
@@ -458,6 +486,44 @@ class Sql2FeatureN(Sql2Feature):
             return None
         return (lo, hi)
 
+    def _range_to_region_discrete(self, column, low_v, high_v, keys):
+        """Map a discrete-column range [low_v, high_v] to a normalized region.
+
+        Uses lex-order over the top-39 SpaceSaving keys (already guaranteed by
+        PRICE_N's space_saving_summary override). Per the design:
+          - OtHeRs (bin 39) is excluded from range slots (its lex distribution
+            is unknown; we drop the OtHeRs contribution for simplicity).
+          - For literals not in top-39, find the closest top-39 key in the
+            appropriate lex direction (binary search over the lex-sorted top-39).
+
+        Returns (low_norm, high_norm) in [0, 1] coordinates over the 40-bin
+        histogram, or None if the range is empty/unrepresentable.
+        """
+        import bisect
+        top_39_keys = [str(k) for k in keys[:39]]   # already lex-sorted by override
+        # Drop padding sentinels (e.g., str(-1e3) = '-1000.0')
+        padding_sentinel = str(-1e3)
+        real_keys = [k for k in top_39_keys if k != padding_sentinel]
+        if not real_keys:
+            return None
+
+        # For col >= low_v: lex-position of the smallest top-39 key >= low_v.
+        if low_v is None:
+            lo_idx = 0
+        else:
+            lo_idx = bisect.bisect_left(top_39_keys, str(low_v))
+
+        # For col <= high_v: lex-position-after the largest top-39 key <= high_v.
+        if high_v is None:
+            hi_idx = 39   # all 39 top-39 keys (excluding OtHeRs at bin 39)
+        else:
+            hi_idx = bisect.bisect_right(top_39_keys, str(high_v))
+
+        if lo_idx >= hi_idx:
+            return None   # empty range under top-39 lex window
+
+        return (lo_idx / self.bin_size, hi_idx / self.bin_size)
+
     def _region_selectivity_continuous(self, column, lo_norm, hi_norm):
         """Compute the histogram selectivity for a normalized [lo, hi] region."""
         bin_edges = self.columns_bin_edges[column]
@@ -566,9 +632,9 @@ class Sql2FeatureN(Sql2Feature):
         rh = atoms.get("range_high")
         if rl is not None or rh is not None:
             if is_discrete:
-                # For discrete columns, range bounds aren't well-defined (lex order
-                # is meaningless under SpaceSaving rank). Skip for now.
-                pass
+                range_r = self._range_to_region_discrete(column, rl, rh, keys)
+                if range_r is not None:
+                    regions = self._intersect_with_region(regions, range_r)
             else:
                 range_r = self._range_to_region_continuous(column, rl, rh)
                 if range_r is not None:

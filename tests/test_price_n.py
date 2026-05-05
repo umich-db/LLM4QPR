@@ -1192,3 +1192,80 @@ def test_discrete_between_encoding():
     nonzero = (slot_sels > 0).sum().item()
     # Single slot for the BETWEEN range
     assert nonzero >= 1
+
+
+# ─── Filename suffix tests (Step 4 of task) ────────────────────────────────
+#
+# train.py runs at module level (parse_args, HF auth, etc.), so we cannot
+# do a plain `import train`.  Instead we exec only the two helper functions
+# from source text, which is safe and avoids the module-level side effects.
+
+def _load_train_suffix_helpers():
+    """Return (_price_path_suffix, _arch_path_suffix) by exec-ing only the
+    function definitions from train.py (no module-level side effects)."""
+    import ast as _ast
+    src_path = "/root/LLM4QPR/experiments/train.py"
+    with open(src_path) as fh:
+        source = fh.read()
+    tree = _ast.parse(source)
+    # Extract just the two function defs we need
+    wanted = {"_price_path_suffix", "_arch_path_suffix"}
+    funcs_src = []
+    for node in _ast.walk(tree):
+        if isinstance(node, _ast.FunctionDef) and node.name in wanted:
+            funcs_src.append(_ast.get_source_segment(source, node))
+    ns = {}
+    for fsrc in funcs_src:
+        exec(compile(fsrc, src_path, "exec"), ns)  # noqa: S102
+    return ns["_price_path_suffix"], ns["_arch_path_suffix"]
+
+
+def test_no_llm_residual_appears_in_filename():
+    """When --no_llm_residual is set, the resulting arch suffix includes 'noLLMres'."""
+    _, _arch_path_suffix = _load_train_suffix_helpers()
+
+    class ArgsP:
+        pass
+
+    args = ArgsP()
+    args.no_llm_residual = True
+    suffix = _arch_path_suffix(args)
+    assert "noLLMres" in suffix
+
+
+def test_price_n_or_appears_in_filename():
+    """--price_n_or shows up in the price suffix."""
+    _price_path_suffix, _ = _load_train_suffix_helpers()
+
+    class ArgsP:
+        pass
+
+    args = ArgsP()
+    args.price_n_or = True
+    suffix = _price_path_suffix(args)
+    assert "priceNor" in suffix
+
+
+def test_max_clauses_non_default_appears_in_filename():
+    """Non-default --price_n_or_max_clauses appears as 'mc<N>'."""
+    _price_path_suffix, _ = _load_train_suffix_helpers()
+
+    class ArgsP:
+        pass
+
+    args = ArgsP()
+    args.price_n_or_max_clauses = 8   # non-default (default=16)
+    suffix = _price_path_suffix(args)
+    assert "mc8" in suffix
+
+
+def test_default_args_produce_empty_arch_suffix():
+    """No flags set → empty architecture suffix (baseline filename stays clean)."""
+    _, _arch_path_suffix = _load_train_suffix_helpers()
+
+    class ArgsP:
+        pass
+
+    args = ArgsP()
+    suffix = _arch_path_suffix(args)
+    assert suffix == ""

@@ -146,6 +146,14 @@ def parse_args():
                         help="PRICE_N shorthand: equivalent to "
                              "--price_n_parsing --price_n_filter "
                              "--price_n_fanout --price_n_pairwise.")
+    parser.add_argument("--no_llm_residual", action="store_true", default=False,
+                        help="Disable the LLM-residual fusion path. When set, "
+                             "the PRICE statistics-core embedding (from the OR "
+                             "Transformer in PRICE_N, or the filter_encoder CLS "
+                             "for base/S/M) goes directly to the prediction MLP "
+                             "or cross-attention with query plan embeddings, "
+                             "without merging with LLM-residual embeddings. "
+                             "Default: LLM residual fusion is active (current behavior).")
     parser.add_argument("--price_n_or", action="store_true", default=False,
                         help="PRICE_N DNF expansion: expand mixed-column OR blocks into "
                              "multiple DNF clauses (up to --price_n_or_max_clauses), each "

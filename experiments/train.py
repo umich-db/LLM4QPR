@@ -36,6 +36,7 @@ def _price_dims(argsP, bin_size):
 
 
 def _price_path_suffix(argsP):
+    """PRICE-mode suffix: priceS / priceM / priceN_*, plus DNF flags."""
     parts = []
     if getattr(argsP, 'price_s', False):           parts.append("priceS")
     if getattr(argsP, 'price_m', False):           parts.append("priceM")
@@ -43,6 +44,53 @@ def _price_path_suffix(argsP):
     if getattr(argsP, 'price_n_fanout', False):    parts.append("priceNfan")
     if getattr(argsP, 'price_n_pairwise', False):  parts.append("priceNpw")
     if getattr(argsP, 'price_n_parsing', False):   parts.append("priceNprs")
+    if getattr(argsP, 'price_n_or', False):        parts.append("priceNor")
+    # Default for max_clauses is 16 — only emit if non-default
+    mc = getattr(argsP, 'price_n_or_max_clauses', 16)
+    if mc != 16:
+        parts.append(f"mc{mc}")
+    # Default for max_n_pairwise_intra is 8 — only emit if non-default
+    mp = getattr(argsP, 'price_max_n_pairwise_intra', 8)
+    if mp != 8:
+        parts.append(f"pw{mp}")
+    return ("_" + "_".join(parts)) if parts else ""
+
+
+def _arch_path_suffix(argsP):
+    """Architecture-flag suffix: fusion modes, freezing, gates, residual toggle."""
+    parts = []
+    # LLM residual toggle (new)
+    if getattr(argsP, 'no_llm_residual', False):
+        parts.append("noLLMres")
+    # Fusion flags
+    if getattr(argsP, 'use_cross_attention', False):          parts.append("crossAttn")
+    if getattr(argsP, 'use_bi_cross_attention', False):       parts.append("biCrossAttn")
+    if getattr(argsP, 'use_reverse_cross_attention', False):  parts.append("revCrossAttn")
+    if getattr(argsP, 'refined_pool', False):                 parts.append("refinedPool")
+    if getattr(argsP, 'triple_concat', False):                parts.append("tripleConcat")
+    if getattr(argsP, 'inflate_price', False):                parts.append("inflatePRICE")
+    # Other architecture toggles
+    if getattr(argsP, 'use_price_gate', False):               parts.append("priceGate")
+    if getattr(argsP, 'price_init_frozen_joint', False):      parts.append("frozenInit")
+    if getattr(argsP, 'freeze_llm', False):                   parts.append("freezeLLM")
+    if getattr(argsP, 'freeze_all_price', False):             parts.append("freezeAllPRICE")
+    if getattr(argsP, 'freeze_price_encoder', False):         parts.append("freezePRICEenc")
+    # Hyperparameter overrides only when non-default
+    if getattr(argsP, 'freeze_llm_until_epoch', 0) > 0:
+        parts.append(f"frzLLM{argsP.freeze_llm_until_epoch}")
+    n_cross = getattr(argsP, 'n_cross_layers', 2)
+    if n_cross != 2 and (
+        getattr(argsP, 'use_cross_attention', False) or
+        getattr(argsP, 'use_bi_cross_attention', False) or
+        getattr(argsP, 'use_reverse_cross_attention', False)
+    ):
+        parts.append(f"cx{n_cross}")
+    nl = getattr(argsP, 'price_n_layers', 6)
+    if nl != 6:
+        parts.append(f"nl{nl}")
+    fr = getattr(argsP, 'price_ffn_ratio', 4.0)
+    if fr != 4.0:
+        parts.append(f"fr{fr}")
     return ("_" + "_".join(parts)) if parts else ""
 
 
@@ -98,23 +146,11 @@ if (argsP.algo == "llm_price" and getattr(argsP, 'retrain_mlp', False) and
     _ft_bs = getattr(argsP, 'ft_batch_size', 16)
     _task_str = "card" if argsP.card else "time"
     _price_suffix = _price_path_suffix(argsP)
+    _arch_suffix = _arch_path_suffix(argsP)
     _ri = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
-    _rp = "_refinedPool" if getattr(argsP, 'refined_pool', False) else ""
-    _tc = "_tripleConcat" if getattr(argsP, 'triple_concat', False) else ""
-    _ip = "_inflatePRICE" if getattr(argsP, 'inflate_price', False) else ""
-    _nl = f"_pL{argsP.price_n_layers}" if getattr(argsP, 'price_n_layers', 6) != 6 else ""
-    _fr = f"_ffn{argsP.price_ffn_ratio:g}" if getattr(argsP, 'price_ffn_ratio', 4.0) != 4.0 else ""
-    _n_cross = getattr(argsP, 'n_cross_layers', 2)
-    _nc = f"_cx{_n_cross}" if _n_cross != 2 else ""
     _ft_epochs = getattr(argsP, 'ft_num_epoch', 0)
     _es = f"_e{_ft_epochs}" if _ft_epochs > 0 else ""
-    if _pws == "bi_cross_attn_joint":
-        _attn = "_biCrossAttn"
-    elif _pws == "reverse_cross_attn_joint":
-        _attn = "_revCrossAttn"
-    else:
-        _attn = "_crossAttn"
-    _weight_prefix = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{_task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{_ft_bs}{_price_suffix}_llm_price{_attn}{_rp}{_tc}{_ip}{_ri}{_nl}{_fr}{_nc}{_es}"
+    _weight_prefix = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{_task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{_ft_bs}{_price_suffix}_llm_price{_arch_suffix}{_ri}{_es}"
     _test_tag = f"_test-{argsP.workload_test}" if getattr(argsP, 'workload_test', '') else ""
     _early_cache_path = f"{_weight_prefix}{_test_tag}_retrainMLP_embeddings.pt"
     if os.path.exists(_early_cache_path):
@@ -148,21 +184,11 @@ if "llm" in argsP.algo and not _retrain_mlp_cache_hit:
       _price_suffix = _price_path_suffix(argsP)
       if pws in ("joint", "joint_frozen_init", "gated_joint", "cross_attn_joint", "bi_cross_attn_joint", "reverse_cross_attn_joint"):
         # Joint finetuning: LLM weights saved with _llm_price_llm suffix
-        frozen_init_suffix = "_frozenInit" if pws == "joint_frozen_init" else ""
-        gated_suffix = "_gated" if pws == "gated_joint" else ""
-        cross_attn_suffix = "_crossAttn" if pws == "cross_attn_joint" else ""
-        bi_cross_attn_suffix = "_biCrossAttn" if pws == "bi_cross_attn_joint" else ""
-        rev_cross_attn_suffix = "_revCrossAttn" if pws == "reverse_cross_attn_joint" else ""
-        refined_pool_suffix = "_refinedPool" if getattr(argsP, 'refined_pool', False) else ""
-        triple_concat_suffix = "_tripleConcat" if getattr(argsP, 'triple_concat', False) else ""
-        inflate_price_suffix = "_inflatePRICE" if getattr(argsP, 'inflate_price', False) else ""
+        _arch_suffix = _arch_path_suffix(argsP)
         rand_init_suffix = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
-        n_layers_suffix = f"_pL{argsP.price_n_layers}" if getattr(argsP, 'price_n_layers', 6) != 6 else ""
-        ffn_ratio_suffix = f"_ffn{argsP.price_ffn_ratio:g}" if getattr(argsP, 'price_ffn_ratio', 4.0) != 4.0 else ""
-        n_cross_suffix = f"_cx{argsP.n_cross_layers}" if pws in ("cross_attn_joint", "bi_cross_attn_joint", "reverse_cross_attn_joint") and getattr(argsP, 'n_cross_layers', 2) != 2 else ""
         ft_epochs = getattr(argsP, 'ft_num_epoch', 0)
         epoch_suffix = f"_e{ft_epochs}" if ft_epochs > 0 else ""
-        llm_path = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{_price_suffix}_llm_price{frozen_init_suffix}{gated_suffix}{cross_attn_suffix}{bi_cross_attn_suffix}{rev_cross_attn_suffix}{refined_pool_suffix}{triple_concat_suffix}{inflate_price_suffix}{rand_init_suffix}{n_layers_suffix}{ffn_ratio_suffix}{n_cross_suffix}{epoch_suffix}_llm.pt"
+        llm_path = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{_price_suffix}_llm_price{_arch_suffix}{rand_init_suffix}{epoch_suffix}_llm.pt"
       else:
         # Standalone LLM finetune: weights saved with _llm suffix
         llm_path = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}_llm.pt"
@@ -593,16 +619,11 @@ elif argsP.algo == "llm_price" and not _retrain_mlp_cache_hit:
     ft_bs = getattr(argsP, 'ft_batch_size', 16)
     task_str = "card" if argsP.card else "time"
     _price_suffix = _price_path_suffix(argsP)
+    _arch_suffix = _arch_path_suffix(argsP)
     rand_init_suffix = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
-    refined_pool_suffix = "_refinedPool" if getattr(argsP, 'refined_pool', False) else ""
-    triple_concat_suffix = "_tripleConcat" if getattr(argsP, 'triple_concat', False) else ""
-    inflate_price_suffix = "_inflatePRICE" if getattr(argsP, 'inflate_price', False) else ""
-    n_layers_suffix = f"_pL{argsP.price_n_layers}" if getattr(argsP, 'price_n_layers', 6) != 6 else ""
-    ffn_ratio_suffix = f"_ffn{argsP.price_ffn_ratio:g}" if getattr(argsP, 'price_ffn_ratio', 4.0) != 4.0 else ""
-    n_cross_suffix = f"_cx{n_cross}" if n_cross != 2 else ""
     ft_epochs = getattr(argsP, 'ft_num_epoch', 0)
     epoch_suffix = f"_e{ft_epochs}" if ft_epochs > 0 else ""
-    weight_prefix = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{_price_suffix}_llm_price{attn_tag}{refined_pool_suffix}{triple_concat_suffix}{inflate_price_suffix}{rand_init_suffix}{n_layers_suffix}{ffn_ratio_suffix}{n_cross_suffix}{epoch_suffix}"
+    weight_prefix = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{_price_suffix}_llm_price{_arch_suffix}{rand_init_suffix}{epoch_suffix}"
 
     price_sd = torch.load(f"{weight_prefix}_price.pt", map_location=device)
     model_comb.price.load_state_dict(price_sd)
@@ -647,187 +668,245 @@ elif argsP.algo == "llm_price_finetune":
   from model.encoder import RegressionModel
   from models.llm_price_model import PRICEEmbedder, LLMPriceJointModel, GatedLLMPriceJointModel, FrozenLLMPriceModel, CrossAttentionPRICEEmbedder, CrossAttentionLLMPriceModel, BiCrossAttentionPRICEEmbedder, BiCrossAttentionLLMPriceModel, ReverseCrossAttentionPRICEEmbedder, ReverseCrossAttentionLLMPriceModel, InflatedBiCrossAttentionPRICEEmbedder, InflatedBiCrossAttentionLLMPriceModel
 
-  # Load pretrained PRICE model (skip if random init)
-  price_state_dict = None
-  if not getattr(argsP, 'price_random_init', False):
-    price_state_dict = torch.load(argsP.price_model_path, map_location=device)
-    # Strip DataParallel 'module.' prefix
-    price_state_dict = {k.replace('module.', ''): v for k, v in price_state_dict.items()}
+  # --no_llm_residual: skip LLM/fusion components; build a PRICE-only model
+  # (mirrors the price_finetune branch) and reroute algo so the rest of the
+  # training/save logic uses the correct path.
+  if getattr(argsP, 'no_llm_residual', False):
+      print("[train] --no_llm_residual: building PRICE-only model; "
+            "LLM and fusion components are skipped.")
+      from models.llm_price_model import PRICEFinetunWrapper
+      bin_size = getattr(argsP, 'price_bin_size', 40)
+      table_dim = 4
+      filter_dim_nr, fanout_dim_nr, pairwise_intra_dim_nr = _price_dims(argsP, bin_size)
+      _price_n_embd_nr = getattr(argsP, 'price_n_embd', 256)
+      _price_n_heads_nr = getattr(argsP, 'price_n_heads', 8)
+      _price_ffn_ratio_nr = getattr(argsP, 'price_ffn_ratio', 4.0)
+      _use_or_transformer_nr = any([
+          getattr(argsP, "price_n_pairwise", False),
+          getattr(argsP, "price_n_filter", False),
+          getattr(argsP, "price_n_fanout", False),
+          getattr(argsP, "price_n_parsing", False),
+      ])
+      _nr_price_model = RegressionModel(
+          n_join_col=argsP.price_max_n_join_col, n_fanout=argsP.price_max_n_fanout,
+          n_table=argsP.price_max_n_table, n_filter_col=argsP.price_max_n_filter_col,
+          n_pairwise_intra=getattr(argsP, "price_max_n_pairwise_intra", 8)
+                            if getattr(argsP, "price_n_pairwise", False) else 0,
+          hist_dim=bin_size, table_dim=table_dim, filter_dim=filter_dim_nr,
+          fanout_dim=fanout_dim_nr, pairwise_intra_dim=pairwise_intra_dim_nr,
+          query_hidden_dim=512, final_hidden_dim=1024, output_dim=1,
+          n_embd=_price_n_embd_nr, n_layers=getattr(argsP, 'price_n_layers', 6),
+          n_heads=_price_n_heads_nr, dropout_rate=0.1, ffn_ratio=_price_ffn_ratio_nr,
+          use_or_transformer=_use_or_transformer_nr
+      )
+      if not getattr(argsP, 'price_random_init', False):
+          _nr_sd = torch.load(argsP.price_model_path, map_location=device)
+          _nr_sd = {k.replace('module.', ''): v for k, v in _nr_sd.items()}
+          _nr_model_sd = _nr_price_model.state_dict()
+          for k, v in _nr_sd.items():
+              if k not in _nr_model_sd:
+                  continue
+              if _nr_model_sd[k].shape == v.shape:
+                  _nr_model_sd[k] = v
+              elif _nr_model_sd[k].dim() == v.dim():
+                  slices = tuple(slice(0, min(ms, vs)) for ms, vs in
+                                 zip(_nr_model_sd[k].shape, v.shape))
+                  _nr_model_sd[k][slices] = v[slices]
+          _nr_price_model.load_state_dict(_nr_model_sd)
+          print(f"[no_llm_residual] Loaded PRICE weights from {argsP.price_model_path}")
+      else:
+          print("[no_llm_residual] Random PRICE initialization")
+      model_comb = PRICEFinetunWrapper(_nr_price_model)
+      # Reroute: treat this as price_finetune for training + save logic
+      argsP.algo = "price_finetune"
+      if not getattr(argsP, 'card', False):
+          print("[no_llm_residual] Forcing --card=True for price_finetune save path")
+          argsP.card = True
 
-  # Build PRICE RegressionModel with correct dimensions
-  max_njc = argsP.price_max_n_join_col
-  max_nfo = argsP.price_max_n_fanout
-  max_ntb = argsP.price_max_n_table
-  max_nfc = argsP.price_max_n_filter_col
-  bin_size = getattr(argsP, 'price_bin_size', 40)
-  table_dim = 4
-  filter_dim, fanout_dim, pairwise_intra_dim = _price_dims(argsP, bin_size)
+  if argsP.algo == "llm_price_finetune":
+    # Full LLM+PRICE model construction (--no_llm_residual was NOT set)
 
-  _price_n_embd = getattr(argsP, 'price_n_embd', 256)
-  _price_n_heads = getattr(argsP, 'price_n_heads', 8)
-  _price_ffn_ratio = getattr(argsP, 'price_ffn_ratio', 4.0)
-  _use_or_transformer = any([
-      getattr(argsP, "price_n_pairwise", False),
-      getattr(argsP, "price_n_filter", False),
-      getattr(argsP, "price_n_fanout", False),
-      getattr(argsP, "price_n_parsing", False),
-  ])
-  price_model = RegressionModel(
-      n_join_col=max_njc, n_fanout=max_nfo, n_table=max_ntb, n_filter_col=max_nfc,
-      n_pairwise_intra=getattr(argsP, "price_max_n_pairwise_intra", 8)
-                        if getattr(argsP, "price_n_pairwise", False) else 0,
-      hist_dim=bin_size, table_dim=table_dim, filter_dim=filter_dim,
-      fanout_dim=fanout_dim, pairwise_intra_dim=pairwise_intra_dim,
-      query_hidden_dim=512, final_hidden_dim=1024, output_dim=1,
-      n_embd=_price_n_embd, n_layers=getattr(argsP, 'price_n_layers', 6), n_heads=_price_n_heads,
-      dropout_rate=0.1, ffn_ratio=_price_ffn_ratio,
-      use_or_transformer=_use_or_transformer
-  )
-  # Load weights with partial init for PRICE_M (histogram bins shared, operator dims differ)
-  def _load_price_sd(model, ckpt_sd, label=""):
-      """Load checkpoint into PRICE model with partial init for size-mismatched weights.
-      For filter_embeddings.weight [n_embd,43]->[n_embd,61], copies the first min(43,61)
-      columns (histogram bins) and leaves the rest randomly initialized."""
-      model_sd = model.state_dict()
-      for k, v in ckpt_sd.items():
-          if k not in model_sd:
-              continue
-          if model_sd[k].shape == v.shape:
-              model_sd[k] = v
-          elif model_sd[k].dim() == v.dim():
-              slices = tuple(slice(0, min(ms, vs)) for ms, vs in zip(model_sd[k].shape, v.shape))
-              model_sd[k][slices] = v[slices]
-              print(f"  Partial init {k}: copied {[s.stop for s in slices]} of {list(model_sd[k].shape)} from checkpoint {list(v.shape)}")
-      model.load_state_dict(model_sd)
-      if label:
-          print(label)
-
-  if getattr(argsP, 'price_random_init', False):
-    print("[PRICE] Random initialization (skipping pretrained weights)")
-  elif getattr(argsP, 'price_init_frozen_joint', False):
-    # Load frozen-joint PRICE weights instead of pretrained
-    task_str = "card" if argsP.card else "time"
-    _price_suffix = _price_path_suffix(argsP)
-    frozen_price_path = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{task_str}_inference_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{_price_suffix}_llm_price_price.pt"
-    frozen_sd = torch.load(frozen_price_path, map_location=device)
-    _load_price_sd(price_model, frozen_sd, f"Loaded frozen-joint PRICE weights from {frozen_price_path}")
-  else:
-    _load_price_sd(price_model, price_state_dict, f"Loaded PRICE weights from {argsP.price_model_path}")
-
-  price_embedder = PRICEEmbedder(price_model)
-
-  if getattr(argsP, 'freeze_llm', False):
-    # Frozen LLM path: model has no LLM, uses pre-computed embeddings
-    model_comb = FrozenLLMPriceModel(price_embedder, argsP.embed_size, 512, argsP.hid_units)
-    n_trainable = sum(1 for p in model_comb.parameters() if p.requires_grad)
-    print(f"[freeze_llm] Using FrozenLLMPriceModel with pre-computed LLM embeddings. {n_trainable} trainable parameter tensors (PRICE + MLP).")
-  elif getattr(argsP, 'use_cross_attention', False):
-    # Cross-attention path: PRICE tokens attend to LLM hidden states
-    n_cross = getattr(argsP, 'n_cross_layers', 2)
-    cross_price_embedder = CrossAttentionPRICEEmbedder(
-        price_model, argsP.embed_size, n_cross_layers=n_cross,
-        n_embd=256, n_heads=8, dropout_rate=0.1
-    )
-    # Copy PRICE weights that were loaded into price_embedder to cross_price_embedder
-    # (the shared layers have the same names, cross-attention layers are new/random)
+    # Load pretrained PRICE model (skip if random init)
+    price_state_dict = None
     if not getattr(argsP, 'price_random_init', False):
-      shared_sd = {k: v for k, v in price_embedder.state_dict().items()
-                   if k in cross_price_embedder.state_dict() and
-                   cross_price_embedder.state_dict()[k].shape == v.shape}
-      cross_price_embedder.load_state_dict(shared_sd, strict=False)
-      print(f"[cross_attention] Copied {len(shared_sd)} shared PRICE weight tensors; "
-            f"cross-attention layers randomly initialized")
-    model_comb = CrossAttentionLLMPriceModel(LLM, cross_price_embedder, argsP.embed_size, 512, argsP.hid_units)
-    n_cross_params = sum(p.numel() for n, p in cross_price_embedder.named_parameters()
-                         if 'cross_attn' in n or 'llm_proj' in n)
-    print(f"[cross_attention] {n_cross} cross-attention layers, {n_cross_params:,} new params")
-  elif getattr(argsP, 'use_bi_cross_attention', False) and getattr(argsP, 'inflate_price', False):
-    # Inflated BiCrossAttn: PRICE projected UP to LLM dim, both directions at LLM dim
-    n_cross = getattr(argsP, 'n_cross_layers', 2)
-    inf_price_embedder = InflatedBiCrossAttentionPRICEEmbedder(
-        price_model, argsP.embed_size, n_cross_layers=n_cross,
-        n_embd=256, n_heads=8, dropout_rate=0.1
+      price_state_dict = torch.load(argsP.price_model_path, map_location=device)
+      # Strip DataParallel 'module.' prefix
+      price_state_dict = {k.replace('module.', ''): v for k, v in price_state_dict.items()}
+
+    # Build PRICE RegressionModel with correct dimensions
+    max_njc = argsP.price_max_n_join_col
+    max_nfo = argsP.price_max_n_fanout
+    max_ntb = argsP.price_max_n_table
+    max_nfc = argsP.price_max_n_filter_col
+    bin_size = getattr(argsP, 'price_bin_size', 40)
+    table_dim = 4
+    filter_dim, fanout_dim, pairwise_intra_dim = _price_dims(argsP, bin_size)
+
+    _price_n_embd = getattr(argsP, 'price_n_embd', 256)
+    _price_n_heads = getattr(argsP, 'price_n_heads', 8)
+    _price_ffn_ratio = getattr(argsP, 'price_ffn_ratio', 4.0)
+    _use_or_transformer = any([
+        getattr(argsP, "price_n_pairwise", False),
+        getattr(argsP, "price_n_filter", False),
+        getattr(argsP, "price_n_fanout", False),
+        getattr(argsP, "price_n_parsing", False),
+    ])
+    price_model = RegressionModel(
+        n_join_col=max_njc, n_fanout=max_nfo, n_table=max_ntb, n_filter_col=max_nfc,
+        n_pairwise_intra=getattr(argsP, "price_max_n_pairwise_intra", 8)
+                          if getattr(argsP, "price_n_pairwise", False) else 0,
+        hist_dim=bin_size, table_dim=table_dim, filter_dim=filter_dim,
+        fanout_dim=fanout_dim, pairwise_intra_dim=pairwise_intra_dim,
+        query_hidden_dim=512, final_hidden_dim=1024, output_dim=1,
+        n_embd=_price_n_embd, n_layers=getattr(argsP, 'price_n_layers', 6), n_heads=_price_n_heads,
+        dropout_rate=0.1, ffn_ratio=_price_ffn_ratio,
+        use_or_transformer=_use_or_transformer
     )
-    if not getattr(argsP, 'price_random_init', False):
-      shared_sd = {k: v for k, v in price_embedder.state_dict().items()
-                   if k in inf_price_embedder.state_dict() and
-                   inf_price_embedder.state_dict()[k].shape == v.shape}
-      inf_price_embedder.load_state_dict(shared_sd, strict=False)
-      print(f"[inflated_bi_cross] Copied {len(shared_sd)} shared PRICE weight tensors; "
-            f"cross-attention layers randomly initialized")
-    model_comb = InflatedBiCrossAttentionLLMPriceModel(LLM, inf_price_embedder, argsP.embed_size, argsP.hid_units)
-    n_cross_params = sum(p.numel() for p in inf_price_embedder.cross_attn_parameters())
-    print(f"[inflated_bi_cross] {n_cross} cross-attention layers at LLM dim ({argsP.embed_size}), {n_cross_params:,} new params")
-    print(f"[inflated_bi_cross] MLP input dim = {argsP.embed_size * 2} (2 × LLM dim)")
-  elif getattr(argsP, 'use_bi_cross_attention', False):
-    # Standard BiCrossAttn: LLM projected DOWN to PRICE dim (256)
-    n_cross = getattr(argsP, 'n_cross_layers', 2)
-    bi_price_embedder = BiCrossAttentionPRICEEmbedder(
-        price_model, argsP.embed_size, n_cross_layers=n_cross,
-        n_embd=256, n_heads=8, dropout_rate=0.1
-    )
-    if not getattr(argsP, 'price_random_init', False):
-      shared_sd = {k: v for k, v in price_embedder.state_dict().items()
-                   if k in bi_price_embedder.state_dict() and
-                   bi_price_embedder.state_dict()[k].shape == v.shape}
-      bi_price_embedder.load_state_dict(shared_sd, strict=False)
-      print(f"[bi_cross_attention] Copied {len(shared_sd)} shared PRICE weight tensors; "
-            f"bi-cross-attention layers randomly initialized")
-    model_comb = BiCrossAttentionLLMPriceModel(LLM, bi_price_embedder, argsP.embed_size, 512, argsP.hid_units, triple_concat=getattr(argsP, "triple_concat", False))
-    n_cross_params = sum(p.numel() for n, p in bi_price_embedder.named_parameters()
-                         if 'cross_attn' in n or 'llm_proj' in n)
-    print(f"[bi_cross_attention] {n_cross} bidirectional cross-attention layers, {n_cross_params:,} new params")
-  elif getattr(argsP, 'use_reverse_cross_attention', False):
-    # Reverse cross-attention path: LLM tokens attend to PRICE tokens
-    n_cross = getattr(argsP, 'n_cross_layers', 2)
-    rev_price_embedder = ReverseCrossAttentionPRICEEmbedder(
-        price_model, argsP.embed_size, n_cross_layers=n_cross,
-        n_embd=256, n_heads=8, dropout_rate=0.1
-    )
-    # Copy PRICE weights that were loaded into price_embedder to rev_price_embedder
-    if not getattr(argsP, 'price_random_init', False):
-      shared_sd = {k: v for k, v in price_embedder.state_dict().items()
-                   if k in rev_price_embedder.state_dict() and
-                   rev_price_embedder.state_dict()[k].shape == v.shape}
-      rev_price_embedder.load_state_dict(shared_sd, strict=False)
-      print(f"[reverse_cross_attention] Copied {len(shared_sd)} shared PRICE weight tensors; "
-            f"reverse cross-attention layers randomly initialized")
-    model_comb = ReverseCrossAttentionLLMPriceModel(LLM, rev_price_embedder, argsP.embed_size, 512, argsP.hid_units)
-    n_cross_params = sum(p.numel() for n, p in rev_price_embedder.named_parameters()
-                         if 'cross_attn' in n or 'price_proj' in n)
-    print(f"[reverse_cross_attention] {n_cross} reverse cross-attention layers, {n_cross_params:,} new params")
-  else:
-    if getattr(argsP, 'use_price_gate', False):
-      model_comb = GatedLLMPriceJointModel(LLM, price_embedder, argsP.embed_size, 512, argsP.hid_units)
+    # Load weights with partial init for PRICE_M (histogram bins shared, operator dims differ)
+    def _load_price_sd(model, ckpt_sd, label=""):
+        """Load checkpoint into PRICE model with partial init for size-mismatched weights.
+        For filter_embeddings.weight [n_embd,43]->[n_embd,61], copies the first min(43,61)
+        columns (histogram bins) and leaves the rest randomly initialized."""
+        model_sd = model.state_dict()
+        for k, v in ckpt_sd.items():
+            if k not in model_sd:
+                continue
+            if model_sd[k].shape == v.shape:
+                model_sd[k] = v
+            elif model_sd[k].dim() == v.dim():
+                slices = tuple(slice(0, min(ms, vs)) for ms, vs in zip(model_sd[k].shape, v.shape))
+                model_sd[k][slices] = v[slices]
+                print(f"  Partial init {k}: copied {[s.stop for s in slices]} of {list(model_sd[k].shape)} from checkpoint {list(v.shape)}")
+        model.load_state_dict(model_sd)
+        if label:
+            print(label)
+
+    if getattr(argsP, 'price_random_init', False):
+      print("[PRICE] Random initialization (skipping pretrained weights)")
+    elif getattr(argsP, 'price_init_frozen_joint', False):
+      # Load frozen-joint PRICE weights instead of pretrained
+      task_str = "card" if argsP.card else "time"
+      _price_suffix = _price_path_suffix(argsP)
+      frozen_price_path = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{task_str}_inference_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{_price_suffix}_llm_price_price.pt"
+      frozen_sd = torch.load(frozen_price_path, map_location=device)
+      _load_price_sd(price_model, frozen_sd, f"Loaded frozen-joint PRICE weights from {frozen_price_path}")
     else:
-      model_comb = LLMPriceJointModel(LLM, price_embedder, argsP.embed_size, 512, argsP.hid_units)
+      _load_price_sd(price_model, price_state_dict, f"Loaded PRICE weights from {argsP.price_model_path}")
 
-  # Freeze PRICE parameters if requested
-  if getattr(argsP, 'freeze_all_price', False):
-    # Freeze ALL PRICE parameters (for LLMOnly control)
-    n_frozen = 0
-    for param in model_comb.price.parameters():
-      param.requires_grad = False
-      n_frozen += 1
-    print(f"[freeze_all_price] Froze ALL {n_frozen} PRICE param tensors (0 trainable)")
-  elif getattr(argsP, 'freeze_price_encoder', False):
-    unfreeze_last_n = getattr(argsP, 'unfreeze_last_n_blocks', 0)
-    n_frozen = 0
-    for name, param in model_comb.price.named_parameters():
-      # Check if this is an embedding layer (always freeze)
-      if name.startswith(('scale_embedding', 'filter_embedding')):
+    price_embedder = PRICEEmbedder(price_model)
+
+    if getattr(argsP, 'freeze_llm', False):
+      # Frozen LLM path: model has no LLM, uses pre-computed embeddings
+      model_comb = FrozenLLMPriceModel(price_embedder, argsP.embed_size, 512, argsP.hid_units)
+      n_trainable = sum(1 for p in model_comb.parameters() if p.requires_grad)
+      print(f"[freeze_llm] Using FrozenLLMPriceModel with pre-computed LLM embeddings. {n_trainable} trainable parameter tensors (PRICE + MLP).")
+    elif getattr(argsP, 'use_cross_attention', False):
+      # Cross-attention path: PRICE tokens attend to LLM hidden states
+      n_cross = getattr(argsP, 'n_cross_layers', 2)
+      cross_price_embedder = CrossAttentionPRICEEmbedder(
+          price_model, argsP.embed_size, n_cross_layers=n_cross,
+          n_embd=256, n_heads=8, dropout_rate=0.1
+      )
+      # Copy PRICE weights that were loaded into price_embedder to cross_price_embedder
+      # (the shared layers have the same names, cross-attention layers are new/random)
+      if not getattr(argsP, 'price_random_init', False):
+        shared_sd = {k: v for k, v in price_embedder.state_dict().items()
+                     if k in cross_price_embedder.state_dict() and
+                     cross_price_embedder.state_dict()[k].shape == v.shape}
+        cross_price_embedder.load_state_dict(shared_sd, strict=False)
+        print(f"[cross_attention] Copied {len(shared_sd)} shared PRICE weight tensors; "
+              f"cross-attention layers randomly initialized")
+      model_comb = CrossAttentionLLMPriceModel(LLM, cross_price_embedder, argsP.embed_size, 512, argsP.hid_units)
+      n_cross_params = sum(p.numel() for n, p in cross_price_embedder.named_parameters()
+                           if 'cross_attn' in n or 'llm_proj' in n)
+      print(f"[cross_attention] {n_cross} cross-attention layers, {n_cross_params:,} new params")
+    elif getattr(argsP, 'use_bi_cross_attention', False) and getattr(argsP, 'inflate_price', False):
+      # Inflated BiCrossAttn: PRICE projected UP to LLM dim, both directions at LLM dim
+      n_cross = getattr(argsP, 'n_cross_layers', 2)
+      inf_price_embedder = InflatedBiCrossAttentionPRICEEmbedder(
+          price_model, argsP.embed_size, n_cross_layers=n_cross,
+          n_embd=256, n_heads=8, dropout_rate=0.1
+      )
+      if not getattr(argsP, 'price_random_init', False):
+        shared_sd = {k: v for k, v in price_embedder.state_dict().items()
+                     if k in inf_price_embedder.state_dict() and
+                     inf_price_embedder.state_dict()[k].shape == v.shape}
+        inf_price_embedder.load_state_dict(shared_sd, strict=False)
+        print(f"[inflated_bi_cross] Copied {len(shared_sd)} shared PRICE weight tensors; "
+              f"cross-attention layers randomly initialized")
+      model_comb = InflatedBiCrossAttentionLLMPriceModel(LLM, inf_price_embedder, argsP.embed_size, argsP.hid_units)
+      n_cross_params = sum(p.numel() for p in inf_price_embedder.cross_attn_parameters())
+      print(f"[inflated_bi_cross] {n_cross} cross-attention layers at LLM dim ({argsP.embed_size}), {n_cross_params:,} new params")
+      print(f"[inflated_bi_cross] MLP input dim = {argsP.embed_size * 2} (2 × LLM dim)")
+    elif getattr(argsP, 'use_bi_cross_attention', False):
+      # Standard BiCrossAttn: LLM projected DOWN to PRICE dim (256)
+      n_cross = getattr(argsP, 'n_cross_layers', 2)
+      bi_price_embedder = BiCrossAttentionPRICEEmbedder(
+          price_model, argsP.embed_size, n_cross_layers=n_cross,
+          n_embd=256, n_heads=8, dropout_rate=0.1
+      )
+      if not getattr(argsP, 'price_random_init', False):
+        shared_sd = {k: v for k, v in price_embedder.state_dict().items()
+                     if k in bi_price_embedder.state_dict() and
+                     bi_price_embedder.state_dict()[k].shape == v.shape}
+        bi_price_embedder.load_state_dict(shared_sd, strict=False)
+        print(f"[bi_cross_attention] Copied {len(shared_sd)} shared PRICE weight tensors; "
+              f"bi-cross-attention layers randomly initialized")
+      model_comb = BiCrossAttentionLLMPriceModel(LLM, bi_price_embedder, argsP.embed_size, 512, argsP.hid_units, triple_concat=getattr(argsP, "triple_concat", False))
+      n_cross_params = sum(p.numel() for n, p in bi_price_embedder.named_parameters()
+                           if 'cross_attn' in n or 'llm_proj' in n)
+      print(f"[bi_cross_attention] {n_cross} bidirectional cross-attention layers, {n_cross_params:,} new params")
+    elif getattr(argsP, 'use_reverse_cross_attention', False):
+      # Reverse cross-attention path: LLM tokens attend to PRICE tokens
+      n_cross = getattr(argsP, 'n_cross_layers', 2)
+      rev_price_embedder = ReverseCrossAttentionPRICEEmbedder(
+          price_model, argsP.embed_size, n_cross_layers=n_cross,
+          n_embd=256, n_heads=8, dropout_rate=0.1
+      )
+      # Copy PRICE weights that were loaded into price_embedder to rev_price_embedder
+      if not getattr(argsP, 'price_random_init', False):
+        shared_sd = {k: v for k, v in price_embedder.state_dict().items()
+                     if k in rev_price_embedder.state_dict() and
+                     rev_price_embedder.state_dict()[k].shape == v.shape}
+        rev_price_embedder.load_state_dict(shared_sd, strict=False)
+        print(f"[reverse_cross_attention] Copied {len(shared_sd)} shared PRICE weight tensors; "
+              f"reverse cross-attention layers randomly initialized")
+      model_comb = ReverseCrossAttentionLLMPriceModel(LLM, rev_price_embedder, argsP.embed_size, 512, argsP.hid_units)
+      n_cross_params = sum(p.numel() for n, p in rev_price_embedder.named_parameters()
+                           if 'cross_attn' in n or 'price_proj' in n)
+      print(f"[reverse_cross_attention] {n_cross} reverse cross-attention layers, {n_cross_params:,} new params")
+    else:
+      if getattr(argsP, 'use_price_gate', False):
+        model_comb = GatedLLMPriceJointModel(LLM, price_embedder, argsP.embed_size, 512, argsP.hid_units)
+      else:
+        model_comb = LLMPriceJointModel(LLM, price_embedder, argsP.embed_size, 512, argsP.hid_units)
+
+    # Freeze PRICE parameters if requested
+    if getattr(argsP, 'freeze_all_price', False):
+      # Freeze ALL PRICE parameters (for LLMOnly control)
+      n_frozen = 0
+      for param in model_comb.price.parameters():
         param.requires_grad = False
         n_frozen += 1
-      # Check if this is an encoder block
-      elif name.startswith(('scale_encoder.blocks.', 'filter_encoder.blocks.')):
-        block_num = int(name.split('blocks.')[1].split('.')[0])
-        if block_num < getattr(argsP, 'price_n_layers', 6) - unfreeze_last_n:
+      print(f"[freeze_all_price] Froze ALL {n_frozen} PRICE param tensors (0 trainable)")
+    elif getattr(argsP, 'freeze_price_encoder', False):
+      unfreeze_last_n = getattr(argsP, 'unfreeze_last_n_blocks', 0)
+      n_frozen = 0
+      for name, param in model_comb.price.named_parameters():
+        # Check if this is an embedding layer (always freeze)
+        if name.startswith(('scale_embedding', 'filter_embedding')):
           param.requires_grad = False
           n_frozen += 1
-    n_trainable_price = sum(1 for p in model_comb.price.parameters() if p.requires_grad)
-    total_trainable = sum(p.numel() for p in model_comb.price.parameters() if p.requires_grad)
-    print(f"[freeze_price_encoder] Froze {n_frozen} PRICE param tensors, {n_trainable_price} remain trainable ({total_trainable:,} params)"
-          f" (unfreeze_last_n_blocks={unfreeze_last_n})")
+        # Check if this is an encoder block
+        elif name.startswith(('scale_encoder.blocks.', 'filter_encoder.blocks.')):
+          block_num = int(name.split('blocks.')[1].split('.')[0])
+          if block_num < getattr(argsP, 'price_n_layers', 6) - unfreeze_last_n:
+            param.requires_grad = False
+            n_frozen += 1
+      n_trainable_price = sum(1 for p in model_comb.price.parameters() if p.requires_grad)
+      total_trainable = sum(p.numel() for p in model_comb.price.parameters() if p.requires_grad)
+      print(f"[freeze_price_encoder] Froze {n_frozen} PRICE param tensors, {n_trainable_price} remain trainable ({total_trainable:,} params)"
+            f" (unfreeze_last_n_blocks={unfreeze_last_n})")
 
 elif argsP.algo == "price_finetune":
   import sys as _sys, os as _os
@@ -1022,20 +1101,10 @@ elif argsP.algo == "price_finetune":
 _ckpt_prefix = None
 if argsP.algo == "llm_price_finetune":
     _task = "card" if argsP.card else "time"
-    _fi = "_frozenInit" if getattr(argsP, 'price_init_frozen_joint', False) else ""
-    _ga = "_gated" if getattr(argsP, 'use_price_gate', False) else ""
-    _ca = "_crossAttn" if getattr(argsP, 'use_cross_attention', False) else ""
-    _bca = "_biCrossAttn" if getattr(argsP, 'use_bi_cross_attention', False) else ""
-    _rca = "_revCrossAttn" if getattr(argsP, 'use_reverse_cross_attention', False) else ""
-    _rp = "_refinedPool" if getattr(argsP, 'refined_pool', False) else ""
-    _tc = "_tripleConcat" if getattr(argsP, 'triple_concat', False) else ""
-    _ip = "_inflatePRICE" if getattr(argsP, 'inflate_price', False) else ""
     _price_suffix = _price_path_suffix(argsP)
+    _arch_suffix = _arch_path_suffix(argsP)
     _ri = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
-    _nl = f"_pL{argsP.price_n_layers}" if getattr(argsP, 'price_n_layers', 6) != 6 else ""
-    _fr = f"_ffn{argsP.price_ffn_ratio:g}" if getattr(argsP, 'price_ffn_ratio', 4.0) != 4.0 else ""
-    _nc = f"_cx{argsP.n_cross_layers}" if (getattr(argsP, 'use_cross_attention', False) or getattr(argsP, 'use_bi_cross_attention', False) or getattr(argsP, 'use_reverse_cross_attention', False)) and getattr(argsP, 'n_cross_layers', 2) != 2 else ""
-    _ckpt_prefix = f"{argsP.canonical_wl_prefix}_{_task}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{_price_suffix}_llm_price{_fi}{_ga}{_ca}{_bca}{_rca}{_rp}{_tc}{_ip}{_ri}{_nl}{_fr}{_nc}"
+    _ckpt_prefix = f"{argsP.canonical_wl_prefix}_{_task}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{_price_suffix}_llm_price{_arch_suffix}{_ri}"
 elif argsP.algo == "price_finetune":
     _price_suffix = _price_path_suffix(argsP)
     _ri = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
@@ -1187,21 +1256,11 @@ elif argsP.algo == "llm_price_finetune" and not getattr(argsP, '_cross_attn_infe
     os.makedirs(save_path, exist_ok=True)
 
     task_str = "card" if argsP.card else "time"
-    frozen_init_suffix = "_frozenInit" if getattr(argsP, 'price_init_frozen_joint', False) else ""
-    gated_suffix = "_gated" if getattr(argsP, 'use_price_gate', False) else ""
-    cross_attn_suffix = "_crossAttn" if getattr(argsP, 'use_cross_attention', False) else ""
-    bi_cross_attn_suffix = "_biCrossAttn" if getattr(argsP, 'use_bi_cross_attention', False) else ""
-    rev_cross_attn_suffix = "_revCrossAttn" if getattr(argsP, 'use_reverse_cross_attention', False) else ""
-    refined_pool_suffix = "_refinedPool" if getattr(argsP, 'refined_pool', False) else ""
-    triple_concat_suffix = "_tripleConcat" if getattr(argsP, 'triple_concat', False) else ""
-    inflate_price_suffix = "_inflatePRICE" if getattr(argsP, 'inflate_price', False) else ""
     _price_suffix = _price_path_suffix(argsP)
+    _arch_suffix = _arch_path_suffix(argsP)
     rand_init_suffix = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
-    n_layers_suffix = f"_pL{argsP.price_n_layers}" if getattr(argsP, 'price_n_layers', 6) != 6 else ""
-    ffn_ratio_suffix = f"_ffn{argsP.price_ffn_ratio:g}" if getattr(argsP, 'price_ffn_ratio', 4.0) != 4.0 else ""
-    n_cross_suffix = f"_cx{argsP.n_cross_layers}" if (getattr(argsP, 'use_cross_attention', False) or getattr(argsP, 'use_bi_cross_attention', False) or getattr(argsP, 'use_reverse_cross_attention', False)) and getattr(argsP, 'n_cross_layers', 2) != 2 else ""
     epoch_suffix = f"_e{argsP.num_epoch}"
-    prefix = f"{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{_price_suffix}_llm_price{frozen_init_suffix}{gated_suffix}{cross_attn_suffix}{bi_cross_attn_suffix}{rev_cross_attn_suffix}{refined_pool_suffix}{triple_concat_suffix}{inflate_price_suffix}{rand_init_suffix}{n_layers_suffix}{ffn_ratio_suffix}{n_cross_suffix}{epoch_suffix}"
+    prefix = f"{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{_price_suffix}_llm_price{_arch_suffix}{rand_init_suffix}{epoch_suffix}"
 
     if not getattr(argsP, 'freeze_llm', False):
         llm_sd = trained_model.llm.model.state_dict()

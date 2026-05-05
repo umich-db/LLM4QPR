@@ -74,7 +74,7 @@ context the model actually needs.
 
 ---
 
-## 3. Four orthogonal CLI flags
+## 3. Five orthogonal CLI flags
 
 PRICE_N's parsing rules and structural changes are independently
 controllable, so a user can mix-and-match with PRICE_S / PRICE_M:
@@ -86,6 +86,7 @@ controllable, so a user can mix-and-match with PRICE_S / PRICE_M:
 | `--price_n_fanout` | 42-dim fanout token (orphan fraction + outer-join preserve flag) | off |
 | `--price_n_pairwise` | 5th token type: 70-dim pairwise intra-table filter (same-table column comparisons + cross-table whitelist) | off |
 | `--price_n` | Convenience shorthand: enables all four above | off |
+| `--no_llm_residual` | Disable the LLM-residual fusion path. PRICE statistics-core embedding (from the OR Transformer in PRICE_N, or the filter_encoder CLS for base/S/M) goes directly to the prediction head; the LLM branch and any fusion-with-LLM components are skipped. Default off (LLM residual is included). | off |
 
 Useful combinations:
 - `--price_n` — full PRICE_N.

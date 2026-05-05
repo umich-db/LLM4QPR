@@ -3103,6 +3103,61 @@ def _load_price_embedder(argsP, max_njc, max_nfo, max_ntb, max_nfc, device):
 
     source = getattr(argsP, 'price_weights_source', 'pretrained')
     ft_bs = getattr(argsP, 'ft_batch_size', 16)
+    # Build price suffix using same logic as train._price_path_suffix for consistency.
+    # (We inline it here to avoid circular import; keep in sync with train.py.)
+    def _price_path_suffix_local(ap):
+        """Mirror of train._price_path_suffix — keep in sync."""
+        parts = []
+        if getattr(ap, 'price_s', False):           parts.append("priceS")
+        if getattr(ap, 'price_m', False):           parts.append("priceM")
+        if getattr(ap, 'price_n_filter', False):    parts.append("priceNflt")
+        if getattr(ap, 'price_n_fanout', False):    parts.append("priceNfan")
+        if getattr(ap, 'price_n_pairwise', False):  parts.append("priceNpw")
+        if getattr(ap, 'price_n_parsing', False):   parts.append("priceNprs")
+        if getattr(ap, 'price_n_or', False):        parts.append("priceNor")
+        mc = getattr(ap, 'price_n_or_max_clauses', 16)
+        if mc != 16:
+            parts.append(f"mc{mc}")
+        mp = getattr(ap, 'price_max_n_pairwise_intra', 8)
+        if mp != 8:
+            parts.append(f"pw{mp}")
+        return ("_" + "_".join(parts)) if parts else ""
+
+    def _arch_path_suffix_local(ap):
+        """Mirror of train._arch_path_suffix — keep in sync."""
+        parts = []
+        if getattr(ap, 'no_llm_residual', False):                 parts.append("noLLMres")
+        if getattr(ap, 'use_cross_attention', False):             parts.append("crossAttn")
+        if getattr(ap, 'use_bi_cross_attention', False):          parts.append("biCrossAttn")
+        if getattr(ap, 'use_reverse_cross_attention', False):     parts.append("revCrossAttn")
+        if getattr(ap, 'refined_pool', False):                    parts.append("refinedPool")
+        if getattr(ap, 'triple_concat', False):                   parts.append("tripleConcat")
+        if getattr(ap, 'inflate_price', False):                   parts.append("inflatePRICE")
+        if getattr(ap, 'use_price_gate', False):                  parts.append("priceGate")
+        if getattr(ap, 'price_init_frozen_joint', False):         parts.append("frozenInit")
+        if getattr(ap, 'freeze_llm', False):                      parts.append("freezeLLM")
+        if getattr(ap, 'freeze_all_price', False):                parts.append("freezeAllPRICE")
+        if getattr(ap, 'freeze_price_encoder', False):            parts.append("freezePRICEenc")
+        if getattr(ap, 'freeze_llm_until_epoch', 0) > 0:
+            parts.append(f"frzLLM{ap.freeze_llm_until_epoch}")
+        n_cross = getattr(ap, 'n_cross_layers', 2)
+        if n_cross != 2 and (
+            getattr(ap, 'use_cross_attention', False) or
+            getattr(ap, 'use_bi_cross_attention', False) or
+            getattr(ap, 'use_reverse_cross_attention', False)
+        ):
+            parts.append(f"cx{n_cross}")
+        nl = getattr(ap, 'price_n_layers', 6)
+        if nl != 6:
+            parts.append(f"nl{nl}")
+        fr = getattr(ap, 'price_ffn_ratio', 4.0)
+        if fr != 4.0:
+            parts.append(f"fr{fr}")
+        return ("_" + "_".join(parts)) if parts else ""
+
+    price_path_suffix = _price_path_suffix_local(argsP)
+    arch_path_suffix = _arch_path_suffix_local(argsP)
+    # Keep legacy suffix vars for backward compat with source-specific paths below
     price_m_suffix = "_priceM" if getattr(argsP, 'price_m', False) else ""
     price_s_suffix = "_priceS" if getattr(argsP, 'price_s', False) else ""
     rand_init_suffix = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
@@ -3134,40 +3189,38 @@ def _load_price_embedder(argsP, max_njc, max_nfo, max_ntb, max_nfc, device):
         _partial_init_load(price_embedder, price_sd, f"Loaded pretrained PRICE weights from {argsP.price_model_path}")
     elif source == "separate":
         # Load PRICE weights finetuned separately on cardinality
-        price_weight_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_card_b{ft_bs}{price_m_suffix}{price_s_suffix}{rand_init_suffix}{n_layers_suffix}{epoch_suffix}_price_separate.pt"
+        price_weight_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_card_b{ft_bs}{price_path_suffix}{rand_init_suffix}{epoch_suffix}_price_separate.pt"
         price_sd = torch.load(price_weight_path, map_location=device)
         _partial_init_load(price_embedder, price_sd, f"Loaded separately finetuned PRICE weights from {price_weight_path}")
     elif source == "joint":
         # Load PRICE weights from joint LLM+PRICE finetuning
         task_str = "card" if argsP.card else "time"
-        price_weight_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_m_suffix}{price_s_suffix}_llm_price{rand_init_suffix}{n_layers_suffix}{epoch_suffix}_price.pt"
+        price_weight_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_path_suffix}_llm_price{arch_path_suffix}{rand_init_suffix}{epoch_suffix}_price.pt"
         price_sd = torch.load(price_weight_path, map_location=device)
         _partial_init_load(price_embedder, price_sd, f"Loaded jointly finetuned PRICE weights from {price_weight_path}")
     elif source == "frozen_joint":
         # Load PRICE weights finetuned with frozen LLM (llm_mode=inference)
         task_str = "card" if argsP.card else "time"
-        price_weight_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_inference_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_m_suffix}{price_s_suffix}_llm_price{rand_init_suffix}{n_layers_suffix}{epoch_suffix}_price.pt"
+        price_weight_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_inference_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_path_suffix}_llm_price{arch_path_suffix}{rand_init_suffix}{epoch_suffix}_price.pt"
         price_sd = torch.load(price_weight_path, map_location=device)
         _partial_init_load(price_embedder, price_sd, f"Loaded frozen-joint finetuned PRICE weights from {price_weight_path}")
     elif source == "joint_frozen_init":
         # Load PRICE weights from joint finetuning that started from frozen-joint init
         task_str = "card" if argsP.card else "time"
-        price_weight_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_m_suffix}{price_s_suffix}_llm_price_frozenInit{rand_init_suffix}{n_layers_suffix}{epoch_suffix}_price.pt"
+        price_weight_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_path_suffix}_llm_price{arch_path_suffix}{rand_init_suffix}{epoch_suffix}_price.pt"
         price_sd = torch.load(price_weight_path, map_location=device)
         _partial_init_load(price_embedder, price_sd, f"Loaded frozen-init jointly finetuned PRICE weights from {price_weight_path}")
     elif source == "gated_joint":
         # Load PRICE weights from gated joint finetuning
         task_str = "card" if argsP.card else "time"
-        price_weight_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_m_suffix}{price_s_suffix}_llm_price_gated{rand_init_suffix}{n_layers_suffix}{epoch_suffix}_price.pt"
+        price_weight_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_path_suffix}_llm_price{arch_path_suffix}{rand_init_suffix}{epoch_suffix}_price.pt"
         price_sd = torch.load(price_weight_path, map_location=device)
         _partial_init_load(price_embedder, price_sd, f"Loaded gated jointly finetuned PRICE weights from {price_weight_path}")
     elif source == "cross_attn_joint":
         # Load PRICE weights from cross-attention joint finetuning
         # These are CrossAttentionPRICEEmbedder weights (includes llm_proj + cross_attn_blocks)
         task_str = "card" if argsP.card else "time"
-        cross_attn_suffix = "_crossAttn"
-        n_cross_suffix = f"_cx{argsP.n_cross_layers}" if getattr(argsP, 'n_cross_layers', 2) != 2 else ""
-        price_weight_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_m_suffix}{price_s_suffix}_llm_price{cross_attn_suffix}{rand_init_suffix}{n_layers_suffix}{n_cross_suffix}{epoch_suffix}_price.pt"
+        price_weight_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_path_suffix}_llm_price{arch_path_suffix}{rand_init_suffix}{epoch_suffix}_price.pt"
         price_sd = torch.load(price_weight_path, map_location=device)
         # Build a CrossAttentionPRICEEmbedder instead of plain PRICEEmbedder
         from models.llm_price_model import CrossAttentionPRICEEmbedder
@@ -3436,12 +3489,12 @@ def get_llm_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_info, 
             if getattr(argsP, 'price_weights_source', 'pretrained') == "gated_joint":
                 task_str = "card" if argsP.card else "time"
                 ft_bs_gate = getattr(argsP, 'ft_batch_size', 16)
-                price_m_suffix = "_priceM" if getattr(argsP, 'price_m', False) else ""
-                price_s_suffix = "_priceS" if getattr(argsP, 'price_s', False) else ""
+                _pps_gate = _price_path_suffix_local(argsP)
+                _aps_gate = _arch_path_suffix_local(argsP)
                 rand_init_suffix_gate = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
                 ft_epochs_gate = getattr(argsP, 'ft_num_epoch', 0)
                 epoch_suffix_gate = f"_e{ft_epochs_gate}" if ft_epochs_gate > 0 else ""
-                gate_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs_gate}{price_m_suffix}{price_s_suffix}_llm_price_gated{rand_init_suffix_gate}{epoch_suffix_gate}_gate.pt"
+                gate_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs_gate}{_pps_gate}_llm_price{_aps_gate}{rand_init_suffix_gate}{epoch_suffix_gate}_gate.pt"
                 gate_module = nn.Sequential(nn.Linear(embeddings_test.shape[1], 512), nn.Sigmoid())
                 gate_module.load_state_dict(torch.load(gate_path, map_location="cpu"))
                 gate_module.eval()
@@ -3596,12 +3649,12 @@ def get_llm_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_info, 
             if getattr(argsP, 'price_weights_source', 'pretrained') == "gated_joint":
                 task_str = "card" if argsP.card else "time"
                 ft_bs_gate = getattr(argsP, 'ft_batch_size', 16)
-                price_m_suffix = "_priceM" if getattr(argsP, 'price_m', False) else ""
-                price_s_suffix = "_priceS" if getattr(argsP, 'price_s', False) else ""
+                _pps_gate2 = _price_path_suffix_local(argsP)
+                _aps_gate2 = _arch_path_suffix_local(argsP)
                 rand_init_suffix_gate = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
                 ft_epochs_gate = getattr(argsP, 'ft_num_epoch', 0)
                 epoch_suffix_gate = f"_e{ft_epochs_gate}" if ft_epochs_gate > 0 else ""
-                gate_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs_gate}{price_m_suffix}{price_s_suffix}_llm_price_gated{rand_init_suffix_gate}{epoch_suffix_gate}_gate.pt"
+                gate_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs_gate}{_pps_gate2}_llm_price{_aps_gate2}{rand_init_suffix_gate}{epoch_suffix_gate}_gate.pt"
                 gate_module = nn.Sequential(nn.Linear(embeddings_train_llm.shape[1], 512), nn.Sigmoid())
                 gate_module.load_state_dict(torch.load(gate_path, map_location="cpu"))
                 gate_module.eval()

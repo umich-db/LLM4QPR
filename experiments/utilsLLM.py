@@ -2450,24 +2450,68 @@ def _collect_column_ids_and_replace(node, stats, replace_type="name"):
 
 def train_val_test(num_rows, argsP):
     """
-    Randomly sample a fraction of the training set.
+    Split into train/val/test.
+
+    For TPC-DS (90 templates × 10 queries = 900 rows), use a template-based
+    split so test queries come from unseen templates: 9 random templates → test
+    (90 queries), the other 81 → train+val (810), with 10% of train+val held
+    for val. This mirrors dataset_utils.get_new()'s template split. For other
+    workloads, fall back to random sklearn splits (67/16.5/16.5).
     """
     total_rows = num_rows
     indices = list(range(total_rows))
-    # train 0.7, val 0.15, test 0.15
+
+    # TPC-DS template-based split (90 templates × 10 queries = 900)
+    if (getattr(argsP, 'workload_test', '') == 'tpcds' and total_rows == 900):
+        import random as _random
+        _rng = _random.Random(42)
+        _all_templates = list(range(90))
+        _rng.shuffle(_all_templates)
+        test_template_ids = sorted(_all_templates[:9])
+        trainval_template_ids = sorted(_all_templates[9:])
+        test_ids = []
+        for t in test_template_ids:
+            test_ids.extend(range(t * 10, t * 10 + 10))
+        trainval_ids = []
+        for t in trainval_template_ids:
+            trainval_ids.extend(range(t * 10, t * 10 + 10))
+        train_ids, val_ids = train_test_split(
+            trainval_ids, test_size=0.1, random_state=42)
+        return train_ids, val_ids, test_ids
+
+    # Default: random 67/16.5/16.5
     train_ids, temp_ids = train_test_split(indices, test_size=0.33, random_state=42)
     val_ids, test_ids = train_test_split(temp_ids, test_size=0.5, random_state=42)
-    # train_ids, temp_ids = train_test_split(indices, test_size=0.9, random_state=42)
-    # val_ids, test_ids = train_test_split(temp_ids, test_size=0.9, random_state=42)
     return train_ids, val_ids, test_ids
 
 def train_val(num_rows, argsP):
     """
-    Randomly sample a fraction of the training set.
+    Split the training set into train/val.
+
+    For TPC-DS (90 templates × 10 queries = 900 rows), use a template-based
+    split: 9 random templates are reserved for test (matching train_val_test),
+    the other 81 templates split 90/10 train/val. This ensures train/val also
+    respect template boundaries when train and test come from separate files.
     """
     total_rows = num_rows
     indices = list(range(total_rows))
-    # train 0.7, val 0.15, test 0.15
+
+    # TPC-DS template-based split: drop the test 9 templates, split rest 90/10
+    if (getattr(argsP, 'workloads_train', None) and
+        'tpcds' in argsP.workloads_train and total_rows == 900):
+        import random as _random
+        _rng = _random.Random(42)
+        _all_templates = list(range(90))
+        _rng.shuffle(_all_templates)
+        trainval_template_ids = sorted(_all_templates[9:])
+        trainval_ids = []
+        for t in trainval_template_ids:
+            trainval_ids.extend(range(t * 10, t * 10 + 10))
+        train_ids, val_ids = train_test_split(
+            trainval_ids, test_size=0.1, random_state=42)
+        return train_ids, val_ids
+
+    # Default: random 90/10
     train_ids, val_ids = train_test_split(indices, test_size=0.1, random_state=42)
     return train_ids, val_ids
 
@@ -3058,7 +3102,7 @@ def generate_price_embeddings(price_embedder, workload, sql_list, db_name, bin_s
             ntb_batch = torch.tensor(n_tables[i:i+batch_size], dtype=torch.float32, device=device).unsqueeze(1)
             nfc_batch = torch.tensor(n_filter_cols[i:i+batch_size], dtype=torch.float32, device=device).unsqueeze(1)
 
-            emb = price_embedder(pf_batch, pm_batch, njc_batch, nfo_batch, ntb_batch, nfc_batch)
+            emb, _, _ = price_embedder(pf_batch, pm_batch, njc_batch, nfo_batch, ntb_batch, nfc_batch)
             all_embs.append(emb.cpu())
 
     return torch.cat(all_embs, dim=0)  # [N, 512]
@@ -3087,19 +3131,87 @@ def _load_price_embedder(argsP, max_njc, max_nfo, max_ntb, max_nfc, device):
 
     bin_size = getattr(argsP, 'price_bin_size', 40)
     table_dim = 4
-    filter_dim = (bin_size + 21) if getattr(argsP, 'price_m', False) else (bin_size + 3)
+    # filter_dim selection. Originally only PRICE_S (default) and PRICE_M were
+    # handled — PRICE_N silently fell through to filter_dim=43, truncating the
+    # 75-dim trained weights at inference. Toggle via --legacy_price_inference
+    # to recover the old behavior. Default: PRICE_N gets the correct 75-dim.
+    _use_pn_loader = any(getattr(argsP, f, False) for f in
+                         ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise'))
+    if getattr(argsP, 'legacy_price_inference', False):
+        # Legacy buggy behavior — kept for reproducibility of pre-fix runs.
+        filter_dim = (bin_size + 21) if getattr(argsP, 'price_m', False) else (bin_size + 3)
+        if _use_pn_loader:
+            print(f"[_load_price_embedder] LEGACY PRICE_N inference: filter_dim={filter_dim} "
+                  f"(trained weights have 75; partial-init will truncate)")
+    else:
+        if _use_pn_loader:
+            filter_dim = 75
+        elif getattr(argsP, 'price_m', False):
+            filter_dim = bin_size + 21
+        else:
+            filter_dim = bin_size + 3
+        print(f"[_load_price_embedder] filter_dim={filter_dim} "
+              f"(price_n={_use_pn_loader} price_m={getattr(argsP, 'price_m', False)})")
 
     _price_n_embd = getattr(argsP, 'price_n_embd', 256)
     _price_n_heads = getattr(argsP, 'price_n_heads', 8)
     _price_ffn_ratio = getattr(argsP, 'price_ffn_ratio', 4.0)
+    # Pick query_hidden_dim and cross-attn params to match what training used.
+    # Keep in sync with train.py's RegressionModel + PRICEEmbedder construction.
+    _pod_loader = int(getattr(argsP, 'price_output_dim', 0) or 0)
+    _n_cross_loader = getattr(argsP, 'n_cross_layers', 0)
+    _force_inflate_loader = getattr(argsP, 'force_inflate', False)
+    if _pod_loader > 0:
+        _query_hidden_dim_loader = _pod_loader
+    elif (getattr(argsP, 'use_bi_cross_attention', False)
+          and getattr(argsP, 'inflate_price', False)
+          and (_n_cross_loader > 0 or _force_inflate_loader)):
+        _query_hidden_dim_loader = argsP.embed_size
+    else:
+        _query_hidden_dim_loader = 512
+    # Mirror train.py's PRICE_N-aware RegressionModel construction. Without
+    # these kwargs, fanout_embeddings is built at 41-dim (=hist_dim+1) instead
+    # of 43-dim (=fanout_dim+1=42+1), pairwise_intra_embeddings is absent, and
+    # or_transformer is absent — silently dropping trained weights at inference.
+    _use_pn_loader = any(getattr(argsP, f, False) for f in
+                         ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise'))
+    _fanout_dim_loader = 42 if _use_pn_loader else None
+    _pn_pairwise_loader = bool(getattr(argsP, 'price_n_pairwise', False))
+    _pairwise_intra_dim_loader = 129 if _pn_pairwise_loader else None
+    # Prefer the value computed from the actual inference data (set by the
+    # caller in get_llm_ds_from_csv); fall back to the path-suffix-driving
+    # `price_max_n_pairwise_intra` argsP attribute, then to the default 8.
+    _n_pi_loader = (
+        int(getattr(argsP, '_inference_n_pairwise_intra',
+                    getattr(argsP, 'price_max_n_pairwise_intra', 8)))
+        if _pn_pairwise_loader else 0
+    )
+    _use_or_loader = _use_pn_loader and not getattr(argsP, 'no_or_transformer', False)
     price_model = RegressionModel(
         n_join_col=max_njc, n_fanout=max_nfo, n_table=max_ntb, n_filter_col=max_nfc,
+        n_pairwise_intra=_n_pi_loader,
         hist_dim=bin_size, table_dim=table_dim, filter_dim=filter_dim,
-        query_hidden_dim=512, final_hidden_dim=1024, output_dim=1,
+        fanout_dim=_fanout_dim_loader, pairwise_intra_dim=_pairwise_intra_dim_loader,
+        query_hidden_dim=_query_hidden_dim_loader, final_hidden_dim=1024, output_dim=1,
         n_embd=_price_n_embd, n_layers=getattr(argsP, 'price_n_layers', 6), n_heads=_price_n_heads,
-        dropout_rate=0.1, ffn_ratio=_price_ffn_ratio
+        dropout_rate=0.1, ffn_ratio=_price_ffn_ratio,
+        use_or_transformer=_use_or_loader,
     )
-    price_embedder = PRICEEmbedder(price_model)
+    # Construct PRICEEmbedder with cross-attn blocks if the training-side config used them.
+    if (getattr(argsP, 'use_bi_cross_attention', False)
+        and getattr(argsP, 'inflate_price', False)
+        and _n_cross_loader > 0):
+        price_embedder = PRICEEmbedder(
+            price_model,
+            n_cross_layers=_n_cross_loader,
+            llm_hidden_dim=argsP.embed_size,
+            n_heads=8,
+            dropout_rate=getattr(argsP, 'cross_attn_dropout', 0.1),
+            cross_attn_noop=getattr(argsP, 'cross_attn_noop', False),
+            force_inflate=_force_inflate_loader,
+        )
+    else:
+        price_embedder = PRICEEmbedder(price_model)
 
     source = getattr(argsP, 'price_weights_source', 'pretrained')
     ft_bs = getattr(argsP, 'ft_batch_size', 16)
@@ -3147,12 +3259,31 @@ def _load_price_embedder(argsP, max_njc, max_nfo, max_ntb, max_nfc, device):
             getattr(ap, 'use_reverse_cross_attention', False)
         ):
             parts.append(f"cx{n_cross}")
+        if getattr(ap, 'cross_attn_noop', False) and (
+            getattr(ap, 'use_cross_attention', False) or
+            getattr(ap, 'use_bi_cross_attention', False) or
+            getattr(ap, 'use_reverse_cross_attention', False)
+        ):
+            parts.append("noop")
+        if getattr(ap, 'force_inflate', False):
+            parts.append("finfl")
+        pod = getattr(ap, 'price_output_dim', 0)
+        if pod and pod > 0:
+            parts.append(f"pod{pod}")
         nl = getattr(ap, 'price_n_layers', 6)
         if nl != 6:
             parts.append(f"nl{nl}")
         fr = getattr(ap, 'price_ffn_ratio', 4.0)
         if fr != 4.0:
             parts.append(f"fr{fr}")
+        # Schedule overrides (only when random_init is on)
+        if getattr(ap, 'price_random_init', False):
+            pwm = getattr(ap, 'price_warmup_epochs', 10)
+            if pwm != 10:
+                parts.append(f"pwm{pwm}")
+            plr = getattr(ap, 'price_lr', None)
+            if plr is not None and plr != 1e-3:
+                parts.append(f"pLR{plr:g}")
         return ("_" + "_".join(parts)) if parts else ""
 
     price_path_suffix = _price_path_suffix_local(argsP)
@@ -3430,6 +3561,8 @@ def get_llm_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_info, 
             # Same file — generate PRICE embeddings for all, then split
             # First generate raw features to determine dims for model construction
             _price_n_pairwise_llmprice = getattr(argsP, 'price_n_pairwise', False)
+            _price_n_or_llmprice = getattr(argsP, 'price_n_or', False)
+            _price_n_or_max_clauses_llmprice = getattr(argsP, 'price_n_or_max_clauses', 16)
             _gpf_out_llmprice = pdu.generate_price_features(
                 workload, sql_list_test, db_name, bin_size,
                 price_m=getattr(argsP, 'price_m', False),
@@ -3438,9 +3571,13 @@ def get_llm_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_info, 
                 price_n_filter=getattr(argsP, 'price_n_filter', False),
                 price_n_fanout=getattr(argsP, 'price_n_fanout', False),
                 price_n_pairwise=_price_n_pairwise_llmprice,
+                price_n_or=_price_n_or_llmprice,
+                price_n_or_max_clauses=_price_n_or_max_clauses_llmprice,
                 already_price_format=is_cross_wl_test,
             )
-            if _price_n_pairwise_llmprice:
+            if _price_n_or_llmprice:
+                data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols, _n_pi_llmprice = _gpf_out_llmprice
+            elif _price_n_pairwise_llmprice:
                 data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols, _n_pi_llmprice = _gpf_out_llmprice
             else:
                 data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols = _gpf_out_llmprice
@@ -3449,62 +3586,170 @@ def get_llm_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_info, 
                                    ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise'))
             _pn_filter_dim_llmprice = 75 if _use_pn_llmprice else (
                 (bin_size + 21) if getattr(argsP, 'price_m', False) else (bin_size + 3))
-            _pad_out_llmprice = pdu.pad_and_cache_features(
-                data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols,
+            _pad_kwargs_llmprice = dict(
                 bin_size=bin_size,
                 filter_dim=_pn_filter_dim_llmprice,
                 price_m=getattr(argsP, 'price_m', False),
                 price_n_pairwise=_price_n_pairwise_llmprice,
-                fanout_dim=42 if any(getattr(argsP, f, False) for f in ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise')) else None,
+                fanout_dim=42 if _use_pn_llmprice else None,
                 pairwise_intra_dim=129 if _price_n_pairwise_llmprice else None,
                 n_pairwise_intras=_n_pi_llmprice,
             )
-            if _price_n_pairwise_llmprice:
-                padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc, _max_n_pi_llmprice = _pad_out_llmprice
+            if _price_n_or_llmprice:
+                # Multi-clause: pad via multi_clause_data; pack per-query.
+                _pad_kwargs_llmprice["multi_clause_data"] = data_features
+                _pad_out_llmprice = pdu.pad_and_cache_features(
+                    [], [], [], [], [], **_pad_kwargs_llmprice)
+                _flat_pf = _pad_out_llmprice["padded_features"]
+                _flat_pm = _pad_out_llmprice["padding_masks"]
+                max_njc = _pad_out_llmprice["max_n_join_col"]
+                max_nfo = _pad_out_llmprice["max_n_fanout"]
+                max_ntb = _pad_out_llmprice["max_n_table"]
+                max_nfc = _pad_out_llmprice["max_n_filter_col"]
+                # max_n_pairwise_intra from the actual data; stored on a side
+                # attribute (not the path-affecting `price_max_n_pairwise_intra`)
+                # so _load_price_embedder can pick it up without changing the
+                # path suffix the saved weights live under.
+                argsP._inference_n_pairwise_intra = int(_pad_out_llmprice.get("max_n_pairwise_intra", 0) or 0)
+                _num_clauses_inf = _pad_out_llmprice["num_clauses"]
+                _max_n_clauses_inf = int(_pad_out_llmprice["max_n_clauses"])
+                _n_q_inf = len(_num_clauses_inf)
+                padded_features, padding_masks = [], []
+                for qi in range(_n_q_inf):
+                    sl = _flat_pf[qi * _max_n_clauses_inf: (qi + 1) * _max_n_clauses_inf]
+                    padded_features.append(torch.stack([
+                        f if isinstance(f, torch.Tensor) else torch.tensor(f, dtype=torch.float32)
+                        for f in sl]))
+                    sm = _flat_pm[qi * _max_n_clauses_inf: (qi + 1) * _max_n_clauses_inf]
+                    padding_masks.append(torch.stack([
+                        m if isinstance(m, torch.Tensor) else torch.tensor(m)
+                        for m in sm]))
+                num_clauses_inf_per_query = _num_clauses_inf.tolist()
             else:
-                padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc = _pad_out_llmprice
+                _pad_out_llmprice = pdu.pad_and_cache_features(
+                    data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols,
+                    **_pad_kwargs_llmprice)
+                if _price_n_pairwise_llmprice:
+                    padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc, _max_n_pi_llmprice = _pad_out_llmprice
+                    argsP._inference_n_pairwise_intra = int(_max_n_pi_llmprice or 0)
+                else:
+                    padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc = _pad_out_llmprice
+                    argsP._inference_n_pairwise_intra = 0
+                num_clauses_inf_per_query = None
 
             # Build PRICE model and load weights based on price_weights_source
             price_embedder = _load_price_embedder(argsP, max_njc, max_nfo, max_ntb, max_nfc, device)
-
-            # Generate PRICE embeddings in batches
             price_embedder.eval()
-            price_embs = []
-            with torch.no_grad():
-                for i in range(0, len(padded_features), 64):
-                    pf_batch = torch.stack([f if isinstance(f, torch.Tensor) else torch.tensor(f, dtype=torch.float32) for f in padded_features[i:i+64]]).float().to(device)
-                    pm_batch = torch.stack([m if isinstance(m, torch.Tensor) else torch.tensor(m) for m in padding_masks[i:i+64]]).float().to(device)
-                    njc_batch = torch.tensor(n_join_cols[i:i+64], dtype=torch.float32, device=device).unsqueeze(1)
-                    nfo_batch = torch.tensor(n_fanouts[i:i+64], dtype=torch.float32, device=device).unsqueeze(1)
-                    ntb_batch = torch.tensor(n_tables[i:i+64], dtype=torch.float32, device=device).unsqueeze(1)
-                    nfc_batch = torch.tensor(n_filter_cols[i:i+64], dtype=torch.float32, device=device).unsqueeze(1)
-                    emb = price_embedder(pf_batch, pm_batch, njc_batch, nfo_batch, ntb_batch, nfc_batch)
-                    price_embs.append(emb.cpu())
-            price_embeddings = torch.cat(price_embs, dim=0)  # [N, 512]
-            price_embedder.to("cpu")
-            torch.cuda.empty_cache()
-            print(f"Generated PRICE embeddings: {price_embeddings.shape}")
 
-            # Apply learned gate if gated_joint
-            if getattr(argsP, 'price_weights_source', 'pretrained') == "gated_joint":
-                task_str = "card" if argsP.card else "time"
-                ft_bs_gate = getattr(argsP, 'ft_batch_size', 16)
-                _pps_gate = _price_path_suffix_local(argsP)
-                _aps_gate = _arch_path_suffix_local(argsP)
-                rand_init_suffix_gate = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
-                ft_epochs_gate = getattr(argsP, 'ft_num_epoch', 0)
-                epoch_suffix_gate = f"_e{ft_epochs_gate}" if ft_epochs_gate > 0 else ""
-                gate_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs_gate}{_pps_gate}_llm_price{_aps_gate}{rand_init_suffix_gate}{epoch_suffix_gate}_gate.pt"
-                gate_module = nn.Sequential(nn.Linear(embeddings_test.shape[1], 512), nn.Sigmoid())
-                gate_module.load_state_dict(torch.load(gate_path, map_location="cpu"))
-                gate_module.eval()
+            _n_cross = getattr(price_embedder, 'n_cross_layers', 0)
+            if _n_cross > 0:
+                # Cross-attn featurizer: cached PRICE features must be POST-cross-attn,
+                # and the LLM CLS embedding must be the cross-attn-refined CLS+L2norm.
+                # Use LLMPriceJointModel.forward_embeddings to compute combined features
+                # in one shot (mirrors the biCross retrain_mlp path's behavior, but
+                # routed through the unified mode-7 flow).
+                from models.llm_price_model import LLMPriceJointModel
+                # Reload texts (get_embeddings doesn't keep them around).
+                if dat_path_test.endswith("c8220.json"):
+                    _texts_full, _, _, _, _ = read_json_and_clean_v2(predictor, ds_info, dat_path_test, argsP, all=True)
+                else:
+                    _texts_full, _, _, _, _ = read_json_and_clean(predictor, ds_info, dat_path_test, argsP, all=True)
+                _texts_full = _texts_full[:min_len]
+                _llm_embed_size = embeddings_test.shape[1]
+                _price_output_dim = getattr(price_embedder, 'price_output_dim', 512)
+                _hid_units = getattr(argsP, 'hid_units', 2048)
+                _model_comb = LLMPriceJointModel(predictor, price_embedder, _llm_embed_size, _price_output_dim, _hid_units)
+                _model_comb.to(device).eval()
+                _bs_ca = 4  # full LLM+PRICE+cross-attn forward; b=64 OOMs on small GPUs
+                _combined_list = []
                 with torch.no_grad():
-                    gate_values = gate_module(embeddings_test)
-                price_embeddings = gate_values * price_embeddings
-                print(f"Applied learned gate from {gate_path}")
+                    for i in range(0, len(_texts_full), _bs_ca):
+                        _t = _texts_full[i:i+_bs_ca]
+                        _pf = torch.stack([f if isinstance(f, torch.Tensor) else torch.tensor(f, dtype=torch.float32) for f in padded_features[i:i+_bs_ca]]).float().to(device)
+                        _pm = torch.stack([m if isinstance(m, torch.Tensor) else torch.tensor(m) for m in padding_masks[i:i+_bs_ca]]).float().to(device)
+                        _njc = torch.tensor(n_join_cols[i:i+_bs_ca], dtype=torch.float32, device=device).unsqueeze(1)
+                        _nfo = torch.tensor(n_fanouts[i:i+_bs_ca], dtype=torch.float32, device=device).unsqueeze(1)
+                        _ntb = torch.tensor(n_tables[i:i+_bs_ca], dtype=torch.float32, device=device).unsqueeze(1)
+                        _nfc = torch.tensor(n_filter_cols[i:i+_bs_ca], dtype=torch.float32, device=device).unsqueeze(1)
+                        if num_clauses_inf_per_query is not None:
+                            # Multi-clause path: per-query stacked tensor _pf has shape
+                            # (batch, max_clauses, flat_size); flatten to
+                            # (batch * max_clauses, flat_size) for the OR-Transformer
+                            # path inside PRICEEmbedder.
+                            _nc = torch.tensor(
+                                num_clauses_inf_per_query[i:i+_bs_ca],
+                                dtype=torch.long, device=device)
+                            if _pf.dim() == 3:
+                                _bsz, _mc, _flat_sz = _pf.shape
+                                _pf = _pf.view(_bsz * _mc, _flat_sz)
+                            if _pm.dim() == 3:
+                                _bsz_m, _mc_m, _msl = _pm.shape
+                                _pm = _pm.view(_bsz_m * _mc_m, _msl)
+                            _x = (_t, _pf, _pm, _njc, _nfo, _ntb, _nfc, _nc)
+                        else:
+                            _x = (_t, _pf, _pm, _njc, _nfo, _ntb, _nfc)
+                        _emb = _model_comb.forward_embeddings(_x)
+                        _combined_list.append(_emb.cpu())
+                combined = torch.cat(_combined_list, dim=0)
+                print(f"[unified-routing cx={_n_cross}] forward_embeddings produced combined: {combined.shape}")
+                _model_comb.cpu()
+                del _model_comb
+                price_embedder.to("cpu")
+                torch.cuda.empty_cache()
+            else:
+                # cx=0 path: separate LLM CLS + PRICE concat (original mode 7 behavior).
+                price_embs = []
+                with torch.no_grad():
+                    for i in range(0, len(padded_features), 64):
+                        pf_batch = torch.stack([f if isinstance(f, torch.Tensor) else torch.tensor(f, dtype=torch.float32) for f in padded_features[i:i+64]]).float().to(device)
+                        pm_batch = torch.stack([m if isinstance(m, torch.Tensor) else torch.tensor(m) for m in padding_masks[i:i+64]]).float().to(device)
+                        njc_batch = torch.tensor(n_join_cols[i:i+64], dtype=torch.float32, device=device).unsqueeze(1)
+                        nfo_batch = torch.tensor(n_fanouts[i:i+64], dtype=torch.float32, device=device).unsqueeze(1)
+                        ntb_batch = torch.tensor(n_tables[i:i+64], dtype=torch.float32, device=device).unsqueeze(1)
+                        nfc_batch = torch.tensor(n_filter_cols[i:i+64], dtype=torch.float32, device=device).unsqueeze(1)
+                        # Multi-clause path: pf_batch is (batch, max_clauses, flat_size);
+                        # flatten to (batch * max_clauses, flat_size) and pass num_clauses
+                        # so PRICEEmbedder.forward runs the OR-Transformer aggregator.
+                        if num_clauses_inf_per_query is not None and pf_batch.dim() == 3:
+                            _bsz0, _mc0, _fz0 = pf_batch.shape
+                            pf_batch = pf_batch.view(_bsz0 * _mc0, _fz0)
+                            if pm_batch.dim() == 3:
+                                _bsz0m, _mc0m, _ml0 = pm_batch.shape
+                                pm_batch = pm_batch.view(_bsz0m * _mc0m, _ml0)
+                            nc_batch = torch.tensor(
+                                num_clauses_inf_per_query[i:i+64],
+                                dtype=torch.long, device=device)
+                            emb, _, _ = price_embedder(
+                                pf_batch, pm_batch, njc_batch, nfo_batch, ntb_batch, nfc_batch,
+                                num_clauses=nc_batch)
+                        else:
+                            emb, _, _ = price_embedder(pf_batch, pm_batch, njc_batch, nfo_batch, ntb_batch, nfc_batch)
+                        price_embs.append(emb.cpu())
+                price_embeddings = torch.cat(price_embs, dim=0)  # [N, query_hidden_dim]
+                price_embedder.to("cpu")
+                torch.cuda.empty_cache()
+                print(f"Generated PRICE embeddings: {price_embeddings.shape}")
 
-            # Concatenate LLM + PRICE embeddings
-            combined = torch.cat([embeddings_test, price_embeddings], dim=1)  # [N, D_llm + 512]
+                # Apply learned gate if gated_joint
+                if getattr(argsP, 'price_weights_source', 'pretrained') == "gated_joint":
+                    task_str = "card" if argsP.card else "time"
+                    ft_bs_gate = getattr(argsP, 'ft_batch_size', 16)
+                    _pps_gate = _price_path_suffix_local(argsP)
+                    _aps_gate = _arch_path_suffix_local(argsP)
+                    rand_init_suffix_gate = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
+                    ft_epochs_gate = getattr(argsP, 'ft_num_epoch', 0)
+                    epoch_suffix_gate = f"_e{ft_epochs_gate}" if ft_epochs_gate > 0 else ""
+                    gate_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs_gate}{_pps_gate}_llm_price{_aps_gate}{rand_init_suffix_gate}{epoch_suffix_gate}_gate.pt"
+                    gate_module = nn.Sequential(nn.Linear(embeddings_test.shape[1], 512), nn.Sigmoid())
+                    gate_module.load_state_dict(torch.load(gate_path, map_location="cpu"))
+                    gate_module.eval()
+                    with torch.no_grad():
+                        gate_values = gate_module(embeddings_test)
+                    price_embeddings = gate_values * price_embeddings
+                    print(f"Applied learned gate from {gate_path}")
+
+                # Concatenate LLM + PRICE embeddings
+                combined = torch.cat([embeddings_test, price_embeddings], dim=1)  # [N, D_llm + query_hidden_dim]
 
             # Normalize combined embeddings
             feat_norm = FeatureNormalizer()
@@ -3635,7 +3880,7 @@ def get_llm_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_info, 
                     nfo_batch = torch.tensor(all_nfo[i:i+64], dtype=torch.float32, device=device).unsqueeze(1)
                     ntb_batch = torch.tensor(all_ntb[i:i+64], dtype=torch.float32, device=device).unsqueeze(1)
                     nfc_batch = torch.tensor(all_nfc[i:i+64], dtype=torch.float32, device=device).unsqueeze(1)
-                    emb = price_embedder(pf_batch, pm_batch, njc_batch, nfo_batch, ntb_batch, nfc_batch)
+                    emb, _, _ = price_embedder(pf_batch, pm_batch, njc_batch, nfo_batch, ntb_batch, nfc_batch)
                     price_embs_all.append(emb.cpu())
             price_embeddings_all = torch.cat(price_embs_all, dim=0)
             price_embedder.to("cpu")
@@ -3742,11 +3987,18 @@ def get_llm_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_info, 
 class LLMPriceDataset(Dataset):
     """
     Dataset for joint LLM+PRICE finetuning.
-    Each item returns (text, price_feat_tensor, padding_mask,
-                       n_join_col, n_fanout, n_table, n_filter_col, label).
+    Each item returns
+      (text, price_feat_tensor, padding_mask, n_join_col, n_fanout, n_table,
+       n_filter_col, label)
+    or, when num_clauses_per_query is provided (--price_n_or mode):
+      (text, price_feat_tensor, padding_mask, n_join_col, n_fanout, n_table,
+       n_filter_col, num_clauses_i, label)
+    where price_feat_tensor for that item has shape
+    (max_clauses * flat_size,) — i.e. all clauses of one query packed.
     """
     def __init__(self, texts, price_features, padding_masks,
-                 n_join_cols, n_fanouts, n_tables, n_filter_cols, labels):
+                 n_join_cols, n_fanouts, n_tables, n_filter_cols, labels,
+                 num_clauses_per_query=None):
         assert len(texts) == len(labels)
         self.texts = texts
         self.price_features = price_features
@@ -3756,19 +4008,22 @@ class LLMPriceDataset(Dataset):
         self.n_tables = n_tables
         self.n_filter_cols = n_filter_cols
         self.labels = labels
+        self.num_clauses_per_query = num_clauses_per_query  # list[int] or None
 
     def __len__(self):
         return len(self.labels)
 
     def __getitem__(self, idx):
-        return (self.texts[idx],
+        base = (self.texts[idx],
                 self.price_features[idx],
                 self.padding_masks[idx],
                 self.n_join_cols[idx],
                 self.n_fanouts[idx],
                 self.n_tables[idx],
-                self.n_filter_cols[idx],
-                self.labels[idx])
+                self.n_filter_cols[idx])
+        if self.num_clauses_per_query is not None:
+            return base + (self.num_clauses_per_query[idx], self.labels[idx])
+        return base + (self.labels[idx],)
 
 
 class FrozenLLMPriceDataset(Dataset):
@@ -4226,6 +4481,8 @@ def get_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_
     task_str = "card" if argsP.card else "time"
 
     _price_n_pairwise_llmp = getattr(argsP, 'price_n_pairwise', False)
+    _price_n_or_llmp = getattr(argsP, 'price_n_or', False)
+    _price_n_or_max_clauses_llmp = getattr(argsP, 'price_n_or_max_clauses', 16)
     _gpf_test_llmp = pdu.generate_price_features(
         workload, sql_list_test, db_name, bin_size,
         price_m=getattr(argsP, 'price_m', False),
@@ -4234,9 +4491,16 @@ def get_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_
         price_n_filter=getattr(argsP, 'price_n_filter', False),
         price_n_fanout=getattr(argsP, 'price_n_fanout', False),
         price_n_pairwise=_price_n_pairwise_llmp,
+        price_n_or=_price_n_or_llmp,
+        price_n_or_max_clauses=_price_n_or_max_clauses_llmp,
         already_price_format=is_cross_wl_test,
     )
-    if _price_n_pairwise_llmp:
+    if _price_n_or_llmp:
+        # Multi-clause DNF: data_features_test is list[list[6-tuple]] (per-query
+        # list of per-clause feature tuples). The other per-query lists keep
+        # length n_queries.
+        data_features_test, n_join_cols_test, n_fanouts_test, n_tables_test, n_filter_cols_test, _n_pi_test_llmp = _gpf_test_llmp
+    elif _price_n_pairwise_llmp:
         data_features_test, n_join_cols_test, n_fanouts_test, n_tables_test, n_filter_cols_test, _n_pi_test_llmp = _gpf_test_llmp
     else:
         data_features_test, n_join_cols_test, n_fanouts_test, n_tables_test, n_filter_cols_test = _gpf_test_llmp
@@ -4257,26 +4521,63 @@ def get_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_
 
     # ---- Step 5: Split train/val/test and pad with unified max dims ----
     print(f"[LLM+PRICE] Step 5/6: Splitting train/val/test...", flush=True)
+    # Helper: pack flat (batch * max_clauses) padded outputs into per-query
+    # tensors of shape (max_clauses, flat_size). Used when --price_n_or routes
+    # us through the multi-clause padding path.
+    def _pack_multi_clause(flat_pf, flat_pm, max_clauses, n_queries):
+        pf_per_q, pm_per_q = [], []
+        for qi in range(n_queries):
+            slc = flat_pf[qi * max_clauses: (qi + 1) * max_clauses]
+            pf_per_q.append(torch.stack([
+                f if isinstance(f, torch.Tensor) else torch.tensor(f, dtype=torch.float32)
+                for f in slc]))
+            ms = flat_pm[qi * max_clauses: (qi + 1) * max_clauses]
+            pm_per_q.append(torch.stack([
+                m if isinstance(m, torch.Tensor) else torch.tensor(m)
+                for m in ms]))
+        return pf_per_q, pm_per_q
+
     if len(dat_path_train_list) == 1 and dat_path_train_list[0] == dat_path_test:
         # Same file for train/test — pad all together
         _use_pn_llmp = any(getattr(argsP, f, False) for f in
                            ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise'))
         _pn_filter_dim_llmp = 75 if _use_pn_llmp else (
             (bin_size + 21) if getattr(argsP, 'price_m', False) else (bin_size + 3))
-        _pad_out_llmp_same = pdu.pad_and_cache_features(
-            data_features_test, n_join_cols_test, n_fanouts_test, n_tables_test, n_filter_cols_test,
+        _pad_kwargs_llmp = dict(
             bin_size=bin_size,
             filter_dim=_pn_filter_dim_llmp,
             price_m=getattr(argsP, 'price_m', False),
             price_n_pairwise=_price_n_pairwise_llmp,
-            fanout_dim=42 if any(getattr(argsP, f, False) for f in ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise')) else None,
+            fanout_dim=42 if _use_pn_llmp else None,
             pairwise_intra_dim=129 if _price_n_pairwise_llmp else None,
             n_pairwise_intras=_n_pi_test_llmp,
         )
-        if _price_n_pairwise_llmp:
-            padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc, _max_n_pi_llmp_same = _pad_out_llmp_same
+        if _price_n_or_llmp:
+            # Multi-clause: pad with multi_clause_data; pack per-query.
+            _pad_kwargs_llmp["multi_clause_data"] = data_features_test
+            _pad_out_llmp_same = pdu.pad_and_cache_features(
+                [], [], [], [], [], **_pad_kwargs_llmp)
+            flat_pf = _pad_out_llmp_same["padded_features"]
+            flat_pm = _pad_out_llmp_same["padding_masks"]
+            max_njc = _pad_out_llmp_same["max_n_join_col"]
+            max_nfo = _pad_out_llmp_same["max_n_fanout"]
+            max_ntb = _pad_out_llmp_same["max_n_table"]
+            max_nfc = _pad_out_llmp_same["max_n_filter_col"]
+            num_clauses_tensor_all = _pad_out_llmp_same["num_clauses"]
+            max_n_clauses_all = int(_pad_out_llmp_same["max_n_clauses"])
+            n_queries_all = len(num_clauses_tensor_all)
+            padded_features, padding_masks = _pack_multi_clause(
+                flat_pf, flat_pm, max_n_clauses_all, n_queries_all)
+            num_clauses_per_query_all = num_clauses_tensor_all.tolist()
         else:
-            padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc = _pad_out_llmp_same
+            _pad_out_llmp_same = pdu.pad_and_cache_features(
+                data_features_test, n_join_cols_test, n_fanouts_test, n_tables_test, n_filter_cols_test,
+                **_pad_kwargs_llmp)
+            if _price_n_pairwise_llmp:
+                padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc, _max_n_pi_llmp_same = _pad_out_llmp_same
+            else:
+                padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc = _pad_out_llmp_same
+            num_clauses_per_query_all = None
         n_join_cols = n_join_cols_test
         n_fanouts = n_fanouts_test
         n_tables = n_tables_test
@@ -4318,6 +4619,14 @@ def get_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_
         ntb_val = _subset(n_tables, val_ids)
         ntb_test = _subset(n_tables, test_ids)
 
+        # Multi-clause: split num_clauses_per_query the same way
+        if num_clauses_per_query_all is not None:
+            nc_train = _subset(num_clauses_per_query_all, train_ids)
+            nc_val = _subset(num_clauses_per_query_all, val_ids)
+            nc_test = _subset(num_clauses_per_query_all, test_ids)
+        else:
+            nc_train = nc_val = nc_test = None
+
         nfc_train = _subset(n_filter_cols, train_ids)
         nfc_val = _subset(n_filter_cols, val_ids)
         nfc_test = _subset(n_filter_cols, test_ids)
@@ -4327,8 +4636,9 @@ def get_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_
     else:
         # Separate train / test files — collect all raw features first, then pad together
         cleaned_texts_train_all, costs_train_all = [], []
-        raw_feats_train_all = []
+        raw_feats_train_all = []  # under --price_n_or this is list[list[6-tuple]]
         njc_train_all, nfo_train_all, ntb_train_all, nfc_train_all = [], [], [], []
+        npi_train_all = []  # per-query pairwise-intra counts for PRICE_N pairwise path
 
         for idx_dp, dat_path_train in enumerate(dat_path_train_list):
             print(f"[LLM+PRICE] Step 5/6: Reading training plans from {dat_path_train}...", flush=True)
@@ -4337,8 +4647,6 @@ def get_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_
                 ct, co, ln, tp = read_json_and_clean_v2(predictor, ds_info, dat_path_train, argsP)
             else:
                 ct, co, ln, tp = read_json_and_clean(predictor, ds_info, dat_path_train, argsP)
-            cleaned_texts_train_all.extend(ct)
-            costs_train_all.extend(co)
             print(f"[LLM+PRICE] Step 5/6: {len(ct)} training plans read.", flush=True)
 
             # Get SQL for this training workload
@@ -4367,17 +4675,37 @@ def get_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_
                 price_n_filter=getattr(argsP, 'price_n_filter', False),
                 price_n_fanout=getattr(argsP, 'price_n_fanout', False),
                 price_n_pairwise=_price_n_pairwise_llmp,
+                price_n_or=_price_n_or_llmp,
+                price_n_or_max_clauses=_price_n_or_max_clauses_llmp,
                 already_price_format=is_cross_wl_train,
             )
-            if _price_n_pairwise_llmp:
+            if _price_n_or_llmp:
+                # Multi-clause: df_feats is list[list[6-tuple]] — per-query list
+                # of per-clause feature tuples. njc/nfo/ntb/nfc are still per-query
+                # (one int per query, taken from the post-DNF unified maxima).
+                df_feats, njc, nfo, ntb, nfc, _npi_tr_llmp = _gpf_tr_llmp
+            elif _price_n_pairwise_llmp:
                 df_feats, njc, nfo, ntb, nfc, _npi_tr_llmp = _gpf_tr_llmp
             else:
                 df_feats, njc, nfo, ntb, nfc = _gpf_tr_llmp
-            raw_feats_train_all.extend(df_feats[:min_len])
-            njc_train_all.extend(njc[:min_len])
-            nfo_train_all.extend(nfo[:min_len])
-            ntb_train_all.extend(ntb[:min_len])
-            nfc_train_all.extend(nfc[:min_len])
+            # Compute actual aligned length: feature generation may return fewer
+            # entries than min_len if some queries failed parsing. ALL parallel
+            # lists (cleaned_texts, costs, raw_feats, njc/nfo/ntb/nfc) must end
+            # at the same length, otherwise train_val(...) produces val_ids that
+            # exceed the shorter list and _subset() raises IndexError.
+            n_aligned = min(min_len, len(df_feats), len(njc), len(nfo), len(ntb), len(nfc))
+            if n_aligned != min_len:
+                print(f"[LLM+PRICE] Step 5/6: WARNING — feature generation returned {len(df_feats)} "
+                      f"(expected {min_len}); truncating parallel lists to {n_aligned}.", flush=True)
+            cleaned_texts_train_all.extend(ct[:n_aligned])
+            costs_train_all.extend(co[:n_aligned])
+            raw_feats_train_all.extend(df_feats[:n_aligned])
+            njc_train_all.extend(njc[:n_aligned])
+            nfo_train_all.extend(nfo[:n_aligned])
+            ntb_train_all.extend(ntb[:n_aligned])
+            nfc_train_all.extend(nfc[:n_aligned])
+            if _price_n_pairwise_llmp and _npi_tr_llmp is not None:
+                npi_train_all.extend(_npi_tr_llmp[:n_aligned])
 
         # Compute unified max dims across train AND test
         all_njc = njc_train_all + n_join_cols_test
@@ -4402,27 +4730,60 @@ def get_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_
                                  ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise'))
         _pn_filter_dim_llmp_multi = 75 if _use_pn_llmp_multi else (
             (bin_size + 21) if getattr(argsP, 'price_m', False) else (bin_size + 3))
-        _pad_out_llmp_multi = pdu.pad_and_cache_features(
-            all_raw_feats, all_njc_list, all_nfo_list, all_ntb_list, all_nfc_list,
+        # Build combined pairwise-intra list (train + test) so pad_and_cache_features'
+        # zip(...) over the per-query lists doesn't stop early. Previously this only
+        # passed the 141-entry test list, which silently truncated padded output to
+        # 141 rows and triggered IndexError downstream.
+        if _price_n_pairwise_llmp:
+            all_npi_list = list(npi_train_all) + list(_n_pi_test_llmp or [])
+        else:
+            all_npi_list = None
+        _pad_kwargs_llmp_multi = dict(
             bin_size=bin_size,
             filter_dim=_pn_filter_dim_llmp_multi,
             price_m=getattr(argsP, 'price_m', False),
             price_n_pairwise=_price_n_pairwise_llmp,
-            fanout_dim=42 if any(getattr(argsP, f, False) for f in ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise')) else None,
+            fanout_dim=42 if _use_pn_llmp_multi else None,
             pairwise_intra_dim=129 if _price_n_pairwise_llmp else None,
-            n_pairwise_intras=_n_pi_test_llmp,
+            n_pairwise_intras=all_npi_list,
         )
-        if _price_n_pairwise_llmp:
-            all_padded, all_masks, _, _, _, _, _ = _pad_out_llmp_multi
+        if _price_n_or_llmp:
+            # Multi-clause DNF: pad via multi_clause_data path. The flat output has
+            # length n_queries * max_n_clauses; pack each query into a
+            # (max_clauses, flat_size) tensor for LLMPriceDataset.
+            _pad_kwargs_llmp_multi["multi_clause_data"] = all_raw_feats
+            _pad_out_llmp_multi = pdu.pad_and_cache_features(
+                [], [], [], [], [], **_pad_kwargs_llmp_multi)
+            flat_pf_all = _pad_out_llmp_multi["padded_features"]
+            flat_pm_all = _pad_out_llmp_multi["padding_masks"]
+            num_clauses_tensor_all = _pad_out_llmp_multi["num_clauses"]
+            max_n_clauses_all = int(_pad_out_llmp_multi["max_n_clauses"])
+            n_total = len(num_clauses_tensor_all)
+            packed_pf, packed_pm = _pack_multi_clause(
+                flat_pf_all, flat_pm_all, max_n_clauses_all, n_total)
+            n_train = len(raw_feats_train_all)
+            pf_train_all = packed_pf[:n_train]
+            pm_train_all = packed_pm[:n_train]
+            padded_features = packed_pf[n_train:]
+            padding_masks = packed_pm[n_train:]
+            num_clauses_per_query_all = num_clauses_tensor_all.tolist()
+            num_clauses_train_all = num_clauses_per_query_all[:n_train]
+            num_clauses_test_all = num_clauses_per_query_all[n_train:]
         else:
-            all_padded, all_masks, _, _, _, _ = _pad_out_llmp_multi
-
-        # Split back into train and test portions
-        n_train = len(raw_feats_train_all)
-        pf_train_all = all_padded[:n_train]
-        pm_train_all = all_masks[:n_train]
-        padded_features = all_padded[n_train:]
-        padding_masks = all_masks[n_train:]
+            _pad_out_llmp_multi = pdu.pad_and_cache_features(
+                all_raw_feats, all_njc_list, all_nfo_list, all_ntb_list, all_nfc_list,
+                **_pad_kwargs_llmp_multi)
+            if _price_n_pairwise_llmp:
+                all_padded, all_masks, _, _, _, _, _ = _pad_out_llmp_multi
+            else:
+                all_padded, all_masks, _, _, _, _ = _pad_out_llmp_multi
+            n_train = len(raw_feats_train_all)
+            pf_train_all = all_padded[:n_train]
+            pm_train_all = all_masks[:n_train]
+            padded_features = all_padded[n_train:]
+            padding_masks = all_masks[n_train:]
+            num_clauses_train_all = None
+            num_clauses_test_all = None
         n_join_cols = n_join_cols_test
         n_fanouts = n_fanouts_test
         n_tables = n_tables_test
@@ -4457,6 +4818,14 @@ def get_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_
         nfc_val = _subset(nfc_train_all, val_ids)
         nfc_train = _subset(nfc_train_all, train_ids)
 
+        # Multi-clause: slice num_clauses train/val too. None when --price_n_or off.
+        if num_clauses_train_all is not None:
+            nc_train = _subset(num_clauses_train_all, train_ids)
+            nc_val = _subset(num_clauses_train_all, val_ids)
+            nc_test = num_clauses_test_all
+        else:
+            nc_train = nc_val = nc_test = None
+
         # Apply train_ratio subsampling (consistent with llm_finetune path)
         if hasattr(argsP, 'train_ratio') and 0.0 < argsP.train_ratio < 1.0:
             n_before = len(texts_train)
@@ -4471,6 +4840,8 @@ def get_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_
             nfo_train = [nfo_train[i] for i in sample_ids]
             ntb_train = [ntb_train[i] for i in sample_ids]
             nfc_train = [nfc_train[i] for i in sample_ids]
+            if nc_train is not None:
+                nc_train = [nc_train[i] for i in sample_ids]
             print(f"[LLM+PRICE] Subsampled training set: {n_before} -> {len(texts_train)} (train_ratio={argsP.train_ratio})", flush=True)
 
         texts_test_split = cleaned_texts_test
@@ -4509,11 +4880,14 @@ def get_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_test, ds_
         yte = ds_info.card_norm.normalize_labels(costs_test)
 
     ds_train = LLMPriceDataset(texts_train, pf_train, pm_train,
-                               njc_train, nfo_train, ntb_train, nfc_train, ytr)
+                               njc_train, nfo_train, ntb_train, nfc_train, ytr,
+                               num_clauses_per_query=nc_train)
     ds_val = LLMPriceDataset(texts_val, pf_val, pm_val,
-                             njc_val, nfo_val, ntb_val, nfc_val, yva)
+                             njc_val, nfo_val, ntb_val, nfc_val, yva,
+                             num_clauses_per_query=nc_val)
     ds_test = LLMPriceDataset(texts_test_split, pf_test, pm_test,
-                              njc_test, nfo_test, ntb_test, nfc_test, yte)
+                              njc_test, nfo_test, ntb_test, nfc_test, yte,
+                              num_clauses_per_query=nc_test)
 
     argsP.embed_size = predictor.hidden_dim
 

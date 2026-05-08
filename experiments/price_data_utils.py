@@ -3979,10 +3979,13 @@ def generate_price_features(workload, sql_list, db_name, bin_size=40,
     if use_price_n:
         from setup.features_tool_n import Sql2FeatureN
         sql2feat = Sql2FeatureN(db_name, bin_size, "finetune")
-        # Override filter_dim used elsewhere.
-        filter_dim = sql2feat.filter_dim_n if price_n_filter \
-                     else (bin_size + 21 if price_m else bin_size + 3)
-        fanout_dim = sql2feat.fanout_dim_n if price_n_fanout else bin_size
+        # Sql2FeatureN ALWAYS emits 75-dim filter and 42-dim fanout tokens
+        # regardless of which sub-flags are set, because the encoder doesn't
+        # branch on flags. Use those dims uniformly so data and model agree.
+        # The sub-flags control which *atoms* are populated (e.g. pairwise
+        # only when price_n_pairwise), not the token shape.
+        filter_dim = sql2feat.filter_dim_n
+        fanout_dim = sql2feat.fanout_dim_n
         pairwise_dim = sql2feat.pairwise_dim_n if price_n_pairwise else 0
     elif price_m:
         from setup.features_tool_m import Sql2FeatureM
@@ -4175,9 +4178,13 @@ def generate_price_features(workload, sql_list, db_name, bin_size=40,
             elif fail_count == 5:
                 print(f"[PRICE{mode_tag.upper()}] Suppressing further warnings...")
             fail_count += 1
-            # Use zero-feature placeholder with proper empty tensors
+            # Use zero-feature placeholder with proper empty tensors.
+            # Use the mode-resolved fanout_dim/filter_dim so PRICE_N's 42-dim
+            # fanout (and 75-dim filter) match successful queries in the same
+            # batch.  bin_size * 2 here would force 80-dim fanout and break
+            # collation against PRICE_N's 84-dim fanout.
             zero_join = torch.zeros(bin_size)  # 1 join col placeholder
-            zero_fanout = torch.zeros(bin_size * 2)  # 2 fanout placeholder
+            zero_fanout = torch.zeros(fanout_dim * 2)  # 2 fanout placeholder
             zero_table = torch.zeros(4)  # 1 table with 4 features
             zero_filter = torch.zeros(filter_dim)  # 1 filter placeholder
             if use_price_n and price_n_or:

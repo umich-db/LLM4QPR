@@ -549,6 +549,162 @@ helper:
 
 ---
 
+## 10a. Full pipeline workflow (PRICE_N + LLM)
+
+End-to-end picture for a single (query plan, query) pair. The
+architecture has two LLM-style branches that should not be confused:
+
+- **QueryPlanLLM** — the LoRA-finetuned encoder for the *query plan
+  text* (the EXPLAIN output). This is what the existing `--llm_mode lora`
+  / `LLMPriceJointModel.self.llm` already does.
+- **QueryResidualTokens (QRT)** — a *tokenizer-only* path for the parts
+  of the *SQL query* that the statistics core cannot represent
+  (LIKE, regex, EXISTS / IN(subquery), scalar subqueries, opaque
+  expressions, etc.). It runs through the LLM's tokenizer and embedding
+  layer **only** — no transformer blocks — so the output is a sequence
+  of raw token embeddings carrying the surface form of the residual
+  fragments. It is *not* an LLM forward in the usual sense; the name
+  "LLM-residual" used elsewhere refers to this same concept and is
+  reserved for legacy compatibility.
+
+```
+                     ┌──────────────────────┐    ┌──────────────────────────┐
+   inputs:           │  Query Plan  (text)  │    │      Query (SQL text)    │
+                     └─────────┬────────────┘    └────────────┬─────────────┘
+                               │                              │
+                               ▼                              ▼
+                  ┌────────────────────────┐   ┌──────────────────────────────┐
+                  │  QueryPlanLLM          │   │  Sql2FeatureN parser         │
+                  │  (LoRA-finetuned)      │   │  splits the SQL into:        │
+                  │  tokenize + encode     │   │   A) statistics-core atoms   │
+                  │  → token seq  h_plan   │   │      in DNF form (per AND    │
+                  │     [B, T_p, D_llm]    │   │      clause, K clauses)      │
+                  └────────────────────────┘   │   B) residual text spans     │
+                               │               │      (LIKE / EXISTS / scalar │
+                               │               │      subq / opaque)          │
+                               │               └─┬────────────────────────┬───┘
+                               │                 │ A: K AND-clauses       │ B: residual text
+                               │                 ▼                        ▼
+                               │     ┌────────────────────────┐   ┌──────────────────────┐
+                               │     │ STATISTICS CORE        │   │ QUERY RESIDUAL TOKENS│
+                               │     │  (per AND-clause k)    │   │       (QRT)          │
+                               │     │   ┌────────────────┐   │   │  tokenizer + embed   │
+                               │     │   │ scale_encoder  │   │   │  layer ONLY          │
+                               │     │   │ filter_encoder │   │   │  (no transformer     │
+                               │     │   │  → CLS_k       │   │   │   blocks)            │
+                               │     │   └────────────────┘   │   │  → r_qry             │
+                               │     │ → [CLS_1 … CLS_K]      │   │     [B, T_r, D_llm]  │
+                               │     └────────────────────────┘   └──────────────────────┘
+                               │                 │                        │
+                               │                 ▼                        │
+                               │     ┌────────────────────────┐           │
+                               │     │ OR-TRANSFORMER         │           │
+                               │     │  AND-clauses attend    │           │
+                               │     │  one another           │           │
+                               │     │  Output: CLS-only      │           │
+                               │     │  stat_core             │           │
+                               │     │   [B, 1, D_stat]       │           │
+                               │     └────────────────────────┘           │
+                               │                 │                        │
+                               │                 └────────┬───────────────┘
+                               │                          ▼
+                               │       ┌──────────────────────────────────────┐
+                               │       │ STAT-CORE  ↔  QRT  CROSS-ATTN        │
+                               │       │ (transformer block)                  │
+                               │       │  stat_core (CLS, length-1) attends   │
+                               │       │  over QRT residual tokens, and vice  │
+                               │       │  versa. Joint output:                │
+                               │       │   h_query  [B, T_q, D]               │
+                               │       └──────────────────────────────────────┘
+                               │                          │
+                               │                          │
+                               ▼                          ▼
+                       ┌──────────────────────────────────────────┐
+                       │     PLAN  ↔  QUERY  CROSS-ATTN           │
+                       │  (transformer block, N layers)           │
+                       │   h_plan tokens cross-attend over        │
+                       │   h_query, and (optionally) reverse:     │
+                       │   h_query attends back to h_plan.        │
+                       │   Output: joint embedding                │
+                       │     [B, T_joint, D]                      │
+                       └──────────────────────────────────────────┘
+                                          │
+                                          ▼
+                                    [CLS] / mean pool
+                                          │
+                                          ▼
+                                         MLP
+                                          │
+                                          ▼
+                                  predicted runtime
+```
+
+### Component summary
+
+1. **QueryPlanLLM** (existing). LoRA-finetuned LLM over the EXPLAIN text.
+   Produces `h_plan` ∈ ℝ^{B×T_p×D_llm}.
+
+2. **Sql2FeatureN** (existing parser, `experiments/features_tool_n.py`).
+   Splits the SQL into (A) statistics-core atoms organized in DNF
+   per-clause, and (B) residual text fragments.
+
+3. **Statistics-core encoders** (existing). For each AND-clause *k*,
+   the per-clause atoms are scaled (`scale_encoder`) and filtered
+   (`filter_encoder`); position-0 of `filter_encoder` output is the
+   per-clause CLS token `CLS_k`.
+
+4. **OR-Transformer** (existing). Lets the K per-clause CLS tokens
+   attend to one another. Reads only CLS positions of each clause
+   (not the full per-clause sequences). Output: a single
+   `stat_core` CLS embedding of shape `[B, 1, D_stat]` per query.
+
+5. **QueryResidualTokens (QRT) — NEW**. Residual text fragments are
+   passed through QueryPlanLLM's *tokenizer + embedding lookup only*
+   (no transformer layers). Output: `r_qry` ∈ ℝ^{B×T_r×D_llm}.
+   Concretely, this is `embed_tokens(tokenizer(residual_text))`.
+
+6. **Stat-core ↔ QRT cross-attention — NEW**. A bidirectional
+   cross-attention transformer block where `stat_core` (length-1)
+   and `r_qry` exchange information. Produces `h_query` — the
+   unified query-side representation.
+
+7. **Plan ↔ Query cross-attention** (replaces the current
+   biCrossAttn-on-PRICE-summary path). `h_plan` and `h_query`
+   exchange via N cross-attention layers. The result is pooled
+   (CLS) and fed to the prediction MLP.
+
+### What changes vs. the current implementation
+
+| Component                        | Current (`mode 12 cx=4`)             | Proposed                                                  |
+|---|---|---|
+| QueryPlanLLM                     | LoRA, full token seq                 | Same                                                      |
+| Sql2FeatureN                     | Outputs stat-core only               | Also emits residual text spans for QRT                    |
+| Statistics core per-AND-group    | Single AND-clause path (K=1)          | Multi-clause via DNF (data pipeline already wired w/ `--price_n_or`)    |
+| OR-Transformer                   | **Constructed but unused** in joint LLM+PRICE: `PRICEEmbedder` skips it; only `RegressionModel.forward` (PRICE-only path) calls it | Wired into the joint path; always run (degenerate at K=1); feeds Stat-core ↔ QRT cross-attn |
+| QRT (residual text)              | **Not present** — residual is dropped | NEW: tokenizer + embedding lookup only                    |
+| Stat-core ↔ QRT cross-attn       | **Not present**                      | NEW: transformer block fusing stat-core CLS with QRT      |
+| Plan ↔ Query cross-attn          | LLM ↔ PRICE-summary (length-1) cross-attn | LLM-plan tokens ↔ unified `h_query` token sequence    |
+| Final pooling + MLP              | CLS+L2norm of fused LLM, concat with PRICE | CLS pool of joint output → MLP                       |
+
+### Open design questions
+
+- **D_stat vs. D_llm**: Should `stat_core` and `h_plan` share the
+  same hidden dim (so cross-attn is dim-matched without projection),
+  or keep `D_stat=512`/`384` and add input projections at every
+  cross-attn boundary? Defaulting to `D_stat = D_llm` simplifies
+  shapes.
+- **CLS-only vs. full sequence at OR-Transformer output**: User
+  notes "I think at this point we can just use their CLS tokens,
+  not the whole sequence" — adopting that. If we ever need richer
+  per-clause information downstream, switch to full-sequence.
+- **QRT length budget**: residual fragments per query can vary
+  widely. Per-query truncation policy + padding mask convention
+  must align with cross-attn masks.
+- **N layers for plan↔query cross-attn**: keep the current
+  `--n_cross_layers` knob (4 default).
+
+---
+
 ## 11. Comparison with PRICE_S and PRICE_M
 
 | Capability | base PRICE | PRICE_S | PRICE_M | PRICE_N |

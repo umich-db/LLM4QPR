@@ -35,8 +35,8 @@ COMMON=(
     --bucketize               "None"
     --embed_size              "1000"
     --concat_true             "false"
-    --ft_batch_size           "24"
-    --ft_num_epoch            "30"
+    --ft_batch_size           "8"
+    --ft_num_epoch            "100"
     --removed_fields          ""
     --seeds                   "42 43 44"
     --db                      "postgres"
@@ -56,7 +56,6 @@ JOINT=(
 BICROSS_INFLATE=(
     --inflate_price
     --n_cross_layers          "4"
-    --retrain_mlp
 )
 
 run() {
@@ -68,35 +67,35 @@ run() {
     bash "$RUN_SCRIPT" "${COMMON[@]}" "$@"
 }
 
-# ─── Run 1: Pretrained LLM only ───────────────────────────────────────────
-run "mode 1 — pretrained LLM" \
-    --finetune_mode "1"
+# # ─── Run 1: Pretrained LLM only ───────────────────────────────────────────
+# run "mode 1 — pretrained LLM" \
+#     --finetune_mode "1"
 
-# ─── Run 2: Finetuned LLM only (LoRA) ─────────────────────────────────────
-run "mode 2 — finetune LLM (LoRA)" \
-    --finetune_mode "2" \
-    --finetune_method "lora"
+# # ─── Run 2: Finetuned LLM only (LoRA) ─────────────────────────────────────
+# run "mode 2 — finetune LLM (LoRA)" \
+#     --finetune_mode "2" \
+#     --finetune_method "lora"
 
-# ─── Run 3: LLM + pretrained PRICE (JointPrice) ───────────────────────────
-# No --price_random_init → pretrained PRICE weights (filter_dim=43) are loaded.
-# No PRICE_S/M/N flag → base PRICE shape, matching the pretrained checkpoint.
-run "mode 7 — LLM + pretrained PRICE (joint)" \
-    --finetune_mode "7" \
-    --finetune_method "lora" \
-    "${JOINT[@]}"
+# # ─── Run 3: LLM + pretrained PRICE (JointPrice) ───────────────────────────
+# # No --price_random_init → pretrained PRICE weights (filter_dim=43) are loaded.
+# # No PRICE_S/M/N flag → base PRICE shape, matching the pretrained checkpoint.
+# run "mode 7 — LLM + pretrained PRICE (joint)" \
+#     --finetune_mode "7" \
+#     --finetune_method "lora" \
+#     --price_s \
+#     "${JOINT[@]}"
 
-# ─── Run 4: LLM + inflated bidirectional cross-attn + PRICE_N ─────────────
-# --price_n: enables all four PRICE_N sub-flags (parsing/filter/fanout/pairwise).
-# --price_random_init: PRICE_N filter_dim=75 ≠ pretrained's 43, so random-init.
-# BICROSS_INFLATE: inflated bi-cross-attention with 4 cross-attn layers,
-# retrain_mlp on converged embeddings.
-run "mode 12 — inflatePRICE + PRICE_N" \
-    --finetune_mode "12" \
-    --finetune_method "lora" \
-    --price_n \
-    --price_random_init \
-    "${JOINT[@]}" \
-    "${BICROSS_INFLATE[@]}"
+# # ─── Run 4: LLM + inflated bidirectional cross-attn + PRICE_N ─────────────
+# # --price_n: enables all four PRICE_N sub-flags (parsing/filter/fanout/pairwise).
+# # --price_random_init: PRICE_N filter_dim=75 ≠ pretrained's 43, so random-init.
+# # BICROSS_INFLATE: inflated bi-cross-attention with 4 cross-attn layers,
+# run "mode 12 — inflatePRICE + PRICE_N" \
+#     --finetune_mode "12" \
+#     --finetune_method "lora" \
+#     --price_s \
+#     --price_random_init \
+#     "${JOINT[@]}" \
+#     "${BICROSS_INFLATE[@]}"
 
 # ─── Run 5: Same as Run 4 + --no_llm_residual ─────────────────────────────
 # Disables the LLM-residual fusion path; PRICE statistics-core embedding

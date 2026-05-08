@@ -22,6 +22,15 @@ CLI_REMOVED_FIELDS="__unset__"
 CLI_DB=""
 CLI_PRICE_M=""
 CLI_PRICE_S=""
+CLI_PRICE_N=""
+CLI_PRICE_N_PARSING=""
+CLI_PRICE_N_FILTER=""
+CLI_PRICE_N_FANOUT=""
+CLI_PRICE_N_PAIRWISE=""
+CLI_PRICE_N_OR=""
+CLI_PRICE_N_OR_MAX_CLAUSES=""
+CLI_NO_OR_TRANSFORMER=""
+CLI_NO_LLM_RESIDUAL=""
 CLI_PRICE_RANDOM_INIT=""
 CLI_FT_NUM_EPOCH=""
 CLI_CHECKPOINT_INTERVAL=""
@@ -30,6 +39,17 @@ CLI_PRICE_N_LAYERS=""
 CLI_PRICE_FFN_RATIO=""
 CLI_N_CROSS_LAYERS=""
 CLI_CROSS_ATTN_LR=""
+CLI_CROSS_ATTN_DROPOUT=""
+CLI_CROSS_ATTN_GATE=""
+CLI_RESIDUAL_PRED=""
+CLI_DELTA_BOUND=""
+CLI_PRICE_EMB_DROPOUT=""
+CLI_INIT_LLM_FROM=""
+CLI_DETERMINISTIC=""
+CLI_NO_RETRAIN_MLP=""
+CLI_CROSS_ATTN_NOOP=""
+CLI_FORCE_INFLATE=""
+CLI_PRICE_OUTPUT_DIM=""
 CLI_RETRAIN_MLP=""
 CLI_REFINED_POOL=""
 CLI_TRIPLE_CONCAT=""
@@ -62,11 +82,31 @@ while [[ $# -gt 0 ]]; do
         --db)               CLI_DB="$2";               shift 2 ;;
         --price_m)          CLI_PRICE_M="true";        shift 1 ;;
         --price_s)          CLI_PRICE_S="true";        shift 1 ;;
+        --price_n)          CLI_PRICE_N="true";        shift 1 ;;
+        --price_n_parsing)  CLI_PRICE_N_PARSING="true"; shift 1 ;;
+        --price_n_filter)   CLI_PRICE_N_FILTER="true"; shift 1 ;;
+        --price_n_fanout)   CLI_PRICE_N_FANOUT="true"; shift 1 ;;
+        --price_n_pairwise) CLI_PRICE_N_PAIRWISE="true"; shift 1 ;;
+        --price_n_or)       CLI_PRICE_N_OR="true";     shift 1 ;;
+        --price_n_or_max_clauses) CLI_PRICE_N_OR_MAX_CLAUSES="$2"; shift 2 ;;
+        --no_or_transformer) CLI_NO_OR_TRANSFORMER="true"; shift 1 ;;
+        --no_llm_residual)  CLI_NO_LLM_RESIDUAL="true"; shift 1 ;;
         --price_random_init) CLI_PRICE_RANDOM_INIT="true"; shift 1 ;;
         --price_n_layers)   CLI_PRICE_N_LAYERS="$2";     shift 2 ;;
         --price_ffn_ratio)  CLI_PRICE_FFN_RATIO="$2";    shift 2 ;;
         --n_cross_layers)   CLI_N_CROSS_LAYERS="$2";     shift 2 ;;
         --cross_attn_lr)    CLI_CROSS_ATTN_LR="$2";     shift 2 ;;
+        --cross_attn_dropout) CLI_CROSS_ATTN_DROPOUT="$2"; shift 2 ;;
+        --cross_attn_gate)  CLI_CROSS_ATTN_GATE="true"; shift 1 ;;
+        --residual_pred)    CLI_RESIDUAL_PRED="true"; shift 1 ;;
+        --delta_bound)      CLI_DELTA_BOUND="$2";    shift 2 ;;
+        --price_emb_dropout) CLI_PRICE_EMB_DROPOUT="$2"; shift 2 ;;
+        --init_llm_from)    CLI_INIT_LLM_FROM="$2";    shift 2 ;;
+        --deterministic_algorithms) CLI_DETERMINISTIC="true"; shift 1 ;;
+        --no_retrain_mlp_at_inference) CLI_NO_RETRAIN_MLP="true"; shift 1 ;;
+        --cross_attn_noop) CLI_CROSS_ATTN_NOOP="true"; shift 1 ;;
+        --force_inflate) CLI_FORCE_INFLATE="true"; shift 1 ;;
+        --price_output_dim) CLI_PRICE_OUTPUT_DIM="$2"; shift 2 ;;
         --retrain_mlp)      CLI_RETRAIN_MLP="true";     shift 1 ;;
         --refined_pool)     CLI_REFINED_POOL="true";    shift 1 ;;
         --triple_concat)   CLI_TRIPLE_CONCAT="true";   shift 1 ;;
@@ -687,6 +727,33 @@ for SEED in "${seeds[@]}"; do
             if [[ -n "$CLI_PRICE_RANDOM_INIT" ]]; then
                 export PRICE_RANDOM_INIT="$CLI_PRICE_RANDOM_INIT"
             fi
+            if [[ -n "$CLI_PRICE_N" ]]; then
+                export PRICE_N="$CLI_PRICE_N"
+            fi
+            if [[ -n "$CLI_PRICE_N_PARSING" ]]; then
+                export PRICE_N_PARSING="$CLI_PRICE_N_PARSING"
+            fi
+            if [[ -n "$CLI_PRICE_N_FILTER" ]]; then
+                export PRICE_N_FILTER="$CLI_PRICE_N_FILTER"
+            fi
+            if [[ -n "$CLI_PRICE_N_FANOUT" ]]; then
+                export PRICE_N_FANOUT="$CLI_PRICE_N_FANOUT"
+            fi
+            if [[ -n "$CLI_PRICE_N_PAIRWISE" ]]; then
+                export PRICE_N_PAIRWISE="$CLI_PRICE_N_PAIRWISE"
+            fi
+            if [[ -n "$CLI_PRICE_N_OR" ]]; then
+                export PRICE_N_OR="$CLI_PRICE_N_OR"
+            fi
+            if [[ -n "$CLI_PRICE_N_OR_MAX_CLAUSES" ]]; then
+                export PRICE_N_OR_MAX_CLAUSES="$CLI_PRICE_N_OR_MAX_CLAUSES"
+            fi
+            if [[ -n "$CLI_NO_LLM_RESIDUAL" ]]; then
+                export NO_LLM_RESIDUAL="$CLI_NO_LLM_RESIDUAL"
+            fi
+            if [[ -n "$CLI_NO_OR_TRANSFORMER" ]]; then
+                export NO_OR_TRANSFORMER="$CLI_NO_OR_TRANSFORMER"
+            fi
             if [[ -n "$CLI_PRICE_N_LAYERS" ]]; then
                 export PRICE_N_LAYERS="$CLI_PRICE_N_LAYERS"
             fi
@@ -698,6 +765,39 @@ for SEED in "${seeds[@]}"; do
             fi
             if [[ -n "$CLI_CROSS_ATTN_LR" ]]; then
                 export CROSS_ATTN_LR="$CLI_CROSS_ATTN_LR"
+            fi
+            if [[ -n "$CLI_CROSS_ATTN_DROPOUT" ]]; then
+                export CROSS_ATTN_DROPOUT="$CLI_CROSS_ATTN_DROPOUT"
+            fi
+            if [[ -n "$CLI_CROSS_ATTN_GATE" ]]; then
+                export CROSS_ATTN_GATE="$CLI_CROSS_ATTN_GATE"
+            fi
+            if [[ -n "$CLI_RESIDUAL_PRED" ]]; then
+                export RESIDUAL_PRED="$CLI_RESIDUAL_PRED"
+            fi
+            if [[ -n "$CLI_DELTA_BOUND" ]]; then
+                export DELTA_BOUND="$CLI_DELTA_BOUND"
+            fi
+            if [[ -n "$CLI_PRICE_EMB_DROPOUT" ]]; then
+                export PRICE_EMB_DROPOUT="$CLI_PRICE_EMB_DROPOUT"
+            fi
+            if [[ -n "$CLI_INIT_LLM_FROM" ]]; then
+                export INIT_LLM_FROM="$CLI_INIT_LLM_FROM"
+            fi
+            if [[ -n "$CLI_DETERMINISTIC" ]]; then
+                export DETERMINISTIC="$CLI_DETERMINISTIC"
+            fi
+            if [[ -n "$CLI_NO_RETRAIN_MLP" ]]; then
+                export NO_RETRAIN_MLP="$CLI_NO_RETRAIN_MLP"
+            fi
+            if [[ -n "$CLI_CROSS_ATTN_NOOP" ]]; then
+                export CROSS_ATTN_NOOP="$CLI_CROSS_ATTN_NOOP"
+            fi
+            if [[ -n "$CLI_FORCE_INFLATE" ]]; then
+                export FORCE_INFLATE="$CLI_FORCE_INFLATE"
+            fi
+            if [[ -n "$CLI_PRICE_OUTPUT_DIM" ]]; then
+                export PRICE_OUTPUT_DIM="$CLI_PRICE_OUTPUT_DIM"
             fi
             if [[ -n "$CLI_RETRAIN_MLP" ]]; then
                 export RETRAIN_MLP="$CLI_RETRAIN_MLP"

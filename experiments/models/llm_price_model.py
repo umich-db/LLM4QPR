@@ -79,20 +79,30 @@ def _load_price_n_state_dict(model, ckpt_sd):
 
 class PRICEEmbedder(nn.Module):
     """
-    Wraps PRICE's RegressionModel layers up to and including the ELU activation.
-    Returns 512-dim query_output embedding (query_hidden_dim).
+    Mode 7's PRICE embedder, optionally enriched with cross-attention.
 
-    Copies these layers from a loaded RegressionModel:
-      scale_embedding, filter_embedding, scale_encoder, filter_encoder,
-      len_net, linear, elu
+    Base pipeline (always runs):
+      scale_emb -> filter_emb -> CLS(256) -> +len(16) -> linear(272→512) -> ELU -> dropout
+
+    With n_cross_layers > 0:
+      Adds an inflate Linear(512 -> llm_hidden_dim) and N cross-attention blocks.
+      The PRICE summary is treated as a length-1 token sequence; LLM tokens
+      cross-attend to it (and vice versa for odd-indexed blocks).
+
+    Returns:
+      (price_emb, updated_llm, llm_attention_mask)
+        - price_emb: [B, query_hidden_dim] at cx=0, [B, llm_hidden_dim] at cx>0
+        - updated_llm: None at cx=0; cross-attn-refined LLM tokens when cx>0 has odd blocks
+        - llm_attention_mask: passed through (None at cx=0)
     """
 
-    def __init__(self, regression_model):
-        """
-        Args:
-            regression_model: A loaded PRICE RegressionModel instance.
-        """
+    def __init__(self, regression_model, n_cross_layers=0, llm_hidden_dim=None,
+                 n_heads=8, dropout_rate=0.1, cross_attn_noop=False, force_inflate=False,
+                 price_output_dim_override=0):
         super().__init__()
+        self.cross_attn_noop = bool(cross_attn_noop)
+        self.force_inflate = bool(force_inflate)
+        self.price_output_dim_override = int(price_output_dim_override)
         self.n_join_col = regression_model.n_join_col
         self.n_fanout = regression_model.n_fanout
         self.n_table = regression_model.n_table
@@ -101,49 +111,133 @@ class PRICEEmbedder(nn.Module):
         self.table_dim = regression_model.table_dim
         self.dropout_rate = regression_model.dropout_rate
 
-        # Copy the embedding layers
+        # Mode-7-shared layers (scale/filter encoders, len_net, elu).
         self.scale_embedding = regression_model.scale_embedding
         self.filter_embedding = regression_model.filter_embedding
         self.scale_encoder = regression_model.scale_encoder
         self.filter_encoder = regression_model.filter_encoder
         self.len_net = regression_model.len_net
-        self.linear = regression_model.linear
         self.elu = regression_model.elu
+        # OR-Transformer: aggregates per-AND-clause CLS tokens for multi-clause DNF.
+        # Constructed by RegressionModel when any PRICE_N flag is on (`use_or_transformer=True`),
+        # left as None otherwise. PRICEEmbedder.forward calls it when `num_clauses` is provided
+        # (i.e., the dataset emitted per-clause features under --price_n_or). For K=1
+        # (single-clause), the OR-Transformer runs degenerately on a length-1 sequence.
+        self.or_transformer = getattr(regression_model, 'or_transformer', None)
 
-    def forward(self, x, padding_mask, n_join_col, n_fanout, n_table, n_filter_col):
-        """
-        Args:
-            x: [B, feature_dim] padded PRICE features
-            padding_mask: [B, max_n_feature+1]
-            n_join_col: [B, 1]
-            n_fanout: [B, 1]
-            n_table: [B, 1]
-            n_filter_col: [B, 1]
+        self.n_cross_layers = int(n_cross_layers)
+        # Always reuse regression_model.linear — never create a new nn.Linear here.
+        # Output dim (272 → query_hidden_dim) is configured at RegressionModel
+        # construction time in train.py, based on --price_output_dim / force_inflate
+        # / cross-attn flags. This keeps the PRICEEmbedder.__init__ deterministic in
+        # RNG consumption regardless of dim/architecture choice.
+        self.linear = regression_model.linear
+        self.inflate = None
+        self.price_output_dim = self.linear.out_features
+        if self.n_cross_layers > 0:
+            # cx>0: cross-attn blocks require PRICE token at LLM hidden dim
+            assert llm_hidden_dim is not None, "llm_hidden_dim required for cross-attn"
+            assert self.price_output_dim == llm_hidden_dim, (
+                f"With cx>0, price_output_dim ({self.price_output_dim}) must equal "
+                f"llm_hidden_dim ({llm_hidden_dim}); set --price_output_dim or use the "
+                f"force_inflate-driven path so RegressionModel is built with matching dim."
+            )
 
-        Returns:
-            query_output: [B, query_hidden_dim] (512-dim embedding)
-        """
-        # Scaling stage
+        # Cross-attn blocks (built when n_cross_layers > 0)
+        if self.n_cross_layers > 0:
+            self.cross_attn_blocks = nn.ModuleList([
+                ReverseCrossAttentionBlock(llm_hidden_dim, n_heads, dropout_rate, use_gate=False)
+                for _ in range(self.n_cross_layers)
+            ])
+            for i, block in enumerate(self.cross_attn_blocks):
+                if i % 2 == 1:
+                    nn.init.zeros_(block.cross_attn.projection.weight)
+                    nn.init.zeros_(block.cross_attn.projection.bias)
+                    nn.init.zeros_(block.feed_forward[-1].weight)
+                    nn.init.zeros_(block.feed_forward[-1].bias)
+        else:
+            self.cross_attn_blocks = nn.ModuleList([])
+
+    def forward(self, x, padding_mask, n_join_col, n_fanout, n_table, n_filter_col,
+                llm_hidden_states=None, llm_attention_mask=None, num_clauses=None):
+        # Mode 7's pipeline (always). When num_clauses is provided, x has shape
+        # (batch * max_clauses, flat_features); we run scale+filter per clause,
+        # then OR-Transformer aggregates the per-clause CLS tokens into a single
+        # query-level embedding. When num_clauses is None, behavior is unchanged
+        # (single-clause path, OR-Transformer not invoked).
         scale_features = self.scale_embedding(x)
         masks1 = padding_mask[:, :1 + self.n_join_col + self.n_fanout] if padding_mask is not None else None
         scaling_output = self.scale_encoder(scale_features, masks1)
-
-        # Filtering stage
         filter_features = self.filter_embedding(scaling_output, x)
         masks2 = padding_mask[:, :] if padding_mask is not None else None
         filtering_output = self.filter_encoder(filter_features, masks2)
-        query_output = filtering_output[:, 0, :]
+        per_clause_emb = filtering_output[:, 0, :]
 
-        # Length features
+        if num_clauses is not None and self.or_transformer is not None:
+            # Multi-clause: reshape to (batch, max_clauses, n_embd), build clause
+            # padding mask, run OR-Transformer, take CLS-only output.
+            bsz = num_clauses.size(0)
+            max_c = int(num_clauses.max().item())
+            per_clause_emb = per_clause_emb.view(bsz, max_c, -1)
+            clause_mask = (
+                torch.arange(max_c, device=per_clause_emb.device).unsqueeze(0)
+                >= num_clauses.unsqueeze(1)   # True where padded
+            )
+            query_output = self.or_transformer(per_clause_emb, clause_mask)
+        else:
+            query_output = per_clause_emb
+
         len_features = torch.cat([n_join_col, n_fanout, n_table, n_filter_col], dim=1)
         len_features = self.len_net(len_features)
 
-        # Linear + ELU
         query_output = self.linear(torch.cat([query_output, len_features], dim=1))
         query_output = self.elu(query_output)
         query_output = F.dropout(query_output, p=self.dropout_rate, training=self.training)
 
-        return query_output  # [B, 512]
+        # query_output is already at the right dim:
+        #   - cx=0 (no force_inflate): 512-d (mode 7's query_hidden_dim)
+        #   - cx>0 OR force_inflate: llm_hidden_dim (direct projection in self.linear)
+        if self.n_cross_layers == 0:
+            return query_output, None, None
+
+        # cx>0: query_output is at LLM dim; treat as length-1 token for cross-attn
+        price_tokens = query_output.unsqueeze(1)   # [B, 1, llm_hidden_dim]
+        price_mask = torch.ones(price_tokens.size(0), 1, device=price_tokens.device, dtype=torch.long)
+
+        updated_llm = None
+        any_llm_cross_attn = False
+        if llm_hidden_states is not None and not self.cross_attn_noop:
+            llm_tokens = llm_hidden_states.float()
+            for i, block in enumerate(self.cross_attn_blocks):
+                if i % 2 == 0:
+                    # PRICE (Q) attends to LLM (K/V)
+                    price_tokens = block(price_tokens, llm_tokens, llm_attention_mask)
+                else:
+                    # LLM (Q) attends to PRICE (K/V, length 1)
+                    llm_tokens = block(llm_tokens, price_tokens, price_mask)
+                    any_llm_cross_attn = True
+            if any_llm_cross_attn:
+                updated_llm = llm_tokens
+        # cross_attn_noop: cross_attn_blocks are CONSTRUCTED (so optimizer sees
+        # the params) but their forward is skipped. price_tokens stays at the
+        # initial inflate(price_emb_512), updated_llm stays None. This is
+        # architecturally equivalent to cx=0 — useful to confirm that the
+        # cx>0 code path itself is bug-free (any divergence from cx=0 baseline
+        # would come from the cross-attn blocks, not surrounding glue code).
+
+        price_output = price_tokens[:, 0, :]
+        return price_output, updated_llm, llm_attention_mask
+
+    def cross_attn_parameters(self):
+        if self.inflate is not None:
+            yield from self.inflate.parameters()
+        yield from self.cross_attn_blocks.parameters()
+
+    def price_core_parameters(self):
+        cross_attn_ids = {id(p) for p in self.cross_attn_parameters()}
+        for p in self.parameters():
+            if id(p) not in cross_attn_ids:
+                yield p
 
 
 class LLMPriceJointModel(nn.Module):
@@ -158,40 +252,94 @@ class LLMPriceJointModel(nn.Module):
         """
         Args:
             llm: QueryPlanPredictor (with LoRA) that takes text and returns embeddings
-            price_embedder: PRICEEmbedder instance
+            price_embedder: PRICEEmbedder instance (may have cross-attn enabled)
             llm_embed_size: LLM hidden dim
-            price_embed_size: PRICE embedding dim (512)
+            price_embed_size: legacy default; ignored if price_embedder.price_output_dim is set
             hid_units: MLP hidden dimension
         """
         super().__init__()
         self.llm = llm
         self.price = price_embedder
-        combined_dim = llm_embed_size + price_embed_size
-        # Import Prediction from trainer
+        # Read PRICE output dim from embedder; fall back to legacy arg.
+        _pod = getattr(price_embedder, 'price_output_dim', price_embed_size)
+        combined_dim = llm_embed_size + _pod
         from trainer import Prediction
         self.mlp = Prediction(combined_dim, hid_units)
+        # Convenience flag: does the embedder do cross-attention (need LLM hidden states)?
+        self.uses_cross_attn = getattr(price_embedder, 'n_cross_layers', 0) > 0
 
     def forward(self, x):
-        """
-        Args:
-            x: tuple of (texts, price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col)
+        # The collate function emits an 8-tuple (with num_clauses) under
+        # --price_n_or, otherwise the legacy 7-tuple. Unpack accordingly.
+        if len(x) == 8:
+            texts, price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col, num_clauses = x
+        else:
+            texts, price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col = x
+            num_clauses = None
 
-        Returns:
-            prediction: [B, 1]
-        """
-        texts, price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col = x
+        # When cross-attn is enabled, the embedder needs LLM hidden states.
+        # Otherwise (mode 7 / cx=0), use the cheaper LLM forward.
+        if self.uses_cross_attn:
+            pooled_emb, hidden_states, attn_mask = self.llm.forward_with_sequence(texts)
+        else:
+            pooled_emb = self.llm(texts)
+            hidden_states = None
+            attn_mask = None
+        if pooled_emb.dtype != torch.float32:
+            pooled_emb = pooled_emb.float()
 
-        # LLM embedding
-        llm_emb = self.llm(texts)  # [B, D_llm]
-        if llm_emb.dtype != torch.float32:
-            llm_emb = llm_emb.float()
+        price_emb, updated_llm, _ = self.price(
+            price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col,
+            llm_hidden_states=hidden_states, llm_attention_mask=attn_mask,
+            num_clauses=num_clauses,
+        )
 
-        # PRICE embedding
-        price_emb = self.price(price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col)  # [B, 512]
+        if updated_llm is not None:
+            # cx>0 odd-layer modified LLM tokens — use CLS+L2norm to match
+            # the LLM's native pooling (utilsLLM.py BERT branch returns CLS+L2 norm).
+            llm_emb = F.normalize(updated_llm[:, 0, :], p=2, dim=1)
+        else:
+            llm_emb = pooled_emb
 
-        # Concatenate and predict
         combined = torch.cat([llm_emb, price_emb], dim=1)
-        return self.mlp(combined)
+        out = self.mlp(combined)
+        if self.training:
+            _c = getattr(self, '_dbg_count', 0)
+            if _c < 5:
+                self._dbg_count = _c + 1
+                _ncx = getattr(self.price, 'n_cross_layers', 0)
+                print(f"[Mode7-fwd b{_c} cx={_ncx}] llm_emb mean={llm_emb.mean().item():.8f} std={llm_emb.std().item():.8f} norm={llm_emb.norm().item():.6f}")
+                print(f"[Mode7-fwd b{_c} cx={_ncx}] price_emb mean={price_emb.mean().item():.8f} std={price_emb.std().item():.8f} norm={price_emb.norm().item():.6f}")
+                print(f"[Mode7-fwd b{_c} cx={_ncx}] out mean={out.mean().item():.8f} samples={out[:, 0].detach().cpu().tolist()[:3]}")
+        return out
+
+    @torch.no_grad()
+    def forward_embeddings(self, x):
+        """Return concat([llm_emb, price_emb]) without the final MLP head.
+        Used by retrain_mlp inference flow to cache features."""
+        if len(x) == 8:
+            texts, price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col, num_clauses = x
+        else:
+            texts, price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col = x
+            num_clauses = None
+        if self.uses_cross_attn:
+            pooled_emb, hidden_states, attn_mask = self.llm.forward_with_sequence(texts)
+        else:
+            pooled_emb = self.llm(texts)
+            hidden_states = None
+            attn_mask = None
+        if pooled_emb.dtype != torch.float32:
+            pooled_emb = pooled_emb.float()
+        price_emb, updated_llm, _ = self.price(
+            price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col,
+            llm_hidden_states=hidden_states, llm_attention_mask=attn_mask,
+            num_clauses=num_clauses,
+        )
+        if updated_llm is not None:
+            llm_emb = F.normalize(updated_llm[:, 0, :], p=2, dim=1)
+        else:
+            llm_emb = pooled_emb
+        return torch.cat([llm_emb, price_emb], dim=1)
 
 
 class GatedLLMPriceJointModel(nn.Module):
@@ -218,7 +366,10 @@ class GatedLLMPriceJointModel(nn.Module):
         llm_emb = self.llm(texts)
         if llm_emb.dtype != torch.float32:
             llm_emb = llm_emb.float()
-        price_emb = self.price(price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col)
+        # PRICEEmbedder now always returns 3-tuple; first element is the price embedding.
+        price_emb, _, _ = self.price(
+            price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col
+        )
         gated_price_emb = self.gate(llm_emb) * price_emb
         combined = torch.cat([llm_emb, gated_price_emb], dim=1)
         return self.mlp(combined)
@@ -264,8 +415,10 @@ class FrozenLLMPriceModel(nn.Module):
         if llm_emb.dtype != torch.float32:
             llm_emb = llm_emb.float()
 
-        # PRICE embedding
-        price_emb = self.price(price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col)
+        # PRICE embedding (PRICEEmbedder now always returns 3-tuple).
+        price_emb, _, _ = self.price(
+            price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col
+        )
 
         # Concatenate and predict
         combined = torch.cat([llm_emb, price_emb], dim=1)
@@ -350,9 +503,16 @@ class MultiHeadCrossAttention(nn.Module):
 
 
 class CrossAttentionBlock(nn.Module):
-    """Pre-norm cross-attention + pre-norm FFN with residual connections."""
+    """Pre-norm cross-attention + pre-norm FFN with residual connections.
 
-    def __init__(self, n_embd, n_heads, dropout_rate):
+    Optional ReZero-style learnable gates (`use_gate=True`) scale the attn and
+    FFN deltas by a per-block scalar, both initialized to 0 — so at init the
+    block is a pure pass-through (output = query). Training opens the gates
+    only when cross-attn actually reduces the loss; if it never helps, gates
+    stay near 0 and the model degrades gracefully to LLM-only.
+    """
+
+    def __init__(self, n_embd, n_heads, dropout_rate, use_gate=False):
         super().__init__()
         self.norm1 = nn.LayerNorm(n_embd)
         self.cross_attn = MultiHeadCrossAttention(
@@ -361,18 +521,26 @@ class CrossAttentionBlock(nn.Module):
         self.norm2 = nn.LayerNorm(n_embd)
         self.feed_forward = FeedForward(n_embd)
         self.dropout_rate = dropout_rate
+        self.use_gate = use_gate
+        if use_gate:
+            self.attn_gate = nn.Parameter(torch.zeros(1))
+            self.ffn_gate = nn.Parameter(torch.zeros(1))
 
     def forward(self, query_tokens, kv_tokens, kv_mask=None):
-        # Pre-norm cross-attention with residual
+        # Pre-norm cross-attention with residual (gated when use_gate=True)
         normed = self.norm1(query_tokens)
         attn_out = self.cross_attn(normed, kv_tokens, kv_mask)
         attn_out = F.dropout(attn_out, p=self.dropout_rate, training=self.training)
+        if self.use_gate:
+            attn_out = self.attn_gate * attn_out
         x = query_tokens + attn_out
 
-        # Pre-norm FFN with residual
+        # Pre-norm FFN with residual (gated when use_gate=True)
         normed = self.norm2(x)
         ff_out = self.feed_forward(normed)
         ff_out = F.dropout(ff_out, p=self.dropout_rate, training=self.training)
+        if self.use_gate:
+            ff_out = self.ffn_gate * ff_out
         return x + ff_out
 
 
@@ -383,7 +551,7 @@ class CrossAttentionPRICEEmbedder(nn.Module):
     """
 
     def __init__(self, regression_model, llm_hidden_dim, n_cross_layers=2,
-                 n_embd=256, n_heads=8, dropout_rate=0.1):
+                 n_embd=256, n_heads=8, dropout_rate=0.1, use_gate=False):
         super().__init__()
         # Copy PRICE layers (same as PRICEEmbedder)
         self.n_join_col = regression_model.n_join_col
@@ -407,7 +575,7 @@ class CrossAttentionPRICEEmbedder(nn.Module):
 
         # NEW: cross-attention blocks
         self.cross_attn_blocks = nn.ModuleList([
-            CrossAttentionBlock(n_embd, n_heads, dropout_rate)
+            CrossAttentionBlock(n_embd, n_heads, dropout_rate, use_gate=use_gate)
             for _ in range(n_cross_layers)
         ])
 
@@ -536,7 +704,7 @@ class BiCrossAttentionPRICEEmbedder(nn.Module):
     """
 
     def __init__(self, regression_model, llm_hidden_dim, n_cross_layers=2,
-                 n_embd=256, n_heads=8, dropout_rate=0.1):
+                 n_embd=256, n_heads=8, dropout_rate=0.1, use_gate=False):
         super().__init__()
         # Copy PRICE layers (same as PRICEEmbedder)
         self.n_join_col = regression_model.n_join_col
@@ -560,7 +728,7 @@ class BiCrossAttentionPRICEEmbedder(nn.Module):
 
         # Alternating cross-attention blocks (same class, direction chosen at runtime)
         self.cross_attn_blocks = nn.ModuleList([
-            CrossAttentionBlock(n_embd, n_heads, dropout_rate)
+            CrossAttentionBlock(n_embd, n_heads, dropout_rate, use_gate=use_gate)
             for _ in range(n_cross_layers)
         ])
 
@@ -639,9 +807,15 @@ class BiCrossAttentionPRICEEmbedder(nn.Module):
 
 
 class ReverseCrossAttentionBlock(nn.Module):
-    """Pre-norm cross-attention + pre-norm FFN at LLM hidden dim."""
+    """Pre-norm cross-attention + pre-norm FFN at LLM hidden dim.
 
-    def __init__(self, llm_dim, n_heads, dropout_rate):
+    Optional ReZero-style learnable gates (`use_gate=True`) — see
+    CrossAttentionBlock for rationale. At init both gates are 0 → block is a
+    pure pass-through, so adding biCross can never make things worse than
+    LLM-only at start.
+    """
+
+    def __init__(self, llm_dim, n_heads, dropout_rate, use_gate=False):
         super().__init__()
         self.norm1 = nn.LayerNorm(llm_dim)
         self.cross_attn = MultiHeadCrossAttention(
@@ -654,18 +828,26 @@ class ReverseCrossAttentionBlock(nn.Module):
             nn.Linear(llm_dim * 4, llm_dim),
         )
         self.dropout_rate = dropout_rate
+        self.use_gate = use_gate
+        if use_gate:
+            self.attn_gate = nn.Parameter(torch.zeros(1))
+            self.ffn_gate = nn.Parameter(torch.zeros(1))
 
     def forward(self, query_tokens, kv_tokens, kv_mask=None):
-        # Pre-norm cross-attention with residual
+        # Pre-norm cross-attention with residual (gated when use_gate=True)
         normed = self.norm1(query_tokens)
         attn_out = self.cross_attn(normed, kv_tokens, kv_mask)
         attn_out = F.dropout(attn_out, p=self.dropout_rate, training=self.training)
+        if self.use_gate:
+            attn_out = self.attn_gate * attn_out
         x = query_tokens + attn_out
 
-        # Pre-norm FFN with residual
+        # Pre-norm FFN with residual (gated when use_gate=True)
         normed = self.norm2(x)
         ff_out = self.feed_forward(normed)
         ff_out = F.dropout(ff_out, p=self.dropout_rate, training=self.training)
+        if self.use_gate:
+            ff_out = self.ffn_gate * ff_out
         return x + ff_out
 
 
@@ -685,7 +867,7 @@ class ReverseCrossAttentionPRICEEmbedder(nn.Module):
     """
 
     def __init__(self, regression_model, llm_hidden_dim, n_cross_layers=2,
-                 n_embd=256, n_heads=8, dropout_rate=0.1):
+                 n_embd=256, n_heads=8, dropout_rate=0.1, use_gate=False):
         super().__init__()
         # Copy PRICE layers (same as PRICEEmbedder)
         self.n_join_col = regression_model.n_join_col
@@ -707,14 +889,14 @@ class ReverseCrossAttentionPRICEEmbedder(nn.Module):
         # ── Warmup direction: PRICE (Q) attends to LLM (K/V) at n_embd ──
         self.llm_proj_down = nn.Linear(llm_hidden_dim, n_embd)
         self.warmup_cross_attn_blocks = nn.ModuleList([
-            CrossAttentionBlock(n_embd, n_heads, dropout_rate)
+            CrossAttentionBlock(n_embd, n_heads, dropout_rate, use_gate=use_gate)
             for _ in range(n_cross_layers)
         ])
 
         # ── Normal direction: LLM (Q) attends to PRICE (K/V) at llm_dim ──
         self.price_proj_up = nn.Linear(n_embd, llm_hidden_dim)
         self.cross_attn_blocks = nn.ModuleList([
-            ReverseCrossAttentionBlock(llm_hidden_dim, n_heads, dropout_rate)
+            ReverseCrossAttentionBlock(llm_hidden_dim, n_heads, dropout_rate, use_gate=use_gate)
             for _ in range(n_cross_layers)
         ])
 
@@ -873,7 +1055,7 @@ class InflatedBiCrossAttentionPRICEEmbedder(nn.Module):
     """
 
     def __init__(self, regression_model, llm_hidden_dim, n_cross_layers=2,
-                 n_embd=256, n_heads=8, dropout_rate=0.1):
+                 n_embd=256, n_heads=8, dropout_rate=0.1, use_gate=False):
         super().__init__()
         self.n_join_col = regression_model.n_join_col
         self.n_fanout = regression_model.n_fanout
@@ -884,51 +1066,60 @@ class InflatedBiCrossAttentionPRICEEmbedder(nn.Module):
         self.dropout_rate = regression_model.dropout_rate
         self.llm_hidden_dim = llm_hidden_dim
 
+        # Mode-7-aligned PRICE pipeline: keep mode 7's CLS-then-linear path so
+        # the (optionally pretrained) regression_model.linear weights and the
+        # 512-dim representation are preserved. Then a single inflate Linear
+        # projects to LLM dim. At cx=0 this path equals mode 7 + final inflate;
+        # at cx>0, the inflated PRICE summary is treated as a length-1 token
+        # for cross-attention against the LLM token sequence.
         self.scale_embedding = regression_model.scale_embedding
         self.filter_embedding = regression_model.filter_embedding
         self.scale_encoder = regression_model.scale_encoder
         self.filter_encoder = regression_model.filter_encoder
         self.len_net = regression_model.len_net
-        # Note: self.linear and self.elu from regression_model are NOT used here
-        # (they expect 256+16 input; we use inflated_linear at LLM dim instead)
+        self.linear = regression_model.linear  # mode 7's (n_embd+16) → query_hidden_dim (e.g. 272→512)
+        self.elu = regression_model.elu
 
-        # Project PRICE tokens UP to LLM hidden dim
-        self.price_proj_up = nn.Linear(n_embd, llm_hidden_dim)
+        # At cx=0 there is no cross-attn, so no need to inflate to LLM dim.
+        # Output stays at query_hidden_dim (512), making this path EXACTLY
+        # mode 7's PRICE pipeline. At cx>0 we inflate to LLM dim so the
+        # PRICE summary can be cross-attended against LLM tokens.
+        _query_hidden_dim = self.linear.out_features
+        if n_cross_layers > 0:
+            self.inflate = nn.Linear(_query_hidden_dim, llm_hidden_dim)
+            self.price_output_dim = llm_hidden_dim
+        else:
+            self.inflate = None
+            self.price_output_dim = _query_hidden_dim  # 512, matches mode 7
 
-        # Alternating cross-attention blocks at LLM dim
+        # Cross-attention blocks at LLM dim. Operate on a length-1 PRICE
+        # token (the inflated summary) and the LLM token sequence.
         self.cross_attn_blocks = nn.ModuleList([
-            ReverseCrossAttentionBlock(llm_hidden_dim, n_heads, dropout_rate)
+            ReverseCrossAttentionBlock(llm_hidden_dim, n_heads, dropout_rate, use_gate=use_gate)
             for _ in range(n_cross_layers)
         ])
 
         # Zero-init the residual-output projections of ODD (LLM→PRICE) layers so
         # that when they activate post-warmup, their output is 0 → residual pass-through.
-        # This keeps the MLP's LLM-side input distribution consistent across the
-        # warmup boundary, avoiding the catastrophic jump when odd layers turn on.
         for i, block in enumerate(self.cross_attn_blocks):
             if i % 2 == 1:
                 nn.init.zeros_(block.cross_attn.projection.weight)
                 nn.init.zeros_(block.cross_attn.projection.bias)
-                # Final FFN Linear (the one that writes into the residual stream)
                 nn.init.zeros_(block.feed_forward[-1].weight)
                 nn.init.zeros_(block.feed_forward[-1].bias)
-
-        # PRICE output: CLS at LLM dim + len_features → LLM dim
-        self.inflated_linear = nn.Linear(llm_hidden_dim + 16, llm_hidden_dim)
-        self.elu = nn.ELU()
 
         self.warmup_mode = False  # skip odd layers during warmup
 
     def cross_attn_parameters(self):
         """Return parameters belonging to cross-attention layers."""
-        yield from self.price_proj_up.parameters()
+        if self.inflate is not None:
+            yield from self.inflate.parameters()
         yield from self.cross_attn_blocks.parameters()
-        yield from self.inflated_linear.parameters()
 
     def even_layer_parameters(self):
         """Even-layer (PRICE→LLM) cross-attn params + projection."""
-        yield from self.price_proj_up.parameters()
-        yield from self.inflated_linear.parameters()
+        if self.inflate is not None:
+            yield from self.inflate.parameters()
         for i, block in enumerate(self.cross_attn_blocks):
             if i % 2 == 0:
                 yield from block.parameters()
@@ -965,36 +1156,46 @@ class InflatedBiCrossAttentionPRICEEmbedder(nn.Module):
         filtering_output = self.filter_encoder(filter_features, masks2)
         # filtering_output: [B, T_stats, n_embd=256]
 
-        # Project PRICE up to LLM dim
-        price_tokens = self.price_proj_up(filtering_output.float())  # [B, T_stats, llm_dim]
+        # Mode-7-aligned PRICE pipeline:
+        # CLS(256) → cat(+len 16) → linear(272→512) → ELU → dropout → inflate(512→llm_dim)
+        # When --price_random_init is False, self.linear/self.elu/self.len_net carry the
+        # pretrained PRICE weights, preserving mode 7's representation exactly.
+        price_cls_256 = filtering_output[:, 0, :].float()  # [B, n_embd=256]
 
-        updated_llm = None
-        if llm_hidden_states is not None:
-            llm_tokens = llm_hidden_states.float()  # [B, T_plan, llm_dim]
-            price_mask = masks2
-
-            for i, block in enumerate(self.cross_attn_blocks):
-                if i % 2 == 0:
-                    # Even: PRICE (Q) attends to LLM (K/V)
-                    price_tokens = block(price_tokens, llm_tokens, llm_attention_mask)
-                elif not self.warmup_mode:
-                    # Odd: LLM (Q) attends to PRICE (K/V) — skipped during warmup
-                    llm_tokens = block(llm_tokens, price_tokens, price_mask)
-
-            if not self.warmup_mode:
-                updated_llm = llm_tokens  # [B, T_plan, llm_dim]
-
-        # PRICE output: CLS token at LLM dim
-        price_cls = price_tokens[:, 0, :]  # [B, llm_dim]
-
-        # Length features
         len_features = torch.cat([n_join_col, n_fanout, n_table, n_filter_col], dim=1)
         len_features = self.len_net(len_features)
 
-        # Linear + ELU at LLM dim
-        price_output = self.inflated_linear(torch.cat([price_cls, len_features], dim=1))
-        price_output = self.elu(price_output)
-        price_output = F.dropout(price_output, p=self.dropout_rate, training=self.training)
+        price_emb_512 = self.linear(torch.cat([price_cls_256, len_features], dim=1))  # [B, query_hidden_dim]
+        price_emb_512 = self.elu(price_emb_512)
+        price_emb_512 = F.dropout(price_emb_512, p=self.dropout_rate, training=self.training)
+
+        updated_llm = None
+        if self.inflate is None:
+            # cx=0: no cross-attn, no inflate. Output stays at query_hidden_dim.
+            # This path is exactly mode 7's PRICE pipeline.
+            price_output = price_emb_512  # [B, query_hidden_dim]
+        else:
+            # cx>0: inflate to LLM dim, cross-attend PRICE summary as length-1 token.
+            price_emb = self.inflate(price_emb_512)  # [B, llm_hidden_dim]
+            price_tokens = price_emb.unsqueeze(1)  # [B, 1, llm_hidden_dim]
+            price_mask = torch.ones(price_tokens.size(0), 1, device=price_tokens.device, dtype=torch.long)
+
+            any_llm_cross_attn = False
+            if llm_hidden_states is not None:
+                llm_tokens = llm_hidden_states.float()  # [B, T_plan, llm_dim]
+                for i, block in enumerate(self.cross_attn_blocks):
+                    if i % 2 == 0:
+                        # Even: PRICE (Q) attends to LLM (K/V); price_tokens stays length-1
+                        price_tokens = block(price_tokens, llm_tokens, llm_attention_mask)
+                    elif not self.warmup_mode:
+                        # Odd: LLM (Q) attends to PRICE summary (K/V, length 1)
+                        llm_tokens = block(llm_tokens, price_tokens, price_mask)
+                        any_llm_cross_attn = True
+
+                if any_llm_cross_attn:
+                    updated_llm = llm_tokens  # [B, T_plan, llm_dim]
+
+            price_output = price_tokens[:, 0, :]  # [B, llm_hidden_dim] — refined PRICE summary
 
         return price_output, updated_llm, llm_attention_mask
 
@@ -1005,13 +1206,48 @@ class InflatedBiCrossAttentionLLMPriceModel(nn.Module):
     Output: concat(updated_LLM_pooled, updated_PRICE) at 2*LLM_dim → MLP.
     """
 
-    def __init__(self, llm, price_embedder, llm_embed_size, hid_units):
+    def __init__(self, llm, price_embedder, llm_embed_size, hid_units,
+                 branch_gate=False, residual_pred=False, delta_bound=0.0,
+                 price_emb_dropout=0.0):
         super().__init__()
         self.llm = llm
         self.price = price_embedder  # InflatedBiCrossAttentionPRICEEmbedder
-        combined_dim = llm_embed_size * 2  # both at LLM dim
+        # Read PRICE output dim from the embedder. At cx=0 it's query_hidden_dim
+        # (e.g. 512); at cx>0 it's llm_hidden_dim (e.g. 384) since cross-attn
+        # operates at LLM dim. This makes cx=0 produce the same MLP input as mode 7.
+        price_output_dim = getattr(price_embedder, 'price_output_dim', llm_embed_size)
+        combined_dim = llm_embed_size + price_output_dim
         from trainer import Prediction
         self.mlp = Prediction(combined_dim, hid_units)
+        # Branch-level gate: scalar that scales the PRICE-side embedding
+        # before concat. Init at 0 so the model starts equivalent to
+        # `concat(LLM_pooled, zeros)`.
+        self.branch_gate_enabled = branch_gate
+        if branch_gate:
+            self.price_branch_gate = nn.Parameter(torch.zeros(1))
+        self.delta_bound = float(delta_bound)
+        # Element-wise dropout on price_emb at training time. Forces the model
+        # to predict from LLM alone with prob p, breaking template-specific
+        # reliance on PRICE features.
+        self.price_emb_drop = nn.Dropout(float(price_emb_dropout)) if price_emb_dropout > 0 else None
+        # ResNet-style additive prediction:
+        #   pred = base_mlp(LLM_pooled) + delta_mlp(concat(LLM, PRICE))
+        # delta_mlp's final 1-d linear is zero-initialized so at init
+        # delta_mlp output = 0 and the joint model's prediction is
+        # *exactly* the LLM-only prediction (mode 2 equivalent). Training
+        # opens up the delta only if it reduces loss; if PRICE never helps,
+        # delta_mlp.out_mlp2 stays near 0 and biCross degrades gracefully.
+        self.residual_pred = residual_pred
+        if residual_pred:
+            # Both MLPs return pre-sigmoid logits; we sum them and sigmoid at
+            # the end. delta_mlp = self.mlp (over the concat input) has its
+            # final linear zero-init, so at init delta_logit = 0 and the joint
+            # model's prediction is exactly sigmoid(base_logit) — i.e., the
+            # LLM-only prediction (mode 2 equivalent).
+            self.mlp = Prediction(combined_dim, hid_units, no_sigmoid=True)
+            self.base_mlp = Prediction(llm_embed_size, hid_units, no_sigmoid=True)
+            nn.init.zeros_(self.mlp.out_mlp2.weight)
+            nn.init.zeros_(self.mlp.out_mlp2.bias)
 
     def _pool_llm(self, llm_tokens, attn_mask):
         """Mean-pool LLM tokens with attention mask."""
@@ -1022,7 +1258,19 @@ class InflatedBiCrossAttentionLLMPriceModel(nn.Module):
     def forward(self, x):
         texts, price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col = x
 
-        pooled_emb, hidden_states, attn_mask = self.llm.forward_with_sequence(texts)
+        # When cx=0 (no cross-attn), use the same `self.llm(texts)` path as
+        # mode 7 to get a byte-identical pooled embedding. forward_with_sequence
+        # also returns hidden_states for cross-attn, but its sliding-window
+        # logic differs slightly from forward()'s (different sub-batching),
+        # which produces tiny numerical drift that compounds over 30 epochs.
+        # At cx>0 we still need hidden_states, so use forward_with_sequence.
+        _n_cx = len(self.price.cross_attn_blocks) if hasattr(self.price, 'cross_attn_blocks') else 0
+        if _n_cx == 0:
+            pooled_emb = self.llm(texts)
+            hidden_states = None
+            attn_mask = None
+        else:
+            pooled_emb, hidden_states, attn_mask = self.llm.forward_with_sequence(texts)
         if pooled_emb.dtype != torch.float32:
             pooled_emb = pooled_emb.float()
 
@@ -1032,18 +1280,56 @@ class InflatedBiCrossAttentionLLMPriceModel(nn.Module):
         )
 
         if updated_llm is not None:
-            llm_emb = self._pool_llm(updated_llm, updated_mask)
+            # Match mode 7's pooling: CLS token + L2 normalize. The LLM forward
+            # (utilsLLM.py:1486-1494 BERT branch) returns
+            # F.normalize(hidden_states[:,0], p=2, dim=1) as pooled_emb. Using
+            # mean-pool would put the embedding in a different space than mode 7.
+            llm_emb = F.normalize(updated_llm[:, 0, :], p=2, dim=1)
         else:
             llm_emb = pooled_emb
 
+        if self.branch_gate_enabled:
+            price_emb = self.price_branch_gate * price_emb
+        if self.price_emb_drop is not None:
+            price_emb = self.price_emb_drop(price_emb)
+
         combined = torch.cat([llm_emb, price_emb], dim=1)
-        return self.mlp(combined)
+        if self.residual_pred:
+            # base_mlp uses biCross-refined llm_emb (NOT pooled_emb). Empirically,
+            # using pooled_emb causes the LLM to be pulled in two directions —
+            # base wants pure-LLM features, delta wants biCross-fused features —
+            # and test error degrades from ~1.7 to ~5.6. Sharing llm_emb keeps
+            # both paths' gradients aligned through the same input.
+            base_logit = self.base_mlp(llm_emb)
+            delta_logit = self.mlp(combined)
+            if self.delta_bound > 0:
+                delta_logit = torch.tanh(delta_logit) * self.delta_bound
+            return torch.sigmoid(base_logit + delta_logit)
+        out = self.mlp(combined)
+        # ─── Diagnostic: print first 5 batches' tensor stats (only in training mode) ─
+        if self.training:
+            _c = getattr(self, '_dbg_count', 0)
+            if _c < 5:
+                self._dbg_count = _c + 1
+                _n_cx = len(self.price.cross_attn_blocks) if hasattr(self.price, 'cross_attn_blocks') else -1
+                print(f"[Mode12-fwd b{_c} cx={_n_cx}] llm_emb mean={llm_emb.mean().item():.8f} std={llm_emb.std().item():.8f} norm={llm_emb.norm().item():.6f}")
+                print(f"[Mode12-fwd b{_c} cx={_n_cx}] price_emb mean={price_emb.mean().item():.8f} std={price_emb.std().item():.8f} norm={price_emb.norm().item():.6f}")
+                print(f"[Mode12-fwd b{_c} cx={_n_cx}] out mean={out.mean().item():.8f} samples={out[:, 0].detach().cpu().tolist()[:3]}")
+        return out
 
     @torch.no_grad()
     def forward_embeddings(self, x):
         """Return combined [updated_llm_pooled, price_emb] before MLP."""
         texts, price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col = x
-        pooled_emb, hidden_states, attn_mask = self.llm.forward_with_sequence(texts)
+        # Mirror forward(): at cx=0 use the standard llm forward (no need for
+        # hidden_states); at cx>0 use forward_with_sequence to provide them.
+        _n_cx = len(self.price.cross_attn_blocks) if hasattr(self.price, 'cross_attn_blocks') else 0
+        if _n_cx == 0:
+            pooled_emb = self.llm(texts)
+            hidden_states = None
+            attn_mask = None
+        else:
+            pooled_emb, hidden_states, attn_mask = self.llm.forward_with_sequence(texts)
         if pooled_emb.dtype != torch.float32:
             pooled_emb = pooled_emb.float()
         price_emb, updated_llm, updated_mask = self.price(
@@ -1051,9 +1337,11 @@ class InflatedBiCrossAttentionLLMPriceModel(nn.Module):
             llm_hidden_states=hidden_states, llm_attention_mask=attn_mask
         )
         if updated_llm is not None:
-            llm_emb = self._pool_llm(updated_llm, updated_mask)
+            llm_emb = F.normalize(updated_llm[:, 0, :], p=2, dim=1)
         else:
             llm_emb = pooled_emb
+        if self.branch_gate_enabled:
+            price_emb = self.price_branch_gate * price_emb
         return torch.cat([llm_emb, price_emb], dim=1)
 
 
@@ -1067,7 +1355,8 @@ class BiCrossAttentionLLMPriceModel(nn.Module):
     """
 
     def __init__(self, llm, price_embedder, llm_embed_size, price_embed_size, hid_units,
-                 triple_concat=False):
+                 triple_concat=False, branch_gate=False, residual_pred=False, delta_bound=0.0,
+                 price_emb_dropout=0.0):
         super().__init__()
         self.llm = llm
         self.price = price_embedder  # BiCrossAttentionPRICEEmbedder
@@ -1085,6 +1374,18 @@ class BiCrossAttentionLLMPriceModel(nn.Module):
 
         from trainer import Prediction
         self.mlp = Prediction(combined_dim, hid_units)
+        self.branch_gate_enabled = branch_gate
+        if branch_gate:
+            self.price_branch_gate = nn.Parameter(torch.zeros(1))
+        # ResNet additive prediction (see InflatedBiCrossAttentionLLMPriceModel)
+        self.residual_pred = residual_pred
+        if residual_pred:
+            self.mlp = Prediction(combined_dim, hid_units, no_sigmoid=True)
+            self.base_mlp = Prediction(llm_embed_size, hid_units, no_sigmoid=True)
+            nn.init.zeros_(self.mlp.out_mlp2.weight)
+            nn.init.zeros_(self.mlp.out_mlp2.bias)
+        self.delta_bound = float(delta_bound)
+        self.price_emb_drop = nn.Dropout(float(price_emb_dropout)) if price_emb_dropout > 0 else None
 
     def _pool_refined_llm(self, refined_llm, attn_mask):
         """Mean-pool refined LLM tokens with attention mask."""
@@ -1113,6 +1414,12 @@ class BiCrossAttentionLLMPriceModel(nn.Module):
             llm_hidden_states=hidden_states, llm_attention_mask=attn_mask
         )
 
+        # Apply PRICE-branch gate if enabled
+        if self.branch_gate_enabled:
+            price_emb = self.price_branch_gate * price_emb
+        if self.price_emb_drop is not None:
+            price_emb = self.price_emb_drop(price_emb)
+
         # Combine LLM + PRICE embeddings
         if self.triple_concat:
             # Triple: original LLM + refined LLM (256) + PRICE
@@ -1129,6 +1436,12 @@ class BiCrossAttentionLLMPriceModel(nn.Module):
             else:
                 llm_emb = pooled_emb
             combined = torch.cat([llm_emb, price_emb], dim=1)
+        if self.residual_pred:
+            base_logit = self.base_mlp(pooled_emb)
+            delta_logit = self.mlp(combined)
+            if self.delta_bound > 0:
+                delta_logit = torch.tanh(delta_logit) * self.delta_bound
+            return torch.sigmoid(base_logit + delta_logit)
         return self.mlp(combined)
 
     @torch.no_grad()

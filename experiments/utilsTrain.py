@@ -154,6 +154,11 @@ def parse_args():
                              "or cross-attention with query plan embeddings, "
                              "without merging with LLM-residual embeddings. "
                              "Default: LLM residual fusion is active (current behavior).")
+    parser.add_argument("--no_or_transformer", action="store_true", default=False,
+                        help="Disable the OR Transformer (3rd encoder stage) even when "
+                             "PRICE_N structural flags are enabled. Use to ablate the "
+                             "OR Transformer's contribution from the new token types. "
+                             "Default: OR Transformer is active when any PRICE_N flag is set.")
     parser.add_argument("--price_n_or", action="store_true", default=False,
                         help="PRICE_N DNF expansion: expand mixed-column OR blocks into "
                              "multiple DNF clauses (up to --price_n_or_max_clauses), each "
@@ -231,6 +236,72 @@ def parse_args():
                         help="Number of cross-attention layers (default 2)")
     parser.add_argument("--cross_attn_lr", type=float, default=None,
                         help="Learning rate for cross-attention layers (default: same as main learning_rate)")
+    parser.add_argument("--cross_attn_dropout", type=float, default=0.1,
+                        help="Dropout rate inside the cross-attention blocks (CrossAttentionBlock / "
+                             "ReverseCrossAttentionBlock). Default 0.1; raise to 0.3-0.5 to combat "
+                             "overfitting in random-init biCrossAttn / inflatePRICE configs.")
+    parser.add_argument("--residual_pred", action="store_true", default=False,
+                        help="ResNet-style additive prediction for biCrossAttn / inflatePRICE: "
+                             "pred = base_mlp(LLM_pooled) + delta_mlp(concat). The delta MLP's final "
+                             "linear is zero-initialized so at init the joint model produces *exactly* "
+                             "the LLM-only prediction (mode 2 equivalent). Training opens up the delta "
+                             "only when PRICE features reduce loss; if they never do, delta stays 0 and "
+                             "biCross degrades gracefully to mode 2.")
+    parser.add_argument("--deterministic_algorithms", action="store_true", default=False,
+                        help="Enable torch.use_deterministic_algorithms(True, warn_only=True) "
+                             "and set CUBLAS_WORKSPACE_CONFIG=:4096:8. Forces PyTorch to use "
+                             "deterministic CUDA reductions, eliminating run-to-run variance "
+                             "due to GPU op-scheduling non-determinism. Slower; useful for "
+                             "verifying architectures are truly equivalent.")
+    parser.add_argument("--price_output_dim", type=int, default=0,
+                        help="Override PRICEEmbedder's final linear output dim "
+                             "(default 0 keeps regression_model.linear's native 512). "
+                             "Sanity-test: setting to 514 vs 512 should produce similar "
+                             "results — large divergence suggests test is dim-sensitive.")
+    parser.add_argument("--force_inflate", action="store_true", default=False,
+                        help="Force-apply the inflate Linear (query_hidden_dim → llm_hidden_dim) "
+                             "in PRICEEmbedder even when n_cross_layers=0. Use to isolate the "
+                             "effect of the inflate projection on test performance vs the "
+                             "cx=0 baseline (no inflate). When n_cross_layers > 0, inflate "
+                             "is always applied regardless of this flag.")
+    parser.add_argument("--cross_attn_noop", action="store_true", default=False,
+                        help="Replace cross-attention blocks with pass-through (Q-identity) "
+                             "no-ops. Architecturally equivalent to cx=0 even when "
+                             "n_cross_layers>0. Use to verify the cx>0 code paths are "
+                             "free of bugs that would cause divergence from cx=0 baseline.")
+    parser.add_argument("--no_retrain_mlp_at_inference", action="store_true", default=False,
+                        help="For cross-attn / biCross / inflateBiCross variants, "
+                             "default behavior is to ALWAYS retrain a fresh MLP at inference "
+                             "on cached joint-model embeddings (matches mode 7's workflow). "
+                             "Set this flag to instead evaluate the joint-trained MLP directly "
+                             "(legacy behavior).")
+    parser.add_argument("--legacy_price_inference", action="store_true", default=False,
+                        help="Restore pre-fix behavior of _load_price_embedder where PRICE_N "
+                             "silently falls back to filter_dim=43 (truncating the 75-dim "
+                             "trained weights via partial init). Default (off) uses the "
+                             "correct 75-dim filter for PRICE_N.")
+    parser.add_argument("--init_llm_from", type=str, default="",
+                        help="Path to a saved LLM checkpoint (.pt) to load into model.llm at init. "
+                             "Use to bootstrap mode 12 from a previously-trained mode 7 / mode 2 LLM. "
+                             "Empty = no init (default LoRA random-init).")
+    parser.add_argument("--price_emb_dropout", type=float, default=0.0,
+                        help="Element-wise dropout on price_emb at training time, before "
+                             "concat with LLM. Forces the model to predict from LLM alone "
+                             "with prob p, breaking template-specific reliance on PRICE features. "
+                             "0 = no dropout (default). Typical: 0.3-0.5.")
+    parser.add_argument("--delta_bound", type=float, default=0.0,
+                        help="Bound the residual_pred delta_logit via tanh: "
+                             "delta_logit <- tanh(delta_logit) * delta_bound. "
+                             "0 = unbounded (default). Typical: 1.0 or 2.0. Caps the maximum "
+                             "amount the PRICE branch can perturb the LLM-only prediction, "
+                             "preventing tail blow-up when delta_mlp overshoots on hard queries.")
+    parser.add_argument("--cross_attn_gate", action="store_true", default=False,
+                        help="Add ReZero-style learnable gates around each cross-attn and FFN sub-layer "
+                             "of every CrossAttentionBlock / ReverseCrossAttentionBlock. Both gates "
+                             "init at 0, so the block starts as a pure pass-through (output = query). "
+                             "Training opens the gates only if cross-attn helps; if it never helps, "
+                             "gates stay near 0 and the model degrades gracefully to LLM-only. Useful "
+                             "when adding biCrossAttn to small-data random-init runs has been hurting.")
     parser.add_argument("--retrain_mlp", action="store_true", default=False,
                         help="Pre-compute cross-attn embeddings, then train fresh MLP from scratch")
     parser.add_argument("--refined_pool", action="store_true", default=False,

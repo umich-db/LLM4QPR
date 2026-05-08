@@ -114,6 +114,60 @@ if [[ "$PRICE_S" == "true" || "$PRICE_S" == "True" ]]; then
   PRICE_S_SUFFIX="_priceS"
 fi
 
+# PRICE_N family (parsing / filter / fanout / pairwise + shorthand --price_n)
+# Suffix order mirrors train._price_path_suffix to keep filenames consistent.
+PRICE_N_ARGS=""
+PRICE_N_SUFFIX=""
+if [[ "${PRICE_N:-}" == "true" || "${PRICE_N:-}" == "True" ]]; then
+  PRICE_N_ARGS="$PRICE_N_ARGS --price_n"
+  # --price_n shorthand sets all four sub-flags; train._price_path_suffix
+  # then emits priceNflt/priceNfan/priceNpw/priceNprs.
+  PRICE_N_SUFFIX="${PRICE_N_SUFFIX}_priceNflt_priceNfan_priceNpw_priceNprs"
+else
+  if [[ "${PRICE_N_FILTER:-}" == "true" || "${PRICE_N_FILTER:-}" == "True" ]]; then
+    PRICE_N_ARGS="$PRICE_N_ARGS --price_n_filter"
+    PRICE_N_SUFFIX="${PRICE_N_SUFFIX}_priceNflt"
+  fi
+  if [[ "${PRICE_N_FANOUT:-}" == "true" || "${PRICE_N_FANOUT:-}" == "True" ]]; then
+    PRICE_N_ARGS="$PRICE_N_ARGS --price_n_fanout"
+    PRICE_N_SUFFIX="${PRICE_N_SUFFIX}_priceNfan"
+  fi
+  if [[ "${PRICE_N_PAIRWISE:-}" == "true" || "${PRICE_N_PAIRWISE:-}" == "True" ]]; then
+    PRICE_N_ARGS="$PRICE_N_ARGS --price_n_pairwise"
+    PRICE_N_SUFFIX="${PRICE_N_SUFFIX}_priceNpw"
+  fi
+  if [[ "${PRICE_N_PARSING:-}" == "true" || "${PRICE_N_PARSING:-}" == "True" ]]; then
+    PRICE_N_ARGS="$PRICE_N_ARGS --price_n_parsing"
+    PRICE_N_SUFFIX="${PRICE_N_SUFFIX}_priceNprs"
+  fi
+fi
+if [[ "${PRICE_N_OR:-}" == "true" || "${PRICE_N_OR:-}" == "True" ]]; then
+  PRICE_N_ARGS="$PRICE_N_ARGS --price_n_or"
+  PRICE_N_SUFFIX="${PRICE_N_SUFFIX}_priceNor"
+fi
+if [[ -n "${PRICE_N_OR_MAX_CLAUSES:-}" ]] && [[ "$PRICE_N_OR_MAX_CLAUSES" -ne 16 ]]; then
+  PRICE_N_ARGS="$PRICE_N_ARGS --price_n_or_max_clauses $PRICE_N_OR_MAX_CLAUSES"
+  PRICE_N_SUFFIX="${PRICE_N_SUFFIX}_mc${PRICE_N_OR_MAX_CLAUSES}"
+fi
+
+# --no_llm_residual: PRICE-only model; suffix lives on the architecture side.
+NO_LLM_RESIDUAL_ARG=""
+NO_LLM_RESIDUAL_SUFFIX=""
+if [[ "${NO_LLM_RESIDUAL:-}" == "true" || "${NO_LLM_RESIDUAL:-}" == "True" ]]; then
+  NO_LLM_RESIDUAL_ARG="--no_llm_residual"
+  NO_LLM_RESIDUAL_SUFFIX="_noLLMres"
+fi
+
+# --no_or_transformer: ablate the OR Transformer (3rd encoder stage) while
+# keeping PRICE_N's other components.  Used to isolate the OR Transformer's
+# contribution from the new token shapes.
+NO_OR_TRANSFORMER_ARG=""
+NO_OR_TRANSFORMER_SUFFIX=""
+if [[ "${NO_OR_TRANSFORMER:-}" == "true" || "${NO_OR_TRANSFORMER:-}" == "True" ]]; then
+  NO_OR_TRANSFORMER_ARG="--no_or_transformer"
+  NO_OR_TRANSFORMER_SUFFIX="_noORt"
+fi
+
 # PRICE random init — set once, used by all PRICE finetuning sections
 PRICE_RANDOM_INIT_FLAG=""
 PRICE_LR_DEFAULT=0.0000285
@@ -171,6 +225,91 @@ if [[ -n "${CROSS_ATTN_LR:-}" ]]; then
   CROSS_ATTN_LR_ARG="--cross_attn_lr $CROSS_ATTN_LR"
 fi
 
+# --cross_attn_dropout: dropout inside CrossAttentionBlock / ReverseCrossAttentionBlock.
+# Default 0.1; raise to 0.3-0.5 to fight cross-attn overfitting on small data.
+# Suffix _drop{X.X} only emits when non-default (matches train._arch_path_suffix).
+CROSS_ATTN_DROPOUT_ARG=""
+CROSS_ATTN_DROPOUT_SUFFIX=""
+if [[ -n "${CROSS_ATTN_DROPOUT:-}" ]] && [[ "$CROSS_ATTN_DROPOUT" != "0.1" ]]; then
+  CROSS_ATTN_DROPOUT_ARG="--cross_attn_dropout $CROSS_ATTN_DROPOUT"
+  CROSS_ATTN_DROPOUT_SUFFIX="_drop${CROSS_ATTN_DROPOUT}"
+fi
+
+# --cross_attn_gate: ReZero-style learnable scalar gates around each cross-attn
+# sub-layer, init at 0 → block is identity at start; training only opens gates
+# when cross-attn helps. Adds ~2N scalar params per N cross-attn layers.
+CROSS_ATTN_GATE_ARG=""
+CROSS_ATTN_GATE_SUFFIX=""
+if [[ "${CROSS_ATTN_GATE:-}" == "true" || "${CROSS_ATTN_GATE:-}" == "True" ]]; then
+  CROSS_ATTN_GATE_ARG="--cross_attn_gate"
+  CROSS_ATTN_GATE_SUFFIX="_gate"
+fi
+
+# --residual_pred: ResNet additive prediction. pred = base_mlp(LLM) + delta_mlp(concat).
+# delta_mlp's final layer is zero-init so init pred = LLM-only prediction (mode 2).
+RESIDUAL_PRED_ARG=""
+RESIDUAL_PRED_SUFFIX=""
+if [[ "${RESIDUAL_PRED:-}" == "true" || "${RESIDUAL_PRED:-}" == "True" ]]; then
+  RESIDUAL_PRED_ARG="--residual_pred"
+  RESIDUAL_PRED_SUFFIX="_resPred"
+fi
+
+# --delta_bound: tanh-bounded delta when residual_pred is on. 0 = unbounded.
+DELTA_BOUND_ARG=""
+DELTA_BOUND_SUFFIX=""
+if [[ -n "${DELTA_BOUND:-}" && "${DELTA_BOUND}" != "0" && "${DELTA_BOUND}" != "0.0" ]]; then
+  DELTA_BOUND_ARG="--delta_bound ${DELTA_BOUND}"
+  DELTA_BOUND_SUFFIX="_db${DELTA_BOUND}"
+fi
+
+# --price_emb_dropout: element-wise dropout on price_emb at training time.
+PRICE_EMB_DROPOUT_ARG=""
+PRICE_EMB_DROPOUT_SUFFIX=""
+if [[ -n "${PRICE_EMB_DROPOUT:-}" && "${PRICE_EMB_DROPOUT}" != "0" && "${PRICE_EMB_DROPOUT}" != "0.0" ]]; then
+  PRICE_EMB_DROPOUT_ARG="--price_emb_dropout ${PRICE_EMB_DROPOUT}"
+  PRICE_EMB_DROPOUT_SUFFIX="_peDrop${PRICE_EMB_DROPOUT}"
+fi
+
+INIT_LLM_FROM_ARG=""
+INIT_LLM_FROM_SUFFIX=""
+if [[ -n "${INIT_LLM_FROM:-}" ]]; then
+  INIT_LLM_FROM_ARG="--init_llm_from ${INIT_LLM_FROM}"
+  INIT_LLM_FROM_SUFFIX="_initLLM"
+fi
+
+DETERMINISTIC_ARG=""
+DETERMINISTIC_SUFFIX=""
+if [[ "${DETERMINISTIC:-}" == "true" ]]; then
+  DETERMINISTIC_ARG="--deterministic_algorithms"
+  DETERMINISTIC_SUFFIX="_det"
+fi
+
+NO_RETRAIN_MLP_ARG=""
+if [[ "${NO_RETRAIN_MLP:-}" == "true" ]]; then
+  NO_RETRAIN_MLP_ARG="--no_retrain_mlp_at_inference"
+fi
+
+CROSS_ATTN_NOOP_ARG=""
+CROSS_ATTN_NOOP_SUFFIX=""
+if [[ "${CROSS_ATTN_NOOP:-}" == "true" ]]; then
+  CROSS_ATTN_NOOP_ARG="--cross_attn_noop"
+  CROSS_ATTN_NOOP_SUFFIX="_noop"
+fi
+
+FORCE_INFLATE_ARG=""
+FORCE_INFLATE_SUFFIX=""
+if [[ "${FORCE_INFLATE:-}" == "true" ]]; then
+  FORCE_INFLATE_ARG="--force_inflate"
+  FORCE_INFLATE_SUFFIX="_finfl"
+fi
+
+PRICE_OUTPUT_DIM_ARG=""
+PRICE_OUTPUT_DIM_SUFFIX=""
+if [[ -n "${PRICE_OUTPUT_DIM:-}" && "${PRICE_OUTPUT_DIM}" != "0" ]]; then
+  PRICE_OUTPUT_DIM_ARG="--price_output_dim ${PRICE_OUTPUT_DIM}"
+  PRICE_OUTPUT_DIM_SUFFIX="_pod${PRICE_OUTPUT_DIM}"
+fi
+
 # Retrain MLP passthrough
 RETRAIN_MLP_FLAG=""
 RETRAIN_MLP_SUFFIX=""
@@ -213,8 +352,27 @@ if [[ -n "${FREEZE_LLM_UNTIL_EPOCH:-}" ]] && [[ "$FREEZE_LLM_UNTIL_EPOCH" -gt 0 
   FREEZE_LLM_ARG="--freeze_llm_until_epoch $FREEZE_LLM_UNTIL_EPOCH"
 fi
 PRICE_WARMUP_ARG=""
+PRICE_WARMUP_SUFFIX=""
 if [[ -n "${PRICE_WARMUP_EPOCHS:-}" ]] && [[ "$PRICE_WARMUP_EPOCHS" -ne 10 ]]; then
   PRICE_WARMUP_ARG="--price_warmup_epochs $PRICE_WARMUP_EPOCHS"
+  if [[ "${PRICE_RANDOM_INIT:-}" == "true" ]]; then
+    PRICE_WARMUP_SUFFIX="_pwm${PRICE_WARMUP_EPOCHS}"
+  fi
+fi
+# Pass --price_lr through to inference invocations too. Finetune blocks already
+# inline `--price_lr $price_lr` from $PRICE_LR_DEFAULT, so they don't need this
+# variable; inference blocks (which never had a price_lr fallback) do.
+PRICE_LR_ARG=""
+PRICE_LR_SUFFIX=""
+if [[ -n "${PRICE_LR:-}" ]]; then
+  PRICE_LR_ARG="--price_lr $PRICE_LR"
+  # Mirror python's _arch_path_suffix: pLR{X:g} only when random_init is on
+  # AND price_lr differs from the random-init default 1e-3.
+  if [[ "${PRICE_RANDOM_INIT:-}" == "true" ]] && \
+     ! awk -v v="$PRICE_LR" 'BEGIN { exit !(v+0 == 0.001) }'; then
+    _plr_g="$(awk -v v="$PRICE_LR" 'BEGIN{printf "%g", v+0}')"
+    PRICE_LR_SUFFIX="_pLR${_plr_g}"
+  fi
 fi
 
 # Epoch suffix for finetuned weight files
@@ -358,7 +516,7 @@ if [ "$finetune" == "False" ]; then
   algo=llm
   embed_size=${EMBED_SIZE:-1000}
   hid_units=2048
-  lr=0.0001
+  lr=${LLM_LR:-0.0001}
   batch_size=64     
 
   echo "inference: no pre-train"
@@ -389,7 +547,7 @@ if [ "$finetune" == "False" ]; then
                                       $REMOVED_FIELDS_ARG \
                                       $CONCAT_TRUE_ARG \
                                       $STATS_ARGS \
-                                      $PRICE_M_ARG $PRICE_S_ARG \
+                                      $PRICE_M_ARG $PRICE_S_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
                                       $MAX_QUERIES_ARG
 fi
 
@@ -397,7 +555,7 @@ if [ "$finetune" == "True" ]; then
   #########################finetune#########################
   algo=llm_finetune
   hid_units=2048
-  lr=0.0001
+  lr=${LLM_LR:-0.0001}
   batch_size=$FT_BATCH_SIZE
 
   # Check which finetuning modes to run (default to both if not set)
@@ -454,7 +612,7 @@ if [ "$finetune" == "True" ]; then
                                           $REMOVED_FIELDS_ARG \
                                           $CONCAT_TRUE_ARG \
                                           $STATS_ARGS \
-                                          $PRICE_M_ARG $PRICE_S_ARG \
+                                          $PRICE_M_ARG $PRICE_S_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
                                           $MAX_QUERIES_ARG
     fi
   fi
@@ -489,7 +647,7 @@ if [ "$finetune" == "True" ]; then
                                           $REMOVED_FIELDS_ARG \
                                           $CONCAT_TRUE_ARG \
                                           $STATS_ARGS \
-                                          $PRICE_M_ARG $PRICE_S_ARG \
+                                          $PRICE_M_ARG $PRICE_S_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
                                           $MAX_QUERIES_ARG
     fi
   fi
@@ -498,7 +656,7 @@ if [ "$finetune" == "True" ]; then
   algo=llm
   embed_size=${EMBED_SIZE:-1000}
   hid_units=2048
-  lr=0.0001
+  lr=${LLM_LR:-0.0001}
   batch_size=64     
 
   if [[ "$RUN_LAST" == "true" ]]; then
@@ -535,7 +693,7 @@ if [ "$finetune" == "True" ]; then
                                         $REMOVED_FIELDS_ARG \
                                         $CONCAT_TRUE_ARG \
                                         $STATS_ARGS \
-                                        $PRICE_M_ARG $PRICE_S_ARG
+                                        $PRICE_M_ARG $PRICE_S_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG
   fi
 
   if [[ "$RUN_LORA" == "true" ]]; then
@@ -572,7 +730,7 @@ if [ "$finetune" == "True" ]; then
                                         $REMOVED_FIELDS_ARG \
                                         $CONCAT_TRUE_ARG \
                                         $STATS_ARGS \
-                                        $PRICE_M_ARG $PRICE_S_ARG
+                                        $PRICE_M_ARG $PRICE_S_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG
   fi
 fi
 
@@ -581,7 +739,7 @@ if [ "$finetune" == "JointPrice" ]; then
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
   # Check if finetuned JointPrice weights already exist
-  JOINT_PRICE_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}_llm_price${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${EPOCH_SUFFIX}"
+  JOINT_PRICE_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_N_SUFFIX}_llm_price${NO_LLM_RESIDUAL_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${EPOCH_SUFFIX}"
   if [ -f "${JOINT_PRICE_PREFIX}_llm.pt" ] && [ -f "${JOINT_PRICE_PREFIX}_price.pt" ]; then
     echo "Finetuned JointPrice weights already exist, skipping finetune:"
     echo "  LLM:   ${JOINT_PRICE_PREFIX}_llm.pt"
@@ -590,7 +748,7 @@ if [ "$finetune" == "JointPrice" ]; then
     #########################Joint LLM+PRICE finetune#########################
     algo=llm_price_finetune
     hid_units=2048
-    lr=0.0001
+    lr=${LLM_LR:-0.0001}
     price_lr=${PRICE_LR:-$PRICE_LR_DEFAULT}
     batch_size=$FT_BATCH_SIZE
     grad_accum_steps=${GRAD_ACCUM_STEPS:-1}
@@ -607,7 +765,7 @@ if [ "$finetune" == "JointPrice" ]; then
     setup_args_and_suffixes
 
     python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_lora_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${EPOCH_SUFFIX}.log \
+                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_lora_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_N_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${EPOCH_SUFFIX}.log \
                                         --db $DB_ENGINE \
                                         --workloads_train "${TRAIN_WLS[@]}" \
                                         --workload_test ${WORKLOAD_TEST} \
@@ -626,20 +784,24 @@ if [ "$finetune" == "JointPrice" ]; then
                                         $BUCKETIZE_ARG \
                                         $QUANTIFICATION_ARG \
                                         $REMOVED_FIELDS_ARG \
-                                        $PRICE_M_ARG $PRICE_S_ARG \
+                                        $PRICE_M_ARG $PRICE_S_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
                                         $PRICE_RANDOM_INIT_FLAG \
                                         $CHECKPOINT_INTERVAL_ARG \
                                         $GRAD_ACCUM_ARG \
                                         $PRICE_N_LAYERS_ARG \
                                         $PRICE_FFN_RATIO_ARG \
-                                        $PRICE_FFN_RATIO_ARG
+                                        $EARLY_STOP_ARG \
+                                        $FREEZE_LLM_ARG \
+                                        $PRICE_WARMUP_ARG \
+                                        $PRICE_LR_ARG \
+                                        $SUBDIR_ARG
   fi
 
   #########################inference: pre-trained JointPrice#########################
   algo=llm_price
   embed_size=${EMBED_SIZE:-1000}
   hid_units=2048
-  lr=0.0001
+  lr=${LLM_LR:-0.0001}
   batch_size=64
 
   echo "inference: pre-trained JointPrice"
@@ -647,9 +809,9 @@ if [ "$finetune" == "JointPrice" ]; then
   setup_args_and_suffixes
 
   python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.csv \
-                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}_abs.txt \
-                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.log \
+                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_N_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.csv \
+                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_N_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}_abs.txt \
+                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_N_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.log \
                                       --db $DB_ENGINE \
                                       --workloads_train "${TRAIN_WLS[@]}" \
                                       --workload_test ${WORKLOAD_TEST} \
@@ -674,11 +836,15 @@ if [ "$finetune" == "JointPrice" ]; then
                                       $QUANTIFICATION_ARG \
                                       $EMBEDDINGS_ARG \
                                       $REMOVED_FIELDS_ARG \
-                                      $PRICE_M_ARG $PRICE_S_ARG \
+                                      $PRICE_M_ARG $PRICE_S_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
                                       $PRICE_RANDOM_INIT_FLAG \
                                       $PRICE_N_LAYERS_ARG \
                                       $PRICE_FFN_RATIO_ARG \
-                                      $PRICE_FFN_RATIO_ARG
+                                      $EARLY_STOP_ARG \
+                                      $FREEZE_LLM_ARG \
+                                      $PRICE_WARMUP_ARG \
+                                      $PRICE_LR_ARG \
+                                      $SUBDIR_ARG
 fi
 
 if [ "$finetune" == "PriceNoFT" ]; then
@@ -689,7 +855,7 @@ if [ "$finetune" == "PriceNoFT" ]; then
   algo=llm_price
   embed_size=${EMBED_SIZE:-1000}
   hid_units=2048
-  lr=0.0001
+  lr=${LLM_LR:-0.0001}
   batch_size=64
 
   echo "LLM+PRICE inference: no finetune (PriceNoFT)"
@@ -720,7 +886,7 @@ if [ "$finetune" == "PriceNoFT" ]; then
                                       $QUANTIFICATION_ARG \
                                       $EMBEDDINGS_ARG \
                                       $REMOVED_FIELDS_ARG \
-                                      $PRICE_M_ARG $PRICE_S_ARG \
+                                      $PRICE_M_ARG $PRICE_S_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
                                       $PRICE_N_LAYERS_ARG \
                                       $PRICE_FFN_RATIO_ARG \
                                       $PRICE_FFN_RATIO_ARG
@@ -734,7 +900,7 @@ if [ "$finetune" == "PriceLLMOnly" ]; then
   # Step 1: Finetune LLM (reuse existing llm_finetune logic)
   algo=llm_finetune
   hid_units=2048
-  lr=0.0001
+  lr=${LLM_LR:-0.0001}
   batch_size=$FT_BATCH_SIZE
 
   check_model_exists_llm() {
@@ -773,14 +939,14 @@ if [ "$finetune" == "PriceLLMOnly" ]; then
                                         $BUCKETIZE_ARG \
                                         $QUANTIFICATION_ARG \
                                         $REMOVED_FIELDS_ARG \
-                                        $PRICE_M_ARG $PRICE_S_ARG
+                                        $PRICE_M_ARG $PRICE_S_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG
   fi
 
   # Step 2: Inference with finetuned LLM + pretrained PRICE
   algo=llm_price
   embed_size=${EMBED_SIZE:-1000}
   hid_units=2048
-  lr=0.0001
+  lr=${LLM_LR:-0.0001}
   batch_size=64
 
   echo "PriceLLMOnly: inference with finetuned LLM + pretrained PRICE"
@@ -814,7 +980,7 @@ if [ "$finetune" == "PriceLLMOnly" ]; then
                                       $QUANTIFICATION_ARG \
                                       $EMBEDDINGS_ARG \
                                       $REMOVED_FIELDS_ARG \
-                                      $PRICE_M_ARG $PRICE_S_ARG \
+                                      $PRICE_M_ARG $PRICE_S_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
                                       $PRICE_N_LAYERS_ARG \
                                       $PRICE_FFN_RATIO_ARG \
                                       $PRICE_FFN_RATIO_ARG
@@ -854,7 +1020,7 @@ if [ "$finetune" == "PricePRICEOnly" ]; then
                                         --price_model_path $PRICE_MODEL_PATH \
                                         --price_bin_size $PRICE_BIN_SIZE \
                                         $REMOVED_FIELDS_ARG \
-                                        $PRICE_M_ARG $PRICE_S_ARG \
+                                        $PRICE_M_ARG $PRICE_S_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
                                         $PRICE_RANDOM_INIT_FLAG \
                                         $CHECKPOINT_INTERVAL_ARG
   fi
@@ -863,7 +1029,7 @@ if [ "$finetune" == "PricePRICEOnly" ]; then
   algo=llm_price
   embed_size=${EMBED_SIZE:-1000}
   hid_units=2048
-  lr=0.0001
+  lr=${LLM_LR:-0.0001}
   batch_size=64
 
   echo "PricePRICEOnly: inference with frozen LLM + finetuned PRICE"
@@ -896,7 +1062,7 @@ if [ "$finetune" == "PricePRICEOnly" ]; then
                                       $QUANTIFICATION_ARG \
                                       $EMBEDDINGS_ARG \
                                       $REMOVED_FIELDS_ARG \
-                                      $PRICE_M_ARG $PRICE_S_ARG \
+                                      $PRICE_M_ARG $PRICE_S_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
                                       $PRICE_RANDOM_INIT_FLAG
 fi
 
@@ -908,7 +1074,7 @@ if [ "$finetune" == "PriceBothSep" ]; then
   # Step 1: Finetune LLM
   algo=llm_finetune
   hid_units=2048
-  lr=0.0001
+  lr=${LLM_LR:-0.0001}
   batch_size=$FT_BATCH_SIZE
 
   check_model_exists_llm() {
@@ -947,7 +1113,7 @@ if [ "$finetune" == "PriceBothSep" ]; then
                                         $BUCKETIZE_ARG \
                                         $QUANTIFICATION_ARG \
                                         $REMOVED_FIELDS_ARG \
-                                        $PRICE_M_ARG $PRICE_S_ARG
+                                        $PRICE_M_ARG $PRICE_S_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG
   fi
 
   # Step 2: Finetune PRICE on cardinality
@@ -979,7 +1145,7 @@ if [ "$finetune" == "PriceBothSep" ]; then
                                         --price_model_path $PRICE_MODEL_PATH \
                                         --price_bin_size $PRICE_BIN_SIZE \
                                         $REMOVED_FIELDS_ARG \
-                                        $PRICE_M_ARG $PRICE_S_ARG \
+                                        $PRICE_M_ARG $PRICE_S_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
                                         $PRICE_RANDOM_INIT_FLAG \
                                         $CHECKPOINT_INTERVAL_ARG
   fi
@@ -988,7 +1154,7 @@ if [ "$finetune" == "PriceBothSep" ]; then
   algo=llm_price
   embed_size=${EMBED_SIZE:-1000}
   hid_units=2048
-  lr=0.0001
+  lr=${LLM_LR:-0.0001}
   batch_size=64
 
   echo "PriceBothSep: inference with finetuned LLM + finetuned PRICE"
@@ -1023,7 +1189,7 @@ if [ "$finetune" == "PriceBothSep" ]; then
                                       $QUANTIFICATION_ARG \
                                       $EMBEDDINGS_ARG \
                                       $REMOVED_FIELDS_ARG \
-                                      $PRICE_M_ARG $PRICE_S_ARG \
+                                      $PRICE_M_ARG $PRICE_S_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
                                       $PRICE_RANDOM_INIT_FLAG
 fi
 
@@ -1039,7 +1205,7 @@ if [ "$finetune" == "PriceFTwithLLM" ]; then
   else
     algo=llm_price_finetune
     hid_units=2048
-    lr=0.0001
+    lr=${LLM_LR:-0.0001}
     price_lr=${PRICE_LR:-$PRICE_LR_DEFAULT}
     batch_size=$FT_BATCH_SIZE
 
@@ -1068,7 +1234,7 @@ if [ "$finetune" == "PriceFTwithLLM" ]; then
                                         $BUCKETIZE_ARG \
                                         $QUANTIFICATION_ARG \
                                         $REMOVED_FIELDS_ARG \
-                                        $PRICE_M_ARG $PRICE_S_ARG \
+                                        $PRICE_M_ARG $PRICE_S_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
                                         $PRICE_RANDOM_INIT_FLAG \
                                         $CHECKPOINT_INTERVAL_ARG
   fi
@@ -1077,7 +1243,7 @@ if [ "$finetune" == "PriceFTwithLLM" ]; then
   algo=llm_price
   embed_size=${EMBED_SIZE:-1000}
   hid_units=2048
-  lr=0.0001
+  lr=${LLM_LR:-0.0001}
   batch_size=64
 
   echo "PriceFTwithLLM: inference with frozen LLM + frozen-joint finetuned PRICE (time)"
@@ -1110,7 +1276,7 @@ if [ "$finetune" == "PriceFTwithLLM" ]; then
                                       $QUANTIFICATION_ARG \
                                       $EMBEDDINGS_ARG \
                                       $REMOVED_FIELDS_ARG \
-                                      $PRICE_M_ARG $PRICE_S_ARG \
+                                      $PRICE_M_ARG $PRICE_S_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
                                       $PRICE_RANDOM_INIT_FLAG
 fi
 
@@ -1119,7 +1285,7 @@ if [ "$finetune" == "GatedJointPrice" ]; then
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
   # Check if finetuned GatedJointPrice weights already exist
-  GATED_JOINT_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}_llm_price_gated${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}"
+  GATED_JOINT_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_N_SUFFIX}_llm_price${NO_LLM_RESIDUAL_SUFFIX}_gated${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}"
   if [ -f "${GATED_JOINT_PREFIX}_llm.pt" ] && [ -f "${GATED_JOINT_PREFIX}_price.pt" ] && [ -f "${GATED_JOINT_PREFIX}_gate.pt" ]; then
     echo "Finetuned GatedJointPrice weights already exist, skipping finetune:"
     echo "  LLM:   ${GATED_JOINT_PREFIX}_llm.pt"
@@ -1129,7 +1295,7 @@ if [ "$finetune" == "GatedJointPrice" ]; then
     #########################Gated Joint LLM+PRICE finetune#########################
     algo=llm_price_finetune
     hid_units=2048
-    lr=0.0001
+    lr=${LLM_LR:-0.0001}
     price_lr=${PRICE_LR:-$PRICE_LR_DEFAULT}
     batch_size=$FT_BATCH_SIZE
 
@@ -1158,7 +1324,7 @@ if [ "$finetune" == "GatedJointPrice" ]; then
                                         $BUCKETIZE_ARG \
                                         $QUANTIFICATION_ARG \
                                         $REMOVED_FIELDS_ARG \
-                                        $PRICE_M_ARG $PRICE_S_ARG \
+                                        $PRICE_M_ARG $PRICE_S_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
                                         $PRICE_RANDOM_INIT_FLAG \
                                         $CHECKPOINT_INTERVAL_ARG
   fi
@@ -1167,7 +1333,7 @@ if [ "$finetune" == "GatedJointPrice" ]; then
   algo=llm_price
   embed_size=${EMBED_SIZE:-1000}
   hid_units=2048
-  lr=0.0001
+  lr=${LLM_LR:-0.0001}
   batch_size=64
 
   echo "inference: pre-trained GatedJointPrice"
@@ -1202,7 +1368,7 @@ if [ "$finetune" == "GatedJointPrice" ]; then
                                       $QUANTIFICATION_ARG \
                                       $EMBEDDINGS_ARG \
                                       $REMOVED_FIELDS_ARG \
-                                      $PRICE_M_ARG $PRICE_S_ARG \
+                                      $PRICE_M_ARG $PRICE_S_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
                                       $PRICE_RANDOM_INIT_FLAG
 fi
 
@@ -1211,7 +1377,7 @@ if [ "$finetune" == "CrossAttentionJoint" ]; then
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
   # Check if finetuned CrossAttentionJoint weights already exist
-  CROSS_ATTN_JOINT_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}_llm_price${CROSS_ATTN_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${EPOCH_SUFFIX}"
+  CROSS_ATTN_JOINT_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_N_SUFFIX}_llm_price${NO_LLM_RESIDUAL_SUFFIX}${CROSS_ATTN_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${CROSS_ATTN_DROPOUT_SUFFIX}${CROSS_ATTN_GATE_SUFFIX}${RESIDUAL_PRED_SUFFIX}${DELTA_BOUND_SUFFIX}${PRICE_EMB_DROPOUT_SUFFIX}${INIT_LLM_FROM_SUFFIX}${DETERMINISTIC_SUFFIX}${CROSS_ATTN_NOOP_SUFFIX}${FORCE_INFLATE_SUFFIX}${PRICE_OUTPUT_DIM_SUFFIX}${PRICE_WARMUP_SUFFIX}${PRICE_LR_SUFFIX}${EPOCH_SUFFIX}"
   if [ -f "${CROSS_ATTN_JOINT_PREFIX}_llm.pt" ] && [ -f "${CROSS_ATTN_JOINT_PREFIX}_price.pt" ]; then
     echo "Finetuned CrossAttentionJoint weights already exist, skipping finetune:"
     echo "  LLM:   ${CROSS_ATTN_JOINT_PREFIX}_llm.pt"
@@ -1220,7 +1386,7 @@ if [ "$finetune" == "CrossAttentionJoint" ]; then
     #########################Cross-Attention Joint LLM+PRICE finetune#########################
     algo=llm_price_finetune
     hid_units=2048
-    lr=0.0001
+    lr=${LLM_LR:-0.0001}
     price_lr=${PRICE_LR:-$PRICE_LR_DEFAULT}
     batch_size=$FT_BATCH_SIZE
     grad_accum_steps=${GRAD_ACCUM_STEPS:-1}
@@ -1237,7 +1403,7 @@ if [ "$finetune" == "CrossAttentionJoint" ]; then
     setup_args_and_suffixes
 
     python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_lora_crossAttn_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${EPOCH_SUFFIX}.log \
+                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_lora_crossAttn_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${CROSS_ATTN_DROPOUT_SUFFIX}${CROSS_ATTN_GATE_SUFFIX}${RESIDUAL_PRED_SUFFIX}${DELTA_BOUND_SUFFIX}${PRICE_EMB_DROPOUT_SUFFIX}${INIT_LLM_FROM_SUFFIX}${DETERMINISTIC_SUFFIX}${CROSS_ATTN_NOOP_SUFFIX}${FORCE_INFLATE_SUFFIX}${PRICE_OUTPUT_DIM_SUFFIX}${PRICE_WARMUP_SUFFIX}${PRICE_LR_SUFFIX}${EPOCH_SUFFIX}.log \
                                         --db $DB_ENGINE \
                                         --workloads_train "${TRAIN_WLS[@]}" \
                                         --workload_test ${WORKLOAD_TEST} \
@@ -1257,7 +1423,7 @@ if [ "$finetune" == "CrossAttentionJoint" ]; then
                                         $BUCKETIZE_ARG \
                                         $QUANTIFICATION_ARG \
                                         $REMOVED_FIELDS_ARG \
-                                        $PRICE_M_ARG $PRICE_S_ARG \
+                                        $PRICE_M_ARG $PRICE_S_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
                                         $PRICE_RANDOM_INIT_FLAG \
                                         $CHECKPOINT_INTERVAL_ARG \
                                         $GRAD_ACCUM_ARG \
@@ -1272,7 +1438,7 @@ if [ "$finetune" == "CrossAttentionJoint" ]; then
   algo=llm_price
   embed_size=${EMBED_SIZE:-1000}
   hid_units=2048
-  lr=0.0001
+  lr=${LLM_LR:-0.0001}
   batch_size=64
 
   echo "inference: pre-trained CrossAttentionJoint"
@@ -1308,11 +1474,22 @@ if [ "$finetune" == "CrossAttentionJoint" ]; then
                                       $QUANTIFICATION_ARG \
                                       $EMBEDDINGS_ARG \
                                       $REMOVED_FIELDS_ARG \
-                                      $PRICE_M_ARG $PRICE_S_ARG \
+                                      $PRICE_M_ARG $PRICE_S_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
                                       $PRICE_RANDOM_INIT_FLAG \
                                       $PRICE_N_LAYERS_ARG \
                                       $PRICE_FFN_RATIO_ARG \
                                       $N_CROSS_LAYERS_ARG \
+                                      $CROSS_ATTN_DROPOUT_ARG \
+                                        $CROSS_ATTN_GATE_ARG \
+                                        $RESIDUAL_PRED_ARG \
+                                        $DELTA_BOUND_ARG \
+                                        $PRICE_EMB_DROPOUT_ARG \
+                                        $INIT_LLM_FROM_ARG \
+                                        $DETERMINISTIC_ARG \
+                                        $NO_RETRAIN_MLP_ARG \
+                                        $CROSS_ATTN_NOOP_ARG \
+                                        $FORCE_INFLATE_ARG \
+                                        $PRICE_OUTPUT_DIM_ARG \
                                       $RETRAIN_MLP_FLAG \
                                       $REFINED_POOL_FLAG \
                                       $TRIPLE_CONCAT_FLAG \
@@ -1326,7 +1503,7 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
   # Check if finetuned BiCrossAttentionJoint weights already exist
-  BI_CROSS_ATTN_JOINT_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}_llm_price${BI_CROSS_ATTN_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${EPOCH_SUFFIX}"
+  BI_CROSS_ATTN_JOINT_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_N_SUFFIX}_llm_price${NO_LLM_RESIDUAL_SUFFIX}${BI_CROSS_ATTN_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${CROSS_ATTN_DROPOUT_SUFFIX}${CROSS_ATTN_GATE_SUFFIX}${RESIDUAL_PRED_SUFFIX}${DELTA_BOUND_SUFFIX}${PRICE_EMB_DROPOUT_SUFFIX}${INIT_LLM_FROM_SUFFIX}${DETERMINISTIC_SUFFIX}${CROSS_ATTN_NOOP_SUFFIX}${FORCE_INFLATE_SUFFIX}${PRICE_OUTPUT_DIM_SUFFIX}${PRICE_WARMUP_SUFFIX}${PRICE_LR_SUFFIX}${EPOCH_SUFFIX}"
   if [ -f "${BI_CROSS_ATTN_JOINT_PREFIX}_llm.pt" ] && [ -f "${BI_CROSS_ATTN_JOINT_PREFIX}_price.pt" ]; then
     echo "Finetuned BiCrossAttentionJoint weights already exist, skipping finetune:"
     echo "  LLM:   ${BI_CROSS_ATTN_JOINT_PREFIX}_llm.pt"
@@ -1335,7 +1512,7 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
     #########################Bidirectional Cross-Attention Joint LLM+PRICE finetune#########################
     algo=llm_price_finetune
     hid_units=2048
-    lr=0.0001
+    lr=${LLM_LR:-0.0001}
     price_lr=${PRICE_LR:-$PRICE_LR_DEFAULT}
     batch_size=$FT_BATCH_SIZE
     grad_accum_steps=${GRAD_ACCUM_STEPS:-1}
@@ -1351,8 +1528,19 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
 
     setup_args_and_suffixes
 
+    # When --no_llm_residual is set the training step is also the only
+    # evaluation step (the LLM-side inference below is skipped).  Pass an
+    # --output_dir_qerror so train.py emits the test-set CSV.  The path
+    # mirrors the BiCrossAttnJoint inference filename with `_noLLMres` and
+    # the PRICE_N suffix tags so multi-mode/multi-seed runs don't collide.
+    NO_LLM_RES_QERROR_ARG=""
+    if [[ -n "$NO_LLM_RESIDUAL_ARG" ]]; then
+      NO_LLM_RES_QERROR_ARG="--output_dir_qerror ${RESULTS_DIR}/results_Train_${TRAIN_WLS_HYPHEN}_Test_${WORKLOAD_TEST}_ours${SUBDIR_PART}/time_${algo}_priceBiCrossAttnJoint_noLLMres_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_N_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${CROSS_ATTN_DROPOUT_SUFFIX}${CROSS_ATTN_GATE_SUFFIX}${RESIDUAL_PRED_SUFFIX}${DELTA_BOUND_SUFFIX}${PRICE_EMB_DROPOUT_SUFFIX}${INIT_LLM_FROM_SUFFIX}${DETERMINISTIC_SUFFIX}${CROSS_ATTN_NOOP_SUFFIX}${FORCE_INFLATE_SUFFIX}${PRICE_OUTPUT_DIM_SUFFIX}${PRICE_WARMUP_SUFFIX}${PRICE_LR_SUFFIX}${EPOCH_SUFFIX}_seed${SEED}.csv"
+      mkdir -p "${RESULTS_DIR}/results_Train_${TRAIN_WLS_HYPHEN}_Test_${WORKLOAD_TEST}_ours${SUBDIR_PART}"
+    fi
+
     python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_lora_biCrossAttn_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${EPOCH_SUFFIX}.log \
+                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_lora_biCrossAttn_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_N_SUFFIX}${NO_LLM_RESIDUAL_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${CROSS_ATTN_DROPOUT_SUFFIX}${CROSS_ATTN_GATE_SUFFIX}${RESIDUAL_PRED_SUFFIX}${DELTA_BOUND_SUFFIX}${PRICE_EMB_DROPOUT_SUFFIX}${INIT_LLM_FROM_SUFFIX}${DETERMINISTIC_SUFFIX}${CROSS_ATTN_NOOP_SUFFIX}${FORCE_INFLATE_SUFFIX}${PRICE_OUTPUT_DIM_SUFFIX}${PRICE_WARMUP_SUFFIX}${PRICE_LR_SUFFIX}${EPOCH_SUFFIX}_seed${SEED}.log \
                                         --db $DB_ENGINE \
                                         --workloads_train "${TRAIN_WLS[@]}" \
                                         --workload_test ${WORKLOAD_TEST} \
@@ -1369,10 +1557,11 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
                                         --seed $SEED \
                                         --price_model_path $PRICE_MODEL_PATH \
                                         --price_bin_size $PRICE_BIN_SIZE \
+                                        $NO_LLM_RES_QERROR_ARG \
                                         $BUCKETIZE_ARG \
                                         $QUANTIFICATION_ARG \
                                         $REMOVED_FIELDS_ARG \
-                                        $PRICE_M_ARG $PRICE_S_ARG \
+                                        $PRICE_M_ARG $PRICE_S_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
                                         $PRICE_RANDOM_INIT_FLAG \
                                         $CHECKPOINT_INTERVAL_ARG \
                                         $GRAD_ACCUM_ARG \
@@ -1380,21 +1569,39 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
                                         $PRICE_FFN_RATIO_ARG \
                                         $N_CROSS_LAYERS_ARG \
                                         $CROSS_ATTN_LR_ARG \
+                                        $CROSS_ATTN_DROPOUT_ARG \
+                                        $CROSS_ATTN_GATE_ARG \
+                                        $RESIDUAL_PRED_ARG \
+                                        $DELTA_BOUND_ARG \
+                                        $PRICE_EMB_DROPOUT_ARG \
+                                        $INIT_LLM_FROM_ARG \
+                                        $DETERMINISTIC_ARG \
+                                        $NO_RETRAIN_MLP_ARG \
+                                        $CROSS_ATTN_NOOP_ARG \
+                                        $FORCE_INFLATE_ARG \
+                                        $PRICE_OUTPUT_DIM_ARG \
                                         $REFINED_POOL_FLAG \
                                       $TRIPLE_CONCAT_FLAG \
                                       $INFLATE_PRICE_FLAG \
                                       $EARLY_STOP_ARG \
                                       $FREEZE_LLM_ARG \
                                       $PRICE_WARMUP_ARG \
+                                      $PRICE_LR_ARG \
                                       $SUBDIR_ARG
   fi
 
   #########################inference: pre-trained BiCrossAttentionJoint#########################
-  # Bidirectional cross-attention requires the full model (LLM+PRICE+bi-cross-attn)
+  # Bidirectional cross-attention requires the full model (LLM+PRICE+bi-cross-attn).
+  # Skip when --no_llm_residual is set: training uses the price_finetune algo
+  # branch, which doesn't save _llm.pt. The downstream inference path here
+  # would then fail trying to load a non-existent LLM checkpoint.
+  if [[ -n "$NO_LLM_RESIDUAL_ARG" ]]; then
+    echo "[no_llm_residual] Skipping LLM+PRICE inference step — PRICE-only training already evaluated."
+  else
   algo=llm_price
   embed_size=${EMBED_SIZE:-1000}
   hid_units=2048
-  lr=0.0001
+  lr=${LLM_LR:-0.0001}
   batch_size=64
 
   echo "inference: pre-trained BiCrossAttentionJoint"
@@ -1402,9 +1609,9 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
   setup_args_and_suffixes
 
   python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_priceBiCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}.csv \
-                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_priceBiCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}_abs.txt \
-                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_priceBiCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}.log \
+                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_priceBiCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_N_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}.csv \
+                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_priceBiCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_N_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}_abs.txt \
+                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_priceBiCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_N_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}.log \
                                       --db $DB_ENGINE \
                                       --workloads_train "${TRAIN_WLS[@]}" \
                                       --workload_test ${WORKLOAD_TEST} \
@@ -1430,17 +1637,32 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
                                       $QUANTIFICATION_ARG \
                                       $EMBEDDINGS_ARG \
                                       $REMOVED_FIELDS_ARG \
-                                      $PRICE_M_ARG $PRICE_S_ARG \
+                                      $PRICE_M_ARG $PRICE_S_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
                                       $PRICE_RANDOM_INIT_FLAG \
                                       $PRICE_N_LAYERS_ARG \
                                       $PRICE_FFN_RATIO_ARG \
                                       $N_CROSS_LAYERS_ARG \
+                                      $CROSS_ATTN_DROPOUT_ARG \
+                                        $CROSS_ATTN_GATE_ARG \
+                                        $RESIDUAL_PRED_ARG \
+                                        $DELTA_BOUND_ARG \
+                                        $PRICE_EMB_DROPOUT_ARG \
+                                        $INIT_LLM_FROM_ARG \
+                                        $DETERMINISTIC_ARG \
+                                        $NO_RETRAIN_MLP_ARG \
+                                        $CROSS_ATTN_NOOP_ARG \
+                                        $FORCE_INFLATE_ARG \
+                                        $PRICE_OUTPUT_DIM_ARG \
                                       $RETRAIN_MLP_FLAG \
                                       $REFINED_POOL_FLAG \
                                       $TRIPLE_CONCAT_FLAG \
                                       $INFLATE_PRICE_FLAG \
                                       $EARLY_STOP_ARG \
+                                      $FREEZE_LLM_ARG \
+                                      $PRICE_WARMUP_ARG \
+                                      $PRICE_LR_ARG \
                                       $SUBDIR_ARG
+  fi  # close --no_llm_residual guard
 fi
 
 if [ "$finetune" == "ReverseCrossAttentionJoint" ]; then
@@ -1448,7 +1670,7 @@ if [ "$finetune" == "ReverseCrossAttentionJoint" ]; then
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
   # Check if finetuned ReverseCrossAttentionJoint weights already exist
-  REV_CROSS_ATTN_JOINT_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}_llm_price${REV_CROSS_ATTN_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${EPOCH_SUFFIX}"
+  REV_CROSS_ATTN_JOINT_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_N_SUFFIX}_llm_price${NO_LLM_RESIDUAL_SUFFIX}${REV_CROSS_ATTN_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${CROSS_ATTN_DROPOUT_SUFFIX}${CROSS_ATTN_GATE_SUFFIX}${RESIDUAL_PRED_SUFFIX}${DELTA_BOUND_SUFFIX}${PRICE_EMB_DROPOUT_SUFFIX}${INIT_LLM_FROM_SUFFIX}${DETERMINISTIC_SUFFIX}${CROSS_ATTN_NOOP_SUFFIX}${FORCE_INFLATE_SUFFIX}${PRICE_OUTPUT_DIM_SUFFIX}${PRICE_WARMUP_SUFFIX}${PRICE_LR_SUFFIX}${EPOCH_SUFFIX}"
   if [ -f "${REV_CROSS_ATTN_JOINT_PREFIX}_llm.pt" ] && [ -f "${REV_CROSS_ATTN_JOINT_PREFIX}_price.pt" ]; then
     echo "Finetuned ReverseCrossAttentionJoint weights already exist, skipping finetune:"
     echo "  LLM:   ${REV_CROSS_ATTN_JOINT_PREFIX}_llm.pt"
@@ -1457,7 +1679,7 @@ if [ "$finetune" == "ReverseCrossAttentionJoint" ]; then
     #########################Reverse Cross-Attention Joint LLM+PRICE finetune#########################
     algo=llm_price_finetune
     hid_units=2048
-    lr=0.0001
+    lr=${LLM_LR:-0.0001}
     price_lr=${PRICE_LR:-$PRICE_LR_DEFAULT}
     batch_size=$FT_BATCH_SIZE
     grad_accum_steps=${GRAD_ACCUM_STEPS:-1}
@@ -1467,7 +1689,7 @@ if [ "$finetune" == "ReverseCrossAttentionJoint" ]; then
     setup_args_and_suffixes
 
     python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_revCrossAttn_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${EPOCH_SUFFIX}.log \
+                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_revCrossAttn_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${CROSS_ATTN_DROPOUT_SUFFIX}${CROSS_ATTN_GATE_SUFFIX}${RESIDUAL_PRED_SUFFIX}${DELTA_BOUND_SUFFIX}${PRICE_EMB_DROPOUT_SUFFIX}${INIT_LLM_FROM_SUFFIX}${DETERMINISTIC_SUFFIX}${CROSS_ATTN_NOOP_SUFFIX}${FORCE_INFLATE_SUFFIX}${PRICE_OUTPUT_DIM_SUFFIX}${PRICE_WARMUP_SUFFIX}${PRICE_LR_SUFFIX}${EPOCH_SUFFIX}.log \
                                         --db $DB_ENGINE \
                                         --workloads_train "${TRAIN_WLS[@]}" \
                                         --workload_test ${WORKLOAD_TEST} \
@@ -1487,7 +1709,7 @@ if [ "$finetune" == "ReverseCrossAttentionJoint" ]; then
                                         $BUCKETIZE_ARG \
                                         $QUANTIFICATION_ARG \
                                         $REMOVED_FIELDS_ARG \
-                                        $PRICE_M_ARG $PRICE_S_ARG \
+                                        $PRICE_M_ARG $PRICE_S_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
                                         $PRICE_RANDOM_INIT_FLAG \
                                         $CHECKPOINT_INTERVAL_ARG \
                                         $GRAD_ACCUM_ARG \
@@ -1495,9 +1717,21 @@ if [ "$finetune" == "ReverseCrossAttentionJoint" ]; then
                                         $PRICE_FFN_RATIO_ARG \
                                         $N_CROSS_LAYERS_ARG \
                                         $CROSS_ATTN_LR_ARG \
+                                        $CROSS_ATTN_DROPOUT_ARG \
+                                        $CROSS_ATTN_GATE_ARG \
+                                        $RESIDUAL_PRED_ARG \
+                                        $DELTA_BOUND_ARG \
+                                        $PRICE_EMB_DROPOUT_ARG \
+                                        $INIT_LLM_FROM_ARG \
+                                        $DETERMINISTIC_ARG \
+                                        $NO_RETRAIN_MLP_ARG \
+                                        $CROSS_ATTN_NOOP_ARG \
+                                        $FORCE_INFLATE_ARG \
+                                        $PRICE_OUTPUT_DIM_ARG \
                                         $EARLY_STOP_ARG \
                                         $FREEZE_LLM_ARG \
                                       $PRICE_WARMUP_ARG \
+                                      $PRICE_LR_ARG \
                                       $SUBDIR_ARG
   fi
 
@@ -1505,7 +1739,7 @@ if [ "$finetune" == "ReverseCrossAttentionJoint" ]; then
   algo=llm_price
   embed_size=${EMBED_SIZE:-1000}
   hid_units=2048
-  lr=0.0001
+  lr=${LLM_LR:-0.0001}
   batch_size=64
 
   echo "inference: pre-trained ReverseCrossAttentionJoint"
@@ -1541,7 +1775,7 @@ if [ "$finetune" == "ReverseCrossAttentionJoint" ]; then
                                       $QUANTIFICATION_ARG \
                                       $EMBEDDINGS_ARG \
                                       $REMOVED_FIELDS_ARG \
-                                      $PRICE_M_ARG $PRICE_S_ARG \
+                                      $PRICE_M_ARG $PRICE_S_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
                                       $PRICE_RANDOM_INIT_FLAG \
                                       $PRICE_N_LAYERS_ARG \
                                       $PRICE_FFN_RATIO_ARG \
@@ -1563,7 +1797,7 @@ if [ "$finetune" == "PriceFTthenJoint" ]; then
   else
     algo=llm_price_finetune
     hid_units=2048
-    lr=0.0001
+    lr=${LLM_LR:-0.0001}
     price_lr=${PRICE_LR:-$PRICE_LR_DEFAULT}
     batch_size=$FT_BATCH_SIZE
 
@@ -1592,13 +1826,13 @@ if [ "$finetune" == "PriceFTthenJoint" ]; then
                                         $BUCKETIZE_ARG \
                                         $QUANTIFICATION_ARG \
                                         $REMOVED_FIELDS_ARG \
-                                        $PRICE_M_ARG $PRICE_S_ARG \
+                                        $PRICE_M_ARG $PRICE_S_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
                                         $PRICE_RANDOM_INIT_FLAG \
                                         $CHECKPOINT_INTERVAL_ARG
   fi
 
   # Step 2: Joint finetune with frozen-init PRICE
-  FROZEN_INIT_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}_llm_price_frozenInit${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}"
+  FROZEN_INIT_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_N_SUFFIX}_llm_price${NO_LLM_RESIDUAL_SUFFIX}_frozenInit${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}"
   if [ -f "${FROZEN_INIT_PREFIX}_llm.pt" ] && [ -f "${FROZEN_INIT_PREFIX}_price.pt" ]; then
     echo "Frozen-init joint weights already exist, skipping finetune:"
     echo "  LLM:   ${FROZEN_INIT_PREFIX}_llm.pt"
@@ -1606,7 +1840,7 @@ if [ "$finetune" == "PriceFTthenJoint" ]; then
   else
     algo=llm_price_finetune
     hid_units=2048
-    lr=0.0001
+    lr=${LLM_LR:-0.0001}
     price_lr=${PRICE_LR:-$PRICE_LR_DEFAULT}
     batch_size=$FT_BATCH_SIZE
 
@@ -1635,7 +1869,7 @@ if [ "$finetune" == "PriceFTthenJoint" ]; then
                                         $BUCKETIZE_ARG \
                                         $QUANTIFICATION_ARG \
                                         $REMOVED_FIELDS_ARG \
-                                        $PRICE_M_ARG $PRICE_S_ARG \
+                                        $PRICE_M_ARG $PRICE_S_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
                                         $PRICE_RANDOM_INIT_FLAG \
                                         $CHECKPOINT_INTERVAL_ARG
   fi
@@ -1644,7 +1878,7 @@ if [ "$finetune" == "PriceFTthenJoint" ]; then
   algo=llm_price
   embed_size=${EMBED_SIZE:-1000}
   hid_units=2048
-  lr=0.0001
+  lr=${LLM_LR:-0.0001}
   batch_size=64
 
   echo "PriceFTthenJoint Step 3: inference with frozen-init joint weights (time)"
@@ -1679,6 +1913,6 @@ if [ "$finetune" == "PriceFTthenJoint" ]; then
                                       $QUANTIFICATION_ARG \
                                       $EMBEDDINGS_ARG \
                                       $REMOVED_FIELDS_ARG \
-                                      $PRICE_M_ARG $PRICE_S_ARG \
+                                      $PRICE_M_ARG $PRICE_S_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
                                       $PRICE_RANDOM_INIT_FLAG
 fi

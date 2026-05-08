@@ -26,11 +26,13 @@ _TRAINING_SESSION = {'tag': None, 'start_time': None, 'epoch': None}
 
 ## cost prediction MLP model
 class Prediction(nn.Module):
-    def __init__(self, in_feature = 69, hid_units = 256, contract = 1, mid_layers = True, res_con = True):
+    def __init__(self, in_feature = 69, hid_units = 256, contract = 1, mid_layers = True, res_con = True,
+                 no_sigmoid=False):
         super(Prediction, self).__init__()
         self.mid_layers = mid_layers
         self.res_con = res_con
-        
+        self.no_sigmoid = no_sigmoid  # if True, return pre-sigmoid logit (used for ResNet additive prediction)
+
         self.out_mlp1 = nn.Linear(in_feature, hid_units)
         self.mid_mlp1 = nn.Linear(hid_units, hid_units//contract)
         self.mid_mlp2 = nn.Linear(hid_units//contract, hid_units)
@@ -67,12 +69,14 @@ class Prediction(nn.Module):
             else:
                 hid = mid
 
-        out = torch.sigmoid(self.out_mlp2(hid))
-        # out = self.out_mlp2(hid)
-        # out = torch.clamp(out, min=0.001, max=1.0)
+        logit = self.out_mlp2(hid)
+        if self.no_sigmoid:
+            # Return pre-sigmoid logit (used for ResNet additive prediction;
+            # caller is responsible for applying sigmoid after summing).
+            return logit
+        out = torch.sigmoid(logit)
         if torch.isnan(out).any():
             print("NaN detected at output")
-
         return out
 
 
@@ -616,7 +620,8 @@ def Logging(args, epoch, qscores, absscores, time, filename = None, save_model =
     return res['model']  
 
 def train(model, train_loader, val_loader, \
-    ds_info, args, crit=None, optimizer=None, scheduler=None, prints=True, record=True, start_epoch=0):
+    ds_info, args, crit=None, optimizer=None, scheduler=None, prints=True, record=True, start_epoch=0,
+    test_loader=None):
 
     # Non-PyTorch model branch (e.g., AutoGluon)
     if not isinstance(model, nn.Module):
@@ -646,7 +651,13 @@ def train(model, train_loader, val_loader, \
             # Split cross-attention params from PRICE core if available
             _has_cross_attn = hasattr(model.price, 'cross_attn_parameters')
             if _has_cross_attn:
-                _cross_attn_lr = getattr(args, 'cross_attn_lr', None) or lr
+                _ca_lr_arg = getattr(args, 'cross_attn_lr', None)
+                # cross-attn group keeps the same base LR as the LLM/LoRA group
+                # by default (same `lr`). Earlier we tied this to `price_lr` so
+                # the price-warmup schedule would cover both; in practice that
+                # made cross-attn under-train (constant 2e-5 instead of ~1e-4
+                # step-decay) and degraded mode 12 test results. Revert.
+                _cross_attn_lr = _ca_lr_arg if _ca_lr_arg is not None else lr
                 price_core_params = [p for p in model.price.price_core_parameters() if p.requires_grad]
                 cross_attn_params = [p for p in model.price.cross_attn_parameters() if p.requires_grad]
                 # Include refined_llm_proj if present (BiCrossAttn with refined pooling)
@@ -669,7 +680,36 @@ def train(model, train_loader, val_loader, \
                 ]
             if hasattr(model, 'gate'):
                 param_groups.append({'params': model.gate.parameters(), 'lr': lr})
+            if hasattr(model, 'base_mlp') and model.base_mlp is not None:
+                base_mlp_params = [p for p in model.base_mlp.parameters() if p.requires_grad]
+                param_groups.append({'params': base_mlp_params, 'lr': lr})
+                print(f"[Optimizer] base_mlp param group: lr={lr} "
+                      f"({len(base_mlp_params)} params, "
+                      f"{sum(p.numel() for p in base_mlp_params)} elements)")
+            if hasattr(model, 'price_branch_gate') and isinstance(model.price_branch_gate, torch.nn.Parameter):
+                param_groups.append({'params': [model.price_branch_gate], 'lr': lr})
+                print(f"[Optimizer] price_branch_gate added (init={model.price_branch_gate.item():.4f})")
+            # Drop empty param groups so the optimizer / scheduler match the
+            # 3-group mode-7 setup when cross-attn has no params (cx=0).
+            param_groups = [g for g in param_groups if len(g['params']) > 0]
             optimizer = torch.optim.Adam(param_groups)
+            # ─── Diagnostic: dump full param-group breakdown so we can compare
+            # mode 7 (3 groups) vs mode 12 cx=0 (4 groups, last empty) at run start.
+            print(f"[Optimizer-DBG] num param_groups={len(optimizer.param_groups)}")
+            for _gi, _g in enumerate(optimizer.param_groups):
+                _np = sum(p.numel() for p in _g['params'])
+                _names = []
+                for _name, _p in model.named_parameters():
+                    if any(id(_p) == id(_q) for _q in _g['params']):
+                        _names.append(_name)
+                _label = "(empty)" if _np == 0 else _names[0] if len(_names) <= 1 else f"{_names[0]} … +{len(_names)-1}"
+                print(f"[Optimizer-DBG]   group[{_gi}] lr={_g['lr']:g}  numel={_np}  ex={_label}")
+            # MLP weight checksum (first row sum) — should be identical between
+            # mode 7 and mode 12 cx=0 if random state was consumed identically.
+            if hasattr(model, 'mlp') and hasattr(model.mlp, 'out_mlp1'):
+                _mlp_w = model.mlp.out_mlp1.weight
+                print(f"[Optimizer-DBG] mlp.out_mlp1.weight shape={tuple(_mlp_w.shape)} "
+                      f"row0_sum={_mlp_w[0].sum().item():.6f} norm={_mlp_w.norm().item():.4f}")
         else:
             optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     if not scheduler:
@@ -711,7 +751,11 @@ def train(model, train_loader, val_loader, \
                     return _flr / _plr
             regular_fn = make_lambda(lr_schedule)
             n_groups = len(optimizer.param_groups)
-            # group 0=LLM, group 1=PRICE, group 2=MLP [, group 3=gate]
+            # Apply the price-random schedule ONLY to PRICE_core (group 1).
+            # cross_attn (group 2 when cx>0) follows the regular step-decay schedule
+            # at base LR = `lr` (same as LLM/MLP). Earlier we tied cross_attn to
+            # PRICE's warmup→2e-5 schedule but that under-trains cross_attn (a
+            # constant 2e-5 instead of ~1e-4 step-decay).
             lambdas = [regular_fn, _price_random_fn] + [regular_fn] * (n_groups - 2)
             scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambdas)
             print(f"[Scheduler] Random init: PRICE lr={_price_lr_eff} for first {_price_warmup} epochs, then {_finetune_lr}, others={lr_schedule}")
@@ -937,6 +981,16 @@ def train(model, train_loader, val_loader, \
                     val_qerrors, _, _, _ = evaluate(model, args, val_loader, ds_info.cost_norm, device, prints=True,data_sec = "val")
                 else:
                     val_qerrors, _, _, _ = evaluate(model, args, val_loader, ds_info.card_norm, device, prints=True,data_sec = "val")
+
+                # Per-epoch test evaluation alongside val. Mirrors val: same model
+                # forward, same q-error metric. Useful to see how trained-MLP-head
+                # test performance evolves and whether the model overfits the train
+                # templates over time.
+                if test_loader is not None:
+                    if not args.card:
+                        _ = evaluate(model, args, test_loader, ds_info.cost_norm, device, prints=True, data_sec="test")
+                    else:
+                        _ = evaluate(model, args, test_loader, ds_info.card_norm, device, prints=True, data_sec="test")
 
                 # Early stopping based on val p90 Q-error
                 _es_patience = getattr(args, 'early_stop_patience', 0)

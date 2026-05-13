@@ -3732,9 +3732,10 @@ def _load_price_embedder(argsP, max_njc, max_nfo, max_ntb, max_nfc, device):
     n_layers_suffix = f"_pL{argsP.price_n_layers}" if getattr(argsP, 'price_n_layers', 6) != 6 else ""
     ft_epochs = getattr(argsP, 'ft_num_epoch', 0)
     epoch_suffix = f"_e{ft_epochs}" if ft_epochs > 0 else ""
-    # Seed suffix — must match train.py's joint-finetune save prefix
-    # (train.py:1395 emits `_seed{argsP.seed}` between epoch_suffix and `_X.pt`).
-    seed_suffix = f"_seed{argsP.seed}" if hasattr(argsP, 'seed') else ""
+    # Joint-finetune weights are now saved seedless (train.py:1273) so that
+    # different evaluation seeds can reuse the same heavy LLM+PRICE+MLP
+    # finetune instead of retraining. Keep this string empty to match.
+    seed_suffix = ""
     # Helper: load checkpoint into model with partial init for size-mismatched weights.
     # For PRICE_M, filter_embeddings.weight changes from [n_embd,43] to [n_embd,61];
     # copies the overlapping columns (histogram bins) and leaves the rest randomly initialized.

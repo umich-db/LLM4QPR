@@ -768,7 +768,10 @@ if [ "$finetune" == "JointPrice" ]; then
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
   # Check if finetuned JointPrice weights already exist
-  JOINT_PRICE_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}_llm_price${NO_LLM_RESIDUAL_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${EPOCH_SUFFIX}_seed${SEED}"
+  # Seedless joint-finetune weight prefix — must match train.py:1273.
+  # Different seeds reuse the same finetuned LLM+PRICE+MLP artifact;
+  # only the inference-time MLP retrain + result CSVs are per-seed.
+  JOINT_PRICE_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}_llm_price${NO_LLM_RESIDUAL_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${EPOCH_SUFFIX}"
   if [ -f "${JOINT_PRICE_PREFIX}_llm.pt" ] && [ -f "${JOINT_PRICE_PREFIX}_price.pt" ]; then
     echo "Finetuned JointPrice weights already exist, skipping finetune:"
     echo "  LLM:   ${JOINT_PRICE_PREFIX}_llm.pt"

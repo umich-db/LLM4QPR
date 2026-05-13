@@ -159,7 +159,8 @@ class PRICEEmbedder(nn.Module):
             self.cross_attn_blocks = nn.ModuleList([])
 
     def forward(self, x, padding_mask, n_join_col, n_fanout, n_table, n_filter_col,
-                llm_hidden_states=None, llm_attention_mask=None, num_clauses=None):
+                llm_hidden_states=None, llm_attention_mask=None, num_clauses=None,
+                qrt_block=None, r_qry=None, r_mask=None):
         # Mode 7's pipeline (always). When num_clauses is provided, x has shape
         # (batch * max_clauses, flat_features); we run scale+filter per clause,
         # then OR-Transformer aggregates the per-clause CLS tokens into a single
@@ -177,8 +178,23 @@ class PRICEEmbedder(nn.Module):
             # Multi-clause: reshape to (batch, max_clauses, n_embd), build clause
             # padding mask, run OR-Transformer, take CLS-only output.
             bsz = num_clauses.size(0)
-            max_c = int(num_clauses.max().item())
-            per_clause_emb = per_clause_emb.view(bsz, max_c, -1)
+            # max_c is the GLOBAL padding count baked into the input tensor by
+            # pad_and_cache_features, NOT the batch-local max of num_clauses.
+            # Using num_clauses.max() here was a bug: when the dataset was
+            # padded to a larger global max (e.g. 16 clauses for tpch q18) but
+            # the current batch happened to contain only short queries (max
+            # 2 clauses), reshape(bsz, batch_max, -1) smeared the extra rows
+            # into the last dim (256 * 8 = 2048 instead of 256), surfacing as
+            # "Expected size 256 but got 2048" inside the OR-Transformer's
+            # torch.cat([cls, clause_embs]).
+            max_c = per_clause_emb.size(0) // bsz
+            # `.reshape` instead of `.view`: per_clause_emb is a slice of
+            # filtering_output and may be non-contiguous (seen on tpch under
+            # --price_n_or where filter_encoder returns non-contiguous output
+            # due to attention's permutation pattern). .reshape() copies when
+            # needed; .view() would raise the "view size is not compatible
+            # with input tensor's size and stride" error.
+            per_clause_emb = per_clause_emb.reshape(bsz, max_c, -1)
             clause_mask = (
                 torch.arange(max_c, device=per_clause_emb.device).unsqueeze(0)
                 >= num_clauses.unsqueeze(1)   # True where padded
@@ -197,6 +213,15 @@ class PRICEEmbedder(nn.Module):
         # query_output is already at the right dim:
         #   - cx=0 (no force_inflate): 512-d (mode 7's query_hidden_dim)
         #   - cx>0 OR force_inflate: llm_hidden_dim (direct projection in self.linear)
+        # --use_qrt_cross_attn: enrich stat_core with Query Residual Tokens
+        # BEFORE biCross runs. qrt_block projects D_stat→D_llm and returns the
+        # refined [B, 1, D_llm] CLS, so biCross input shape stays the same.
+        if qrt_block is not None:
+            assert r_qry is not None, "qrt_block provided but r_qry is None"
+            stat = query_output.unsqueeze(1)              # [B, 1, D_stat]
+            refined = qrt_block(stat, r_qry, r_mask)      # [B, 1, D_llm]
+            query_output = refined.squeeze(1)             # [B, D_llm]
+
         if self.n_cross_layers == 0:
             return query_output, None, None
 
@@ -248,7 +273,9 @@ class LLMPriceJointModel(nn.Module):
       (texts, price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col)
     """
 
-    def __init__(self, llm, price_embedder, llm_embed_size, price_embed_size, hid_units):
+    def __init__(self, llm, price_embedder, llm_embed_size, price_embed_size, hid_units,
+                 residual_pred=False, delta_bound=0.0, use_qrt_cross_attn=False,
+                 qrt_max_tokens=128):
         """
         Args:
             llm: QueryPlanPredictor (with LoRA) that takes text and returns embeddings
@@ -256,26 +283,106 @@ class LLMPriceJointModel(nn.Module):
             llm_embed_size: LLM hidden dim
             price_embed_size: legacy default; ignored if price_embedder.price_output_dim is set
             hid_units: MLP hidden dimension
+            residual_pred: ResNet-style bypass for cross-attn. When True:
+                pred = sigmoid( base_mlp(pooled_emb) + delta_mlp(concat(llm_emb, price_emb)) )
+                where pooled_emb is the PRE-cross-attn LLM output (pure LLM)
+                and concat(...) is the POST-cross-attn fused embedding. The
+                delta head's final layer (out_mlp2) is zero-init, so at step 0
+                delta_logit = 0 and the joint model's prediction is *exactly*
+                base_mlp(pooled_emb) — i.e., LLM-only. Training opens up the
+                delta only if cross-attn helps; if it never helps, gradients
+                through cross-attn vanish and the model degrades to pure LLM.
+            delta_bound: Bound the residual delta_logit via
+                delta_logit ← tanh(delta_logit) * delta_bound. 0 = unbounded.
+                Caps how much the cross-attn branch can perturb the LLM-only
+                prediction.
+            use_qrt_cross_attn: enable Stat-core ↔ QRT bidirectional cross-attn
+                before the Plan↔Query (biCross) block. When True, the model
+                tokenizes the per-sample residual SQL text via self.llm.tokenizer,
+                embeds via self.llm.model.get_input_embeddings(), and runs a
+                single Transformer-style self-attention layer over
+                [stat_proj || r_qry], returning only the refined stat_core CLS
+                at D_llm. The biCross input shape (and downstream price_emb dim
+                = D_llm) is preserved. For cx=0 (Mode 7) this changes the
+                returned price_emb dim from D_stat to D_llm, so combined_dim
+                in the MLP grows to 2*D_llm.
+            qrt_max_tokens: max tokenizer length for residual texts.
         """
         super().__init__()
         self.llm = llm
         self.price = price_embedder
         # Read PRICE output dim from embedder; fall back to legacy arg.
         _pod = getattr(price_embedder, 'price_output_dim', price_embed_size)
-        combined_dim = llm_embed_size + _pod
+        # When --use_qrt_cross_attn is on, QRT projects price_emb to D_llm.
+        # The cx>0 path is already at D_llm; cx=0 path goes D_stat → D_llm.
+        self.use_qrt_cross_attn = bool(use_qrt_cross_attn)
+        self.qrt_max_tokens = int(qrt_max_tokens)
+        if self.use_qrt_cross_attn:
+            self.stat_qrt = StatQrtCrossAttn(
+                d_stat=_pod, d_llm=llm_embed_size,
+                n_heads=4, dropout_rate=0.1,
+            )
+            effective_price_dim = llm_embed_size
+        else:
+            self.stat_qrt = None
+            effective_price_dim = _pod
+        combined_dim = llm_embed_size + effective_price_dim
         from trainer import Prediction
-        self.mlp = Prediction(combined_dim, hid_units)
+        self.residual_pred = bool(residual_pred)
+        self.delta_bound = float(delta_bound)
+        if self.residual_pred:
+            # delta head returns pre-sigmoid logit; out_mlp2 zero-init so
+            # delta_logit = 0 at step 0.
+            self.mlp = Prediction(combined_dim, hid_units, no_sigmoid=True)
+            self.base_mlp = Prediction(llm_embed_size, hid_units, no_sigmoid=True)
+            nn.init.zeros_(self.mlp.out_mlp2.weight)
+            nn.init.zeros_(self.mlp.out_mlp2.bias)
+        else:
+            self.mlp = Prediction(combined_dim, hid_units)
         # Convenience flag: does the embedder do cross-attention (need LLM hidden states)?
         self.uses_cross_attn = getattr(price_embedder, 'n_cross_layers', 0) > 0
 
+    def _embed_residual_texts(self, residual_texts, device):
+        """Tokenize residual SQL fragments and embed them via the LLM's input
+        embedding layer. Returns (r_qry, r_mask) at LLM hidden dim, or (None, None)
+        when use_qrt_cross_attn is off or residual_texts is missing/all-empty."""
+        if not self.use_qrt_cross_attn or residual_texts is None:
+            return None, None
+        # Use a non-empty placeholder for blank residuals so the tokenizer
+        # never produces zero-length sequences (would break stacking and the
+        # cross-attn op). Single pad token suffices — its mask will mark it
+        # as a real (but information-less) token.
+        pad_tok = self.llm.tokenizer.pad_token or self.llm.tokenizer.eos_token or " "
+        texts = [t if (t and t.strip()) else pad_tok for t in residual_texts]
+        enc = self.llm.tokenizer(
+            texts, return_tensors="pt", padding=True, truncation=True,
+            max_length=self.qrt_max_tokens, add_special_tokens=False,
+        )
+        input_ids = enc["input_ids"].to(device)
+        attn_mask = enc["attention_mask"].to(device)
+        embed_layer = self.llm.model.get_input_embeddings()
+        r_qry = embed_layer(input_ids).float()
+        return r_qry, attn_mask.float()
+
     def forward(self, x):
-        # The collate function emits an 8-tuple (with num_clauses) under
-        # --price_n_or, otherwise the legacy 7-tuple. Unpack accordingly.
+        # Unpack. The collate emits, in order:
+        #   base 7-tuple (texts, pf, pm, njc, nfo, ntb, nfc),
+        #   + optional num_clauses (under --price_n_or),
+        #   + optional residual_texts (under --use_qrt_cross_attn).
+        # We detect each optional tail element by type so the unpack stays
+        # backward-compatible with the legacy 7/8-tuples.
+        residual_texts = None
+        num_clauses = None
+        x = list(x)
+        # residual_texts (list[str]) is always last when present.
+        if len(x) > 7 and isinstance(x[-1], (list, tuple)) and (
+            len(x[-1]) == 0 or isinstance(x[-1][0], str)
+        ):
+            residual_texts = x.pop()
+        # num_clauses (torch.LongTensor) is the next-to-last when present.
         if len(x) == 8:
-            texts, price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col, num_clauses = x
-        else:
-            texts, price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col = x
-            num_clauses = None
+            num_clauses = x.pop()
+        texts, price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col = x
 
         # When cross-attn is enabled, the embedder needs LLM hidden states.
         # Otherwise (mode 7 / cx=0), use the cheaper LLM forward.
@@ -288,10 +395,18 @@ class LLMPriceJointModel(nn.Module):
         if pooled_emb.dtype != torch.float32:
             pooled_emb = pooled_emb.float()
 
+        # QRT: tokenize+embed residual SQL fragments per-batch; pass the
+        # StatQrtCrossAttn block into PRICEEmbedder.forward so it can refine
+        # stat_core before biCross.
+        r_qry, r_mask = (None, None)
+        if self.use_qrt_cross_attn:
+            r_qry, r_mask = self._embed_residual_texts(residual_texts, price_features.device)
+
         price_emb, updated_llm, _ = self.price(
             price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col,
             llm_hidden_states=hidden_states, llm_attention_mask=attn_mask,
             num_clauses=num_clauses,
+            qrt_block=self.stat_qrt, r_qry=r_qry, r_mask=r_mask,
         )
 
         if updated_llm is not None:
@@ -302,7 +417,22 @@ class LLMPriceJointModel(nn.Module):
             llm_emb = pooled_emb
 
         combined = torch.cat([llm_emb, price_emb], dim=1)
-        out = self.mlp(combined)
+        if self.residual_pred:
+            # True ResNet-style bypass: base_mlp eats pooled_emb (PRE-cross-attn
+            # LLM output), so the base path is independent of cross-attn. delta
+            # head sees the cross-attn-fused (post-cross-attn LLM ⊕ post-cross-
+            # attn PRICE) features. At step 0, delta_mlp.out_mlp2 is zero-init
+            # so delta_logit ≡ 0 and the model is *exactly* an LLM-only
+            # predictor. Training opens up delta only if cross-attn helps; if
+            # it never does, gradients flowing through cross-attn vanish and
+            # the model degrades gracefully to pure LLM.
+            base_logit = self.base_mlp(pooled_emb)
+            delta_logit = self.mlp(combined)
+            if self.delta_bound > 0:
+                delta_logit = torch.tanh(delta_logit) * self.delta_bound
+            out = torch.sigmoid(base_logit + delta_logit)
+        else:
+            out = self.mlp(combined)
         if self.training:
             _c = getattr(self, '_dbg_count', 0)
             if _c < 5:
@@ -317,11 +447,16 @@ class LLMPriceJointModel(nn.Module):
     def forward_embeddings(self, x):
         """Return concat([llm_emb, price_emb]) without the final MLP head.
         Used by retrain_mlp inference flow to cache features."""
+        residual_texts = None
+        num_clauses = None
+        x = list(x)
+        if len(x) > 7 and isinstance(x[-1], (list, tuple)) and (
+            len(x[-1]) == 0 or isinstance(x[-1][0], str)
+        ):
+            residual_texts = x.pop()
         if len(x) == 8:
-            texts, price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col, num_clauses = x
-        else:
-            texts, price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col = x
-            num_clauses = None
+            num_clauses = x.pop()
+        texts, price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col = x
         if self.uses_cross_attn:
             pooled_emb, hidden_states, attn_mask = self.llm.forward_with_sequence(texts)
         else:
@@ -330,10 +465,14 @@ class LLMPriceJointModel(nn.Module):
             attn_mask = None
         if pooled_emb.dtype != torch.float32:
             pooled_emb = pooled_emb.float()
+        r_qry, r_mask = (None, None)
+        if self.use_qrt_cross_attn:
+            r_qry, r_mask = self._embed_residual_texts(residual_texts, price_features.device)
         price_emb, updated_llm, _ = self.price(
             price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col,
             llm_hidden_states=hidden_states, llm_attention_mask=attn_mask,
             num_clauses=num_clauses,
+            qrt_block=self.stat_qrt, r_qry=r_qry, r_mask=r_mask,
         )
         if updated_llm is not None:
             llm_emb = F.normalize(updated_llm[:, 0, :], p=2, dim=1)
@@ -542,6 +681,65 @@ class CrossAttentionBlock(nn.Module):
         if self.use_gate:
             ff_out = self.ffn_gate * ff_out
         return x + ff_out
+
+
+class StatQrtCrossAttn(nn.Module):
+    """Single-layer bidirectional self-attention over [stat_core || QRT],
+    returning only the refined stat_core CLS (length-1).
+
+    Wired in by --use_qrt_cross_attn. Per the PRICE_N design doc §10:
+      - stat_core comes from the OR-Transformer (or filter_encoder CLS when
+        --price_n_or is off / single-clause). Shape [B, 1, D_stat].
+      - r_qry comes from LLM.embed_tokens(tokenizer(residual_text)), where
+        residual_text concatenates SQL fragments the stat-core can't encode
+        (LIKE / ILIKE / EXISTS / IN-subq / scalar subq / opaque). Shape
+        [B, T_r, D_llm], with r_mask [B, T_r] (1 = real token, 0 = pad).
+
+    The block concatenates [stat_proj || r_qry] and runs one Transformer-
+    style self-attention layer (pre-norm cross-attn block with Q=KV=the
+    concatenated sequence — equivalent to a single self-attn layer). The
+    stat_core position attends over all QRT tokens AND vice versa, so the
+    bidirectional information flow happens inside one layer. Only the
+    refined stat_core CLS is returned (shape [B, 1, D_llm]), so the
+    downstream Plan↔Query cross-attn block sees the same length-1 PRICE
+    summary shape as before — no other model code needs to change.
+    """
+
+    def __init__(self, d_stat: int, d_llm: int, n_heads: int = 4,
+                 dropout_rate: float = 0.1):
+        super().__init__()
+        # Per design decision (2026-05-11): project stat_core to D_llm so the
+        # cross-attn ops are dim-matched. No-op when D_stat == D_llm.
+        self.stat_to_llm = (nn.Linear(d_stat, d_llm)
+                             if d_stat != d_llm else nn.Identity())
+        # One bidirectional layer over [stat || qrt]: reuse the existing
+        # CrossAttentionBlock with Q=KV to get pre-norm self-attn + FFN.
+        self.layer = CrossAttentionBlock(d_llm, n_heads, dropout_rate)
+
+    def forward(self, stat_core, r_qry, r_mask=None):
+        """
+        Args:
+            stat_core: [B, 1, D_stat] — PRICE stat_core CLS.
+            r_qry:     [B, T_r, D_llm] — QRT token embeddings.
+            r_mask:    [B, T_r] (optional) — 1 for real tokens, 0 for pads.
+        Returns:
+            stat_refined: [B, 1, D_llm] — stat_core CLS enriched by QRT
+                information. Same shape as the original stat_core (in D_llm),
+                so the downstream biCross block input shape is unchanged.
+        """
+        stat_proj = self.stat_to_llm(stat_core)              # [B, 1, D_llm]
+        x = torch.cat([stat_proj, r_qry], dim=1)              # [B, 1+T_r, D_llm]
+        # Build KV mask: stat position is always valid (1); pad QRT tokens
+        # get the r_mask value. CrossAttentionBlock expects a mask where 1 =
+        # real token, 0 = pad (it converts internally for the attention op).
+        if r_mask is not None:
+            stat_valid = torch.ones(r_mask.size(0), 1,
+                                     dtype=r_mask.dtype, device=r_mask.device)
+            kv_mask = torch.cat([stat_valid, r_mask], dim=1)  # [B, 1+T_r]
+        else:
+            kv_mask = None
+        x_refined = self.layer(x, x, kv_mask)                 # self-attn (Q=KV)
+        return x_refined[:, :1, :]                            # [B, 1, D_llm]
 
 
 class CrossAttentionPRICEEmbedder(nn.Module):

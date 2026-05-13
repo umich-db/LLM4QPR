@@ -1,3 +1,26 @@
+python to_table_seeds.py --dir results/postgres/results_Train_job_Test_job_ours --task time --sentbert_only --special_set1
+python to_table_seeds.py --dir results/postgres/results_Train_jobm_Test_jobm_ours --task time --sentbert_only --special_set1
+python to_table_seeds.py --dir results/postgres/results_Train_stats_Test_stats_ours --task time --sentbert_only --special_set1
+python to_table_seeds.py --dir results/postgres/results_Train_tpcds_Test_tpcds_ours --task time --sentbert_only
+
+python to_table_relative.py --task time --dirs results/postgres/results_Train_stats_Test_stats_ours results/postgres/results_Train_job_Test_job_ours results/postgres/results_Train_jobm_Test_jobm_ours --sentbert_only --special_set1
+
+
+python to_table_seeds.py --dir results/duckdb/results_Train_job_Test_job_ours --task time --sentbert_only --special_set1
+python to_table_seeds.py --dir results/duckdb/results_Train_jobm_Test_jobm_ours --task time --sentbert_only --special_set1
+python to_table_seeds.py --dir results/duckdb/results_Train_stats_Test_stats_ours --task time --sentbert_only --special_set1
+
+python to_table_relative.py --task time --dirs results/duckdb/results_Train_stats_Test_stats_ours results/duckdb/results_Train_job_Test_job_ours results/duckdb/results_Train_jobm_Test_jobm_ours --sentbert_only --special_set1
+
+
+python to_table_seeds.py --dir results/spark/results_Train_job_Test_job_ours --task time --sentbert_only --special_set1
+python to_table_seeds.py --dir results/spark/results_Train_jobm_Test_jobm_ours --task time --sentbert_only --special_set1
+python to_table_seeds.py --dir results/spark/results_Train_stats_Test_stats_ours --task time --sentbert_only --special_set1
+
+python to_table_relative.py --task time --dirs results/spark/results_Train_stats_Test_stats_ours results/spark/results_Train_job_Test_job_ours results/spark/results_Train_jobm_Test_jobm_ours --sentbert_only --special_set1
+
+
+
 # python to_table_seeds.py --dir results/postgres/results_Train_tpch_Test_tpch_ours --task time
 # python to_table_seeds.py --dir results/postgres/results_Train_tpcds_Test_tpcds_ours --task time
 # python to_table_seeds.py --dir results/postgres/results_Train_syn_Test_syn_ours --task time

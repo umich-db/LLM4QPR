@@ -40,7 +40,7 @@ RUN_SCRIPT="$SCRIPT_DIR/run_different_llms.sh"
 source ~/venvs/tmpenv/bin/activate
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-1}
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export GRAD_ACCUM_STEPS=4
+export GRAD_ACCUM_STEPS=${GRAD_ACCUM_STEPS:-4}
 
 VARIANTS=("$@")
 if [[ ${#VARIANTS[@]} -eq 0 ]]; then

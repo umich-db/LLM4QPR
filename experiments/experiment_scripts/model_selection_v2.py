@@ -103,10 +103,18 @@ class SearchConfig:
     # Initialization
     n_init_clusters: Optional[int] = None
     size_col: Optional[str] = "non_embedding_params"
-    # "kmeans" (default): metadata-diverse KMeans on continuous+categorical features.
-    # "stratified": split the feasible pool into `init_budget` latency-quantile
-    #   bins and pick one model uniformly per bin (seeded). Better Pareto-frontier
-    #   coverage when cost (latency) is the primary axis.
+    # First-round seed-selection strategy. All three pick `init_budget` models
+    # from the feasible pool; they only differ in HOW:
+    #   "kmeans" (default): metadata-diverse — cluster the continuous+categorical
+    #       feature embeddings into `init_budget` groups and pick the model
+    #       closest to each cluster center. Best regret + p_optimal on our
+    #       44-model ablation (init=4 already hits 97% p_optimal).
+    #   "stratified": split the feasible pool into `init_budget` latency-
+    #       quantile bins and pick one model uniformly at random per bin.
+    #       Covers the cost axis explicitly; useful when the objective is a
+    #       latency-accuracy Pareto frontier rather than best-acc-under-cap.
+    #   "random": uniform random pick of `init_budget` models from the feasible
+    #       pool. Baseline / sanity check. No metadata or latency awareness.
     init_strategy: str = "kmeans"
     latency_col: str = "avg_ms"
 
@@ -255,11 +263,22 @@ class ConstrainedModelSearch:
     # --------------------------------------------------------
 
     def _initialize_seed_set(self) -> None:
-        if self.config.init_strategy == "stratified":
+        strat = self.config.init_strategy
+        if strat == "stratified":
             init_ids = self._stratified_initialization_ids(self.config.init_budget)
-        else:
+        elif strat == "random":
+            init_ids = self._random_initialization_ids(self.config.init_budget)
+        else:  # "kmeans" (default)
             init_ids = self._diverse_initialization_ids(self.config.init_budget)
         self._evaluate_ids(init_ids)
+
+    def _random_initialization_ids(self, budget: int) -> List[int]:
+        """Uniform random init. No metadata, no latency awareness — picks
+        `budget` distinct candidates from the feasible pool. Baseline."""
+        budget = min(budget, len(self.candidates))
+        return self.rng.choice(
+            len(self.candidates), size=budget, replace=False
+        ).tolist()
 
     def _fit_surrogates(self) -> None:
         train_df = self.candidates[self.candidates["_evaluated"]].copy()
@@ -926,11 +945,13 @@ def parse_args():
     p.add_argument("--latency_limit", type=float, required=True, help="Max inference latency (ms)")
     p.add_argument("--init_budget", type=int, default=24, help="Initial diverse evaluation budget")
     p.add_argument("--init_strategy", type=str, default="kmeans",
-                   choices=["kmeans", "stratified"],
-                   help="First-round sampling: 'kmeans' (metadata-diverse, default) or "
-                        "'stratified' (one random pick per latency-quantile bin). "
-                        "'stratified' covers the cost axis better when the objective "
-                        "is a latency-accuracy Pareto frontier.")
+                   choices=["kmeans", "stratified", "random"],
+                   help="First-round seed selection. "
+                        "'kmeans' (default): metadata-diverse pick per cluster center "
+                        "(best regret on our ablation). "
+                        "'stratified': one random pick per latency-quantile bin — "
+                        "covers the cost axis explicitly. "
+                        "'random': uniform random — baseline / sanity check.")
     p.add_argument("--batch_size", type=int, default=4, help="Batch size per surrogate round")
     p.add_argument("--max_evals", type=int, default=80, help="Maximum total evaluations")
     p.add_argument("--random_state", type=int, default=42)

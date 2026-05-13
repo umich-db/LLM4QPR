@@ -686,13 +686,15 @@ architecture has two LLM-style branches that should not be confused:
 | Plan ↔ Query cross-attn          | LLM ↔ PRICE-summary (length-1) cross-attn | LLM-plan tokens ↔ unified `h_query` token sequence    |
 | Final pooling + MLP              | CLS+L2norm of fused LLM, concat with PRICE | CLS pool of joint output → MLP                       |
 
-### Open design questions
+### Design decisions (resolved)
 
-- **D_stat vs. D_llm**: Should `stat_core` and `h_plan` share the
-  same hidden dim (so cross-attn is dim-matched without projection),
-  or keep `D_stat=512`/`384` and add input projections at every
-  cross-attn boundary? Defaulting to `D_stat = D_llm` simplifies
-  shapes.
+- **D_stat → D_llm projection** (decided 2026-05-11): `stat_core` enters the
+  Stat-core ↔ QRT cross-attn block at the LLM hidden dim. A single
+  `nn.Linear(D_stat, D_llm)` projection is applied to `stat_core` before
+  the cross-attn block (no-op when `D_stat == D_llm`). All cross-attn
+  ops downstream operate at `D_llm`.
+
+### Open design questions
 - **CLS-only vs. full sequence at OR-Transformer output**: User
   notes "I think at this point we can just use their CLS tokens,
   not the whole sequence" — adopting that. If we ever need richer

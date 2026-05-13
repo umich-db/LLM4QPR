@@ -118,8 +118,17 @@ def parse_args():
     parser.add_argument("--price_weights_source", type=str, choices=["pretrained", "separate", "joint", "frozen_joint", "joint_frozen_init", "gated_joint", "cross_attn_joint", "bi_cross_attn_joint", "reverse_cross_attn_joint"],
                         default="pretrained",
                         help="Source of PRICE weights: pretrained (original), separate (finetuned on card), joint (jointly finetuned), frozen_joint (finetuned with frozen LLM), joint_frozen_init (jointly finetuned from frozen-joint init), gated_joint (jointly finetuned with learned gate), cross_attn_joint (jointly finetuned with cross-attention), bi_cross_attn_joint (jointly finetuned with bidirectional cross-attention), reverse_cross_attn_joint (jointly finetuned with reverse cross-attention)")
-    parser.add_argument("--price_lr", type=float, default=None,
-                        help="Learning rate for PRICE model parameters (default: 1e-3 with --price_random_init, else 2.85e-5)")
+    # Canonical name: --price_warmup_lr. With --price_random_init, this is the
+    # PRICE LR for epochs 0..price_warmup_epochs-1; after warmup the LR drops
+    # to a hardcoded 2e-5. Without --price_random_init it acts as the peak LR
+    # of a OneCycleLR schedule. --price_lr is kept as a deprecated alias for
+    # backward compatibility with older shell scripts.
+    parser.add_argument("--price_warmup_lr", "--price_lr",
+                        dest="price_warmup_lr", type=float, default=None,
+                        help="PRICE warmup-phase LR (with --price_random_init): used for epochs "
+                             "0..price_warmup_epochs-1, then drops to 2e-5. Without --price_random_init "
+                             "this is the OneCycleLR peak LR. Default: 1e-3 with --price_random_init, "
+                             "else 2.85e-5. Older runs use --price_lr — still accepted as an alias.")
     parser.add_argument("--freeze_llm", action="store_true", default=False,
                         help="Freeze LLM parameters during llm_price_finetune (only train PRICE + MLP)")
     parser.add_argument("--price_init_frozen_joint", action="store_true", default=False,
@@ -130,6 +139,11 @@ def parse_args():
                         help="Use PRICE_M encoding (61-dim filters with IN/LIKE support via multi-value SpaceSaving)")
     parser.add_argument("--price_s", action="store_true", default=False,
                         help="Use PRICE_S encoding (43-dim, IN/LIKE via bounding-box range)")
+    parser.add_argument("--price_b", action="store_true", default=False,
+                        help="Use PRICE_B encoding (original PRICE design, 43-dim). "
+                             "Only equi-join and col-op-literal predicates are kept; "
+                             "BETWEEN/IN/LIKE/NULL/NOT/OR/subqueries are dropped without "
+                             "decomposition or approximation. Never rejects a query.")
     parser.add_argument("--price_n_parsing", action="store_true", default=False,
                         help="PRICE_N: enable parser rules (NOT push-down, "
                              "disjoint-OR→IN, date literals, atom tagging).")
@@ -182,6 +196,15 @@ def parse_args():
                         help="PRICE attention heads (default 8, must divide n_embd evenly)")
     parser.add_argument("--price_ffn_ratio", type=float, default=4.0,
                         help="PRICE FFN expansion ratio (default 4.0, pretrained uses 4)")
+    parser.add_argument("--or_n_layers", type=int, default=1,
+                        help="OR-Transformer encoder layers (default 1; legacy was 2). "
+                             "Smaller is cheaper but loses cross-clause expressivity.")
+    parser.add_argument("--or_n_heads", type=int, default=4,
+                        help="OR-Transformer attention heads (default 4; legacy was 8). "
+                             "Must divide price_n_embd evenly.")
+    parser.add_argument("--or_ffn_ratio", type=float, default=1.0,
+                        help="OR-Transformer FFN expansion ratio (default 1.0; legacy was 4.0). "
+                             "ffn_ratio=1.0 with n_embd=256 → dim_feedforward=256.")
     parser.add_argument("--freeze_all_price", action="store_true", default=False,
                         help="Freeze ALL PRICE parameters during joint finetuning (LLMOnly control)")
     parser.add_argument("--freeze_price_encoder", action="store_true", default=False,
@@ -302,8 +325,20 @@ def parse_args():
                              "Training opens the gates only if cross-attn helps; if it never helps, "
                              "gates stay near 0 and the model degrades gracefully to LLM-only. Useful "
                              "when adding biCrossAttn to small-data random-init runs has been hurting.")
-    parser.add_argument("--retrain_mlp", action="store_true", default=False,
-                        help="Pre-compute cross-attn embeddings, then train fresh MLP from scratch")
+    # NOTE: --retrain_mlp removed (2026-05-11). Mode 7/12 inference now caches
+    # post-PRICE + post-cross-attn combined embeddings by default in
+    # get_embeddings(), so the "retrain just the MLP from cached features"
+    # workflow happens automatically on every re-run (no flag needed).
+    parser.add_argument("--use_qrt_cross_attn", action="store_true", default=False,
+                        help="Enable Stat-core ↔ QRT (Query Residual Tokens) "
+                             "bidirectional cross-attention before Plan↔Query "
+                             "cross-attn. When set, Sql2FeatureN emits residual "
+                             "SQL spans (LIKE / EXISTS / IN-subq / scalar subq / "
+                             "opaque) and feeds them through the LLM's tokenizer + "
+                             "embed_tokens layer; the resulting r_qry tokens are "
+                             "fused with the PRICE stat_core CLS via a bidirectional "
+                             "cross-attn block. Default off — residual text is "
+                             "dropped, matching current behavior.")
     parser.add_argument("--refined_pool", action="store_true", default=False,
                         help="Use refined (cross-attn enriched) LLM pooled embedding instead of original")
     parser.add_argument("--triple_concat", action="store_true", default=False,
@@ -320,10 +355,10 @@ def parse_args():
         args.price_n_fanout = True
         args.price_n_pairwise = True
 
-    # Mutual exclusion: --price_s, --price_m, --price_n_filter all change filter_dim.
-    if sum([args.price_s, args.price_m, args.price_n_filter]) > 1:
+    # Mutual exclusion: --price_s, --price_m, --price_n_filter, --price_b all change filter_dim.
+    if sum([args.price_s, args.price_m, args.price_n_filter, args.price_b]) > 1:
         parser.error(
-            "--price_s, --price_m, --price_n_filter are mutually exclusive "
+            "--price_s, --price_m, --price_n_filter, --price_b are mutually exclusive "
             "(they all change filter_dim).")
 
     # Backward compat: --price_pretrained maps to price_weights_source="joint"
@@ -335,9 +370,13 @@ def parse_args():
         parser.error("--algo price_finetune requires --card")
 
     # Canonical workload prefix for shared model files.
-    # IMDB-based workloads (syn, job_full, jobm) share the same training data
-    # as 'job', so finetuned models are identical and should use the same name.
-    _CANONICAL_MAP = {'syn': 'job', 'job_full': 'job', 'jobm': 'job'}
+    # IMDB-based workloads (job, syn, job_full, jobm) all share the same
+    # training data, so finetuned models are identical and should use a
+    # common 'imdb' prefix. Previously this canonicalised to 'job', which
+    # was misleading (the prefix had nothing to do with which JOB variant
+    # was being trained/tested — it was just the IMDB DB).
+    _CANONICAL_MAP = {'job': 'imdb', 'syn': 'imdb',
+                       'job_full': 'imdb', 'jobm': 'imdb'}
     canonical_wls = []
     seen = set()
     for wl in args.workloads_train:

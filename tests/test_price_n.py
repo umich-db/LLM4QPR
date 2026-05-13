@@ -287,6 +287,336 @@ def test_create_sql_features_returns_5_tuple_for_simple_query():
     assert pairwise_intra.numel() == 0
 
 
+def test_flattener_drops_predicates_with_unscoped_derived_aliases():
+    """When subquery-in-FROM derived tables (sb, sc) survive flattening as
+    opaque scopes, predicates that reference their projection (e.g.
+    `s_store_sk = sc.ss_store_sk`) leave a column whose underlying physical
+    table (`store_sales`/`tpcds_ss`) isn't in the outer FROM.
+
+    Upstream fix: when flatten_sql_for_price encounters a column qualified
+    by an alias that's not in alias_to_cte ∪ table_aliases, drop the entire
+    predicate rather than stripping the prefix and emitting a bare column
+    that downstream rewriters mistakenly re-attach to the implicit table.
+
+    Q65 is the canonical case (FROM store, item, (subq) sb, (subq) sc).
+    Without the fix, transform_sql_for_price emits
+    `tpcds_ss.ss_store_sk = tpcds_ss.ss_store_sk` (a dangling reference).
+    """
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import transform_sql_for_price
+    import sqlglot
+    import sqlglot.expressions as sx
+
+    q65 = (
+        "select s_store_name, i_item_desc "
+        "from store, item, "
+        "  (select ss_store_sk, avg(revenue) as ave from "
+        "    (select ss_store_sk, ss_item_sk, sum(ss_sales_price) as revenue "
+        "     from store_sales, date_dim "
+        "     where ss_sold_date_sk = d_date_sk and d_month_seq between 1212 and 1223 "
+        "     group by ss_store_sk, ss_item_sk) sa "
+        "   group by ss_store_sk) sb, "
+        "  (select ss_store_sk, ss_item_sk, sum(ss_sales_price) as revenue "
+        "   from store_sales, date_dim "
+        "   where ss_sold_date_sk = d_date_sk and d_month_seq between 1212 and 1223 "
+        "   group by ss_store_sk, ss_item_sk) sc "
+        "where sb.ss_store_sk = sc.ss_store_sk and "
+        "      sc.revenue <= 0.1 * sb.ave and "
+        "      s_store_sk = sc.ss_store_sk and "
+        "      i_item_sk = sc.ss_item_sk"
+    )
+
+    out = transform_sql_for_price(
+        q65, "tpcds",
+        price_n_parsing=True, price_n_filter=True,
+        price_n_fanout=True, price_n_pairwise=True,
+    )
+
+    # The output may legitimately be a `dummy_table` sentinel (if the
+    # entire query can't be flattened) — that's fine: the residual collector
+    # takes over. What we must NOT see is a dangling outer reference like
+    # `tpcds_ss.ss_store_sk` when `store_sales` (`tpcds_ss`) isn't in FROM.
+    try:
+        ast = sqlglot.parse_one(out)
+    except Exception:
+        return  # unparseable output is a separate issue, not this bug
+    if not isinstance(ast, sx.Select):
+        return
+
+    outer_tables = set()
+    f = ast.args.get("from_")
+    if f is not None and isinstance(f.this, sx.Table):
+        outer_tables.add(f.this.alias_or_name)
+    for j in (ast.args.get("joins") or []):
+        if isinstance(j.this, sx.Table):
+            outer_tables.add(j.this.alias_or_name)
+
+    dangling = set()
+    for col in ast.find_all(sx.Column):
+        p = col.parent
+        in_sub = False
+        while p is not None:
+            if isinstance(p, (sx.Subquery, sx.Exists)):
+                in_sub = True
+                break
+            p = p.parent
+        if in_sub or not col.table:
+            continue
+        if col.table not in outer_tables:
+            dangling.add(col.table)
+
+    assert not dangling, (
+        f"transform_sql_for_price produced dangling outer-scope refs "
+        f"{dangling} (outer FROM had {outer_tables}). Output:\n{out}"
+    )
+
+
+def test_price_b_keeps_equi_join_and_col_op_literal():
+    """PRICE_B mode: only equi-join `t.col = t.col` and `col op literal`
+    (op ∈ {=, <, <=, >, >=, !=}) survive. Everything else is dropped — no
+    BETWEEN→range decomposition, no IN→OR expansion, no LIKE→tautology
+    rewrite. The query is never rejected; predicates we can't represent
+    just vanish.
+    """
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import transform_sql_for_price
+
+    src = (
+        "SELECT count(*) FROM customer c, customer_address ca, store_sales ss "
+        "WHERE c.c_customer_sk = ss.ss_customer_sk "
+        "  AND c.c_current_addr_sk = ca.ca_address_sk "
+        "  AND ca.ca_state = 'OH' "
+        "  AND ss.ss_quantity > 5 "
+        "  AND ca.ca_zip BETWEEN '10000' AND '20000' "
+        "  AND c.c_first_name IN ('Alice', 'Bob') "
+        "  AND ca.ca_city LIKE 'Foo%' "
+        "  AND c.c_email_address IS NULL "
+        "  AND NOT (ss.ss_net_paid = 0) "
+        "  AND (ca.ca_county = 'Hancock' OR ca.ca_county = 'Madison') "
+    )
+    out = transform_sql_for_price(src, "tpcds", price_b=True).lower()
+
+    # Equi-joins kept.
+    assert "c_customer_sk" in out and "ss_customer_sk" in out
+    assert "c_current_addr_sk" in out and "ca_address_sk" in out
+    # col-op-literal kept.
+    assert "ca_state" in out
+    assert "ss_quantity" in out
+    # Everything else dropped — none of these should appear in the output.
+    assert "between" not in out
+    assert " in (" not in out
+    assert "like" not in out
+    assert "is null" not in out
+    assert "not " not in out.replace("not null", "")  # naive but sufficient
+    # OR-block dropped entirely (mixed-column OR isn't col-op-literal).
+    assert " or " not in out
+
+
+def test_price_b_drops_subqueries_without_inlining():
+    """PRICE_B must drop EXISTS / IN-subquery / scalar subqueries, not
+    inline them by approximation. The remaining query is whatever's left
+    of the outer SELECT after removing those constructs.
+    """
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import transform_sql_for_price
+
+    src = (
+        "SELECT count(*) FROM customer c, customer_address ca "
+        "WHERE c.c_current_addr_sk = ca.ca_address_sk "
+        "  AND ca.ca_state = 'TX' "
+        "  AND EXISTS (SELECT * FROM store_sales ss "
+        "              WHERE ss.ss_customer_sk = c.c_customer_sk) "
+        "  AND c.c_customer_sk IN (SELECT cs.cs_bill_customer_sk "
+        "                          FROM catalog_sales cs) "
+    )
+    out = transform_sql_for_price(src, "tpcds", price_b=True).lower()
+    # The retained outer join + filter survives.
+    assert "c_current_addr_sk" in out and "ca_address_sk" in out
+    assert "ca_state" in out
+    # Subquery bodies must NOT leak into outer SQL.
+    assert "exists" not in out
+    assert "select" not in out.replace("select count(*)", "", 1)
+
+
+def test_price_b_never_returns_dummy_table():
+    """PRICE_B's contract: never reject a query. Even when nothing
+    survives the predicate filter, the query must still produce a flat
+    SELECT COUNT(*) — not the dummy_table sentinel.
+    """
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import transform_sql_for_price
+    # All predicates dropped → only FROM + `WHERE 1 = 1`.
+    src = (
+        "SELECT count(*) FROM customer c "
+        "WHERE c.c_first_name LIKE 'A%' "
+        "  AND c.c_email_address IS NULL"
+    )
+    out = transform_sql_for_price(src, "tpcds", price_b=True).lower()
+    assert "dummy_table" not in out
+    assert "customer" in out
+
+
+def test_partial_outer_encoding_for_non_simple_cte():
+    """q1-style: WITH ... GROUP BY ... → outer SELECT joins CTE + base tables.
+
+    The CTE has aggregates so it isn't inlined, but the outer SELECT still has
+    representable structure: store, customer, customer_address joined with
+    `s_state='TN'`, `ca_state='OH'`, `c_current_addr_sk = ca_address_sk`.
+    Predicates referencing the CTE alias (`ctr1.*`) get dropped as residual.
+
+    Expected: the partial encoder produces a flat SQL covering the outer
+    base tables and their direct predicates — NOT the dummy_table sentinel.
+    """
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _build_partial_outer_sql
+    sql = """
+        WITH customer_total_return AS (
+          SELECT sr_customer_sk AS ctr_customer_sk,
+                 sr_store_sk AS ctr_store_sk,
+                 SUM(sr_return_amt) AS ctr_total_return
+          FROM store_returns, date_dim
+          WHERE sr_returned_date_sk = d_date_sk AND d_year = 2000
+          GROUP BY sr_customer_sk, sr_store_sk
+        )
+        SELECT c_customer_id
+        FROM customer_total_return ctr1, store, customer, customer_address
+        WHERE ctr1.ctr_total_return > (SELECT AVG(ctr_total_return)
+                                       FROM customer_total_return ctr2
+                                       WHERE ctr1.ctr_store_sk = ctr2.ctr_store_sk)
+          AND s_store_sk = ctr1.ctr_store_sk
+          AND s_state = 'TN'
+          AND ctr1.ctr_customer_sk = c_customer_sk
+          AND c_current_addr_sk = ca_address_sk
+          AND ca_state = 'OH'
+    """
+    out = _build_partial_outer_sql(sql, "tpcds")
+    assert out is not None, "partial encoder returned None for q1-style query"
+    # Must include the representable filter predicates on outer base tables.
+    assert "'TN'" in out
+    assert "'OH'" in out
+    # Must NOT include any CTE-aliased reference.
+    assert "ctr1" not in out.lower()
+    assert "ctr_" not in out.lower()
+
+
+def test_partial_outer_encoding_for_scalar_subquery_in_projection():
+    """q9-style: scalar subqueries in SELECT projections, outer FROM has only
+    `reason` with one filter `r_reason_sk = 1`.
+
+    The partial encoder should extract just the outer FROM and its WHERE,
+    yielding a clean `SELECT COUNT(*) FROM reason WHERE r_reason_sk = 1`.
+    """
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _build_partial_outer_sql
+    sql = """
+        SELECT case when (select count(*) from store_sales
+                          where ss_quantity between 1 and 20) > 25437
+                    then 'large' else 'small' end as bucket
+        FROM reason
+        WHERE r_reason_sk = 1
+    """
+    out = _build_partial_outer_sql(sql, "tpcds")
+    assert out is not None
+    assert "reason" in out.lower()
+    assert "r_reason_sk" in out.lower()
+
+
+def test_partial_outer_encoding_for_union_all_derived_table():
+    """q71-style: UNION-ALL derived table in FROM. Drop the derived alias,
+    keep the other base tables and any filters that don't reference it.
+
+    Outer FROM: `item, (...) tmp, time_dim`
+    Outer WHERE: `sold_item_sk = i_item_sk AND i_manager_id = 1 AND
+                  time_sk = t_time_sk AND (t_meal_time='breakfast' OR ...)`
+
+    After partial encoding:
+      - drop `tmp`
+      - drop predicates referencing tmp's projection aliases (sold_item_sk, time_sk)
+      - keep `i_manager_id=1` and the OR-block on t_meal_time
+    """
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _build_partial_outer_sql
+    sql = """
+        SELECT i_brand_id, sum(ext_price)
+        FROM item, (SELECT ws_ext_sales_price AS ext_price,
+                           ws_item_sk AS sold_item_sk,
+                           ws_sold_time_sk AS time_sk
+                    FROM web_sales, date_dim
+                    WHERE d_date_sk = ws_sold_date_sk
+                    UNION ALL
+                    SELECT ss_ext_sales_price AS ext_price,
+                           ss_item_sk AS sold_item_sk,
+                           ss_sold_time_sk AS time_sk
+                    FROM store_sales, date_dim
+                    WHERE d_date_sk = ss_sold_date_sk) tmp, time_dim
+        WHERE sold_item_sk = i_item_sk
+          AND i_manager_id = 1
+          AND time_sk = t_time_sk
+    """
+    out = _build_partial_outer_sql(sql, "tpcds")
+    assert out is not None
+    # `i_manager_id` filter on `item` must be kept.
+    assert "i_manager_id" in out.lower()
+    # Derived-table alias `tmp` must be dropped.
+    assert " tmp" not in out.lower() and "tmp," not in out.lower()
+    # Predicates referencing tmp's projection columns must be dropped.
+    assert "sold_item_sk" not in out.lower()
+    assert "time_sk = t_time_sk" not in out.lower()
+
+
+def test_convert_timestamps_to_epoch_keeps_parens_balanced():
+    """`(cast('YYYY-MM-DD' as date) + N)` is a parenthesized date-arithmetic
+    expression. _convert_timestamps_to_epoch must consume the surrounding
+    parens symmetrically or leave them both in place — never produce
+    `<epoch>)` with an orphan trailing `)`.
+
+    Regression: the regex matched `\\(?cast(...)+N` (optional opening
+    paren consumed) but never required the trailing `)`, so output had
+    an unmatched `)` that broke sqlglot re-parse on q12, q16, q20, ...
+    """
+    sys.path.insert(0, "/root/LLM4QPR/experiments")
+    from price_data_utils import _convert_timestamps_to_epoch
+    s = ("d_date between cast('2001-01-12' as date) "
+         "and (cast('2001-01-12' as date) + 30)")
+    out = _convert_timestamps_to_epoch(s)
+    assert out.count("(") == out.count(")"), (
+        f"unbalanced parens in {out!r}")
+    # The standalone cast becomes epoch 979257600; the +30 form becomes 981849600.
+    assert "979257600" in out and "981849600" in out
+
+
+def test_self_join_alias_canonicalizes_to_stats_key():
+    """Self-join aliases like `tpcds_dd2` (a second instance of `date_dim`)
+    must canonicalize to the base stats key `tpcds_dd` at lookup time.
+
+    The stats dictionary is keyed once per physical table (via the
+    `abbrev` namespace, e.g. `tpcds_dd`). The transformer in
+    `transform_sql_for_price` emits self-join aliases like `tpcds_dd2`
+    to keep instances distinct in SQL, but those aren't stats keys —
+    they're SQL aliases. Sql2FeatureN must resolve them through
+    `ref_to_tables[alias] -> physical_name -> abbrev[physical] -> key`
+    before indexing any stats dictionary.
+
+    Without canonicalization this raises KeyError('tpcds_dd2') in
+    `_encode_filter_token` / `get_column_histograms`.
+    """
+    sys.path.insert(0, "/root/LLM4QPR/PRICE")
+    from setup.features_tool_n import Sql2FeatureN
+    f = Sql2FeatureN("tpcds", 40, "finetune")
+    sql = ("select count(*) from date_dim tpcds_dd, date_dim tpcds_dd2 "
+           "where tpcds_dd.d_date_sk = tpcds_dd2.d_date_sk "
+           "and tpcds_dd.d_year = 2002 "
+           "and tpcds_dd2.d_moy = 4")
+    out = f.create_sql_features(sql)
+    assert out is not None
+    feats, n_jc, n_fo, n_tb, n_fc, n_pi = out
+    join_hist, fanout_ext, table, filter_n, pairwise_intra = feats
+    # Both filter columns should be encoded (d_year and d_moy), even though
+    # they're on different SQL alias instances of the same physical table.
+    assert n_fc == 2, f"expected 2 filter columns, got {n_fc}"
+    assert filter_n.shape[0] == 75 * 2
+
+
 def test_not_pushdown_de_morgan_and():
     sys.path.insert(0, "/root/LLM4QPR/experiments")
     from price_data_utils import _push_not_to_nnf

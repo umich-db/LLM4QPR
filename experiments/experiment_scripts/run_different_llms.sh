@@ -22,6 +22,7 @@ CLI_REMOVED_FIELDS="__unset__"
 CLI_DB=""
 CLI_PRICE_M=""
 CLI_PRICE_S=""
+CLI_PRICE_B=""
 CLI_PRICE_N=""
 CLI_PRICE_N_PARSING=""
 CLI_PRICE_N_FILTER=""
@@ -29,6 +30,7 @@ CLI_PRICE_N_FANOUT=""
 CLI_PRICE_N_PAIRWISE=""
 CLI_PRICE_N_OR=""
 CLI_PRICE_N_OR_MAX_CLAUSES=""
+CLI_USE_QRT_CROSS_ATTN=""
 CLI_NO_OR_TRANSFORMER=""
 CLI_NO_LLM_RESIDUAL=""
 CLI_PRICE_RANDOM_INIT=""
@@ -82,6 +84,7 @@ while [[ $# -gt 0 ]]; do
         --db)               CLI_DB="$2";               shift 2 ;;
         --price_m)          CLI_PRICE_M="true";        shift 1 ;;
         --price_s)          CLI_PRICE_S="true";        shift 1 ;;
+        --price_b)          CLI_PRICE_B="true";        shift 1 ;;
         --price_n)          CLI_PRICE_N="true";        shift 1 ;;
         --price_n_parsing)  CLI_PRICE_N_PARSING="true"; shift 1 ;;
         --price_n_filter)   CLI_PRICE_N_FILTER="true"; shift 1 ;;
@@ -89,11 +92,15 @@ while [[ $# -gt 0 ]]; do
         --price_n_pairwise) CLI_PRICE_N_PAIRWISE="true"; shift 1 ;;
         --price_n_or)       CLI_PRICE_N_OR="true";     shift 1 ;;
         --price_n_or_max_clauses) CLI_PRICE_N_OR_MAX_CLAUSES="$2"; shift 2 ;;
+        --use_qrt_cross_attn) CLI_USE_QRT_CROSS_ATTN="true"; shift 1 ;;
         --no_or_transformer) CLI_NO_OR_TRANSFORMER="true"; shift 1 ;;
         --no_llm_residual)  CLI_NO_LLM_RESIDUAL="true"; shift 1 ;;
         --price_random_init) CLI_PRICE_RANDOM_INIT="true"; shift 1 ;;
         --price_n_layers)   CLI_PRICE_N_LAYERS="$2";     shift 2 ;;
         --price_ffn_ratio)  CLI_PRICE_FFN_RATIO="$2";    shift 2 ;;
+        --or_n_layers)      CLI_OR_N_LAYERS="$2";        shift 2 ;;
+        --or_n_heads)       CLI_OR_N_HEADS="$2";         shift 2 ;;
+        --or_ffn_ratio)     CLI_OR_FFN_RATIO="$2";       shift 2 ;;
         --n_cross_layers)   CLI_N_CROSS_LAYERS="$2";     shift 2 ;;
         --cross_attn_lr)    CLI_CROSS_ATTN_LR="$2";     shift 2 ;;
         --cross_attn_dropout) CLI_CROSS_ATTN_DROPOUT="$2"; shift 2 ;;
@@ -661,6 +668,26 @@ else
 fi
 export PRICE_S
 
+# ─── PRICE_B (original PRICE design: equi-join + col-op-literal only) ─────
+if [[ -n "$CLI_PRICE_B" ]]; then
+    PRICE_B="$CLI_PRICE_B"
+elif [[ "$CLI_MODE" == true ]]; then
+    PRICE_B="false"
+else
+    echo ""
+    echo "=== PRICE_B (original PRICE: equi-join + col-op-literal only, 43-dim) ==="
+    echo "1. No (default)"
+    echo "2. Yes"
+    echo "Enter choice (1 or 2):"
+    read -r price_b_choice
+    if [[ "$price_b_choice" == "2" ]]; then
+        PRICE_B="true"
+    else
+        PRICE_B="false"
+    fi
+fi
+export PRICE_B
+
 echo ""
 echo "=== Configuration Summary ==="
 echo "Database: $DB_ENGINE"
@@ -678,6 +705,7 @@ fi
 echo "Finetune batch size: $FT_BATCH_SIZE (epochs: $FT_BATCH_SIZE)"
 echo "PRICE_M: $PRICE_M"
 echo "PRICE_S: $PRICE_S"
+echo "PRICE_B: $PRICE_B"
 echo "PRICE Random Init: ${PRICE_RANDOM_INIT:-false}"
 echo "Removed Fields: ${REMOVED_FIELDS:-none}"
 echo "Concat queries_true: $CONCAT_TRUE_EMBEDDINGS"
@@ -748,6 +776,9 @@ for SEED in "${seeds[@]}"; do
             if [[ -n "$CLI_PRICE_N_OR_MAX_CLAUSES" ]]; then
                 export PRICE_N_OR_MAX_CLAUSES="$CLI_PRICE_N_OR_MAX_CLAUSES"
             fi
+            if [[ -n "$CLI_USE_QRT_CROSS_ATTN" ]]; then
+                export USE_QRT_CROSS_ATTN="$CLI_USE_QRT_CROSS_ATTN"
+            fi
             if [[ -n "$CLI_NO_LLM_RESIDUAL" ]]; then
                 export NO_LLM_RESIDUAL="$CLI_NO_LLM_RESIDUAL"
             fi
@@ -759,6 +790,15 @@ for SEED in "${seeds[@]}"; do
             fi
             if [[ -n "$CLI_PRICE_FFN_RATIO" ]]; then
                 export PRICE_FFN_RATIO="$CLI_PRICE_FFN_RATIO"
+            fi
+            if [[ -n "$CLI_OR_N_LAYERS" ]]; then
+                export OR_N_LAYERS="$CLI_OR_N_LAYERS"
+            fi
+            if [[ -n "$CLI_OR_N_HEADS" ]]; then
+                export OR_N_HEADS="$CLI_OR_N_HEADS"
+            fi
+            if [[ -n "$CLI_OR_FFN_RATIO" ]]; then
+                export OR_FFN_RATIO="$CLI_OR_FFN_RATIO"
             fi
             if [[ -n "$CLI_N_CROSS_LAYERS" ]]; then
                 export N_CROSS_LAYERS="$CLI_N_CROSS_LAYERS"

@@ -14,7 +14,8 @@ export VERBOSE_INFO="false"
 export EARLY_STOP_PATIENCE="5"
 export EARLY_STOP_AFTER_EPOCH="10"
 
-ALGORITHMS=("qf" "bao" "aimai" "e2e_cost")
+ALGORITHMS=("qf")
+# ALGORITHMS=("qf" "bao" "aimai" "e2e_cost")
 WORKLOADS=("stats" "job" "jobm")
 SEEDS=(42 43 44)
 

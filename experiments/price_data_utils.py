@@ -26,11 +26,26 @@ try:
 except ImportError:
     HAS_SQLGLOT = False
 
-# Add PRICE to path — prefer local bundled copy, fall back to /root/PRICE
-_LOCAL_PRICE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "PRICE")
+# Add PRICE to path — prefer local bundled copy (has features_tool_n.py),
+# fall back to /root/PRICE.
+_LOCAL_PRICE = os.path.abspath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "PRICE"))
 PRICE_ROOT = _LOCAL_PRICE if os.path.isdir(os.path.join(_LOCAL_PRICE, "setup")) else "/root/PRICE"
-if PRICE_ROOT not in sys.path:
-    sys.path.insert(0, PRICE_ROOT)
+# Force PRICE_ROOT to be FIRST so `from setup.features_tool_n import …`
+# resolves to the bundled copy. An earlier import in the process may have
+# prepended `/root/PRICE` (which lacks features_tool_n) — rebuilding sys.path
+# with PRICE_ROOT in front guarantees correct resolution.
+sys.path = [PRICE_ROOT] + [p for p in sys.path if p != PRICE_ROOT]
+# If a previously-imported `setup` module is cached pointing at a different
+# location (e.g. /root/PRICE/setup), evict it so subsequent
+# `from setup.features_tool_n import …` re-resolves to PRICE_ROOT/setup.
+_cached_setup = sys.modules.get("setup")
+if _cached_setup is not None:
+    _cached_file = getattr(_cached_setup, "__file__", "") or ""
+    if not _cached_file.startswith(PRICE_ROOT):
+        for _mod_name in [m for m in sys.modules
+                          if m == "setup" or m.startswith("setup.")]:
+            sys.modules.pop(_mod_name, None)
 
 # Local PRICE statistics bundled with LLM4QPR (preferred over PRICE_ROOT)
 _LLM4QPR_STATS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "price_statistics")
@@ -83,6 +98,96 @@ _TPCDS_COL_PREFIX = [
     ('p_', 'promotion'),
     ('r_', 'reason'),
 ]
+
+
+def extract_residual_sql_n(sql):
+    """Extract SQL fragments that Sql2FeatureN cannot encode into stat-core.
+
+    Returns a string concatenating residual predicates (and other opaque
+    fragments) with ' AND '. Returns '' if nothing is residual.
+
+    Residual = LIKE / ILIKE (and negations), EXISTS / NOT EXISTS,
+    IN (subquery), scalar subqueries, and any other expression the AST
+    walker can't tag as a stat-core atom (custom functions, regex, CAST
+    on the right side, etc.).
+
+    This is a heuristic helper for the --use_qrt_cross_attn path. False
+    negatives (missing some residual) degrade quietly into "QRT sees less
+    of the SQL than ideal"; false positives ("treats a stat-core handled
+    predicate as residual") are harmless because the QRT block is additive.
+    """
+    try:
+        import sqlglot
+        from sqlglot import expressions as exp
+    except ImportError:
+        return ''
+    try:
+        ast = sqlglot.parse_one(sql, read='postgres')
+    except Exception:
+        return ''
+    if ast is None:
+        return ''
+    wh = ast.find(exp.Where)
+    if wh is None:
+        return ''
+
+    out_parts = []
+
+    def _is_residual(node):
+        if isinstance(node, (exp.Like, exp.ILike)):
+            return True
+        if isinstance(node, exp.Exists):
+            return True
+        if isinstance(node, exp.In):
+            # IN-subquery
+            q = node.args.get('query')
+            if q is not None:
+                return True
+        if isinstance(node, exp.Not):
+            inner = node.this
+            if isinstance(inner, (exp.Like, exp.ILike, exp.Exists)):
+                return True
+            if isinstance(inner, exp.In) and inner.args.get('query') is not None:
+                return True
+        # Comparison with scalar subquery on either side
+        if isinstance(node, (exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE)):
+            for key in ('this', 'expression'):
+                child = node.args.get(key)
+                if isinstance(child, exp.Subquery):
+                    return True
+        return False
+
+    def _walk(node):
+        if node is None:
+            return
+        if _is_residual(node):
+            out_parts.append(node.sql(dialect='postgres'))
+            return
+        for k, child in node.args.items():
+            if isinstance(child, list):
+                for c in child:
+                    if hasattr(c, 'args'):
+                        _walk(c)
+            elif hasattr(child, 'args'):
+                _walk(child)
+
+    _walk(wh.this)
+    # Dedup while preserving order.
+    seen = set()
+    uniq = []
+    for p in out_parts:
+        if p not in seen:
+            seen.add(p)
+            uniq.append(p)
+    return ' AND '.join(uniq)
+
+
+def compute_residual_texts(sql_list):
+    """Vectorised wrapper around extract_residual_sql_n. Returns one residual
+    string per SQL (empty string when nothing residual). Used by the QRT
+    cross-attn path (--use_qrt_cross_attn) to assemble per-query residual
+    text for tokenizer + embed_tokens."""
+    return [extract_residual_sql_n(sql) for sql in sql_list]
 
 
 def extract_raw_sql_from_queries_true(sql_file):
@@ -342,6 +447,7 @@ def _convert_timestamps_to_epoch(sql):
         except (ValueError, OverflowError):
             return match.group(0)
 
+    # [BISECTION REVERT] Reverted to the unbalanced-paren regex.
     sql = re.sub(
         r"\(?cast\s*\(\s*'(\d{4}-\d{1,2}-\d{1,2})'\s+as\s+date\s*\)\s*\)?\s*([+-])\s*(\d+)",
         _cast_date_plus_int, sql, flags=re.IGNORECASE
@@ -1254,12 +1360,17 @@ def _flatten_join_with_side(sql):
                 and isinstance(on.expression, sqlglot_exp.Column)):
             continue
         sides.append((_column_str(on.this), _column_str(on.expression), side))
-    # Re-use the existing flattener for the rewrite (drops side info from SQL).
-    try:
-        flat = flatten_sql_for_price(sql, db_name=None)
-    except Exception:
-        flat = None
-    return (flat or sql), sides
+    # NOTE: we deliberately do NOT call flatten_sql_for_price() here. That
+    # helper strips table-alias prefixes from column refs (e.g. `b.userid` →
+    # `userid`) which is fine for tpcds/tpch (column prefixes uniquely identify
+    # the table) but corrupts non-tpc workloads like stats where the same
+    # column name lives on multiple tables (e.g., `userid` on badges, comments,
+    # posthistory, posts, users). Sql2FeatureN.parse_sql then can't resolve
+    # which table each column belongs to and silently zero-fills the features.
+    # The downstream alias rewriter in transform_sql_for_price (lines 3585+)
+    # already converts `b.X` → `st_b.X` when it sees the input alias, so we
+    # just return the SQL unchanged and rely on that.
+    return sql, sides
 
 
 def _is_constant(node):
@@ -1679,6 +1790,21 @@ def flatten_sql_for_price(sql, db_name):
             return parts[1]
         return col_sql
 
+    # Aliases we can resolve back to a real base table. A column qualified by
+    # a prefix outside this set (e.g. `sc.ss_store_sk` where `sc` is an opaque
+    # subquery-in-FROM derived table) refers to a scope that won't survive
+    # flattening. Stripping the prefix would leak the underlying physical
+    # column into the outer WHERE without adding its base table to FROM,
+    # producing a dangling reference. Drop such predicates instead.
+    in_scope_aliases = set(table_aliases) | set(alias_to_cte)
+
+    def _col_in_scope(col_sql):
+        """True iff col_sql is bare (no prefix) or its prefix maps to a
+        known base table / CTE in the outer query's scope."""
+        if '.' not in col_sql:
+            return True
+        return col_sql.split('.', 1)[0].lower() in in_scope_aliases
+
     # --- Merge CTE joins/filters ---
     all_joins = []
     all_filters = []
@@ -1694,6 +1820,8 @@ def flatten_sql_for_price(sql, db_name):
     # Resolve CTE column aliases in main-level conditions
     # _resolve_col_through_cte returns a list (one per UNION branch)
     for left_sql, right_sql in main_joins:
+        if not (_col_in_scope(left_sql) and _col_in_scope(right_sql)):
+            continue  # dangling: one side qualified by an opaque derived-table alias
         resolved_lefts = _resolve_col_through_cte(left_sql, alias_to_cte, cte_info)
         resolved_rights = _resolve_col_through_cte(right_sql, alias_to_cte, cte_info)
         for rl in resolved_lefts:
@@ -1702,6 +1830,8 @@ def flatten_sql_for_price(sql, db_name):
                     all_joins.append((_strip_alias(rl), _strip_alias(rr)))
 
     for col_sql, op, val in main_filters:
+        if not _col_in_scope(col_sql):
+            continue
         resolveds = _resolve_col_through_cte(col_sql, alias_to_cte, cte_info)
         for resolved in resolveds:
             if resolved is not None:
@@ -3379,9 +3509,287 @@ def _regex_collect_predicates(sql, db_name):
     return f"SELECT COUNT(*) FROM {', '.join(from_parts)} WHERE {' AND '.join(where_parts)}"
 
 
+def _build_partial_outer_sql(sql, db_name):
+    """Extract the representable structure of the OUTER SELECT.
+
+    Used as the partial-encoding fallback when transform_sql_for_price would
+    otherwise return the `dummy_table` sentinel. The idea: when a query has
+    non-representable parts (non-simple CTEs, scalar subqueries in projections,
+    UNION-ALL derived tables), the OUTER query still typically has some
+    base tables and direct filters that PRICE_N CAN encode. Encoding those
+    gives stat-core a real signal instead of all zeros.
+
+    Strategy:
+      - Walk the OUTER SELECT only (do not recurse into Subquery/Exists/CTE).
+      - Collect FROM sources that are physical Tables (skip Subqueries/CTE
+        references — those are residual).
+      - Collect outer-WHERE conjuncts (not inside a Subquery/Exists).
+      - Keep a conjunct only if every column reference in it resolves to an
+        in-scope alias (an alias we kept above). Bare unqualified columns
+        are accepted (downstream column-prefix mapping handles them).
+
+    Returns a flat `SELECT COUNT(*) FROM t1, t2 WHERE ...` string suitable to
+    feed back into the rest of transform_sql_for_price, or None when nothing
+    representable remains.
+    """
+    if not HAS_SQLGLOT:
+        return None
+    try:
+        ast = sqlglot.parse_one(sql)
+    except Exception:
+        return None
+    if not isinstance(ast, sqlglot_exp.Select):
+        return None
+
+    # CTE names from the WITH clause — `Table` nodes in FROM that reference
+    # these aren't physical tables, they're CTE refs and must not enter scope.
+    cte_names = set()
+    with_node = ast.find(sqlglot_exp.With)
+    if with_node is not None:
+        for cte in with_node.expressions:
+            if cte.alias:
+                cte_names.add(cte.alias.lower())
+            elif hasattr(cte, "name") and cte.name:
+                cte_names.add(cte.name.lower())
+
+    # Outer FROM: collect PHYSICAL base tables and the aliases they introduce.
+    # Skip CTE references and Subquery sources — those go to residual.
+    in_scope_aliases = set()
+    base_table_parts = []
+    from_node = ast.args.get("from_")
+    if from_node is None:
+        return None
+    primary = from_node.this
+    if isinstance(primary, sqlglot_exp.Table) and primary.name.lower() not in cte_names:
+        in_scope_aliases.add(primary.alias_or_name.lower())
+        base_table_parts.append(primary.sql())
+    for join in (ast.args.get("joins") or []):
+        src = join.this
+        if isinstance(src, sqlglot_exp.Table) and src.name.lower() not in cte_names:
+            in_scope_aliases.add(src.alias_or_name.lower())
+            base_table_parts.append(src.sql())
+
+    if not base_table_parts:
+        return None
+
+    # Build a bare-column → table-alias resolver for tpcds/tpch using the
+    # column-prefix mapping. Lets us reject `sold_item_sk = i_item_sk` where
+    # `sold_item_sk` isn't a column of any in-scope table.
+    col_prefix_to_table = None
+    if db_name in ("tpcds", "tpch"):
+        prefixes = _TPCDS_COL_PREFIX if db_name == "tpcds" else _TPCH_COL_PREFIX
+        # Build the set of in-scope physical table names (resolve aliases back
+        # via the FROM clause we just parsed).
+        in_scope_physical = set()
+        if isinstance(primary, sqlglot_exp.Table) and primary.name.lower() not in cte_names:
+            in_scope_physical.add(primary.name.lower())
+        for join in (ast.args.get("joins") or []):
+            src = join.this
+            if isinstance(src, sqlglot_exp.Table) and src.name.lower() not in cte_names:
+                in_scope_physical.add(src.name.lower())
+        col_prefix_to_table = [(p, t) for p, t in prefixes if t in in_scope_physical]
+
+    def _bare_col_in_scope(col_name):
+        if col_prefix_to_table is None:
+            return True  # Unknown workload — don't reject.
+        lc = col_name.lower()
+        # Sort by prefix length descending so `ws_` wins over `w_` for `ws_item_sk`.
+        for prefix, _table in sorted(col_prefix_to_table, key=lambda x: -len(x[0])):
+            if lc.startswith(prefix):
+                return True
+        return False
+
+    # Outer WHERE: collect top-level conjuncts, drop those that reference
+    # any alias not in scope.
+    where_node = ast.args.get("where")
+    kept_conjuncts = []
+    if where_node is not None:
+        conjuncts = []
+        _flatten_and(where_node.this, conjuncts)
+        for cond in conjuncts:
+            # Skip the entire predicate if it lives inside a Subquery/Exists
+            # (shouldn't happen for top-level WHERE conjuncts, but be safe).
+            if _is_inside_subquery(cond):
+                continue
+            # Reject conjuncts that mention an out-of-scope alias on any column,
+            # or a bare column whose name doesn't match any in-scope table's
+            # column-prefix (catches `sold_item_sk` from a dropped UNION-ALL
+            # derived table when the outer FROM only has `item, time_dim`).
+            ok = True
+            for col in cond.find_all(sqlglot_exp.Column):
+                if _is_inside_subquery(col):
+                    ok = False
+                    break
+                if col.table:
+                    if col.table.lower() not in in_scope_aliases:
+                        ok = False
+                        break
+                else:
+                    if not _bare_col_in_scope(col.name or ""):
+                        ok = False
+                        break
+            if not ok:
+                continue
+            # Also reject conjuncts that themselves contain a Subquery
+            # (e.g. `col > (SELECT AVG(x) FROM ...)`).
+            if cond.find(sqlglot_exp.Subquery) is not None:
+                continue
+            # Wrap in parens so OR-groups don't bleed into the surrounding
+            # AND chain — `... AND (a OR b) AND c` is correct; without parens
+            # we'd emit `... AND a OR b AND c` which mis-parses by precedence.
+            kept_conjuncts.append(f"({cond.sql()})")
+
+    if not kept_conjuncts:
+        # No representable predicates. A bare `FROM t1, t2 WHERE 1=1` would
+        # encode the table sizes but no joins/filters — still better than
+        # all-zero, but PRICE_N's downstream guards may reject it. Emit a
+        # tautology so the downstream alias rewriter + cleanup paths kick in.
+        return f"SELECT COUNT(*) FROM {', '.join(base_table_parts)} WHERE 1 = 1"
+
+    return (f"SELECT COUNT(*) FROM {', '.join(base_table_parts)} "
+            f"WHERE {' AND '.join(kept_conjuncts)}")
+
+
+def _build_price_b_sql(sql, db_name):
+    """PRICE_B encoder: keep only equi-join and col-op-literal predicates.
+
+    Original-PRICE semantics:
+      - Equi-join:        `t1.col = t2.col`
+      - col-op-literal:   `col op literal` where op ∈ {=, <, <=, >, >=, !=}
+
+    Everything else is DROPPED (not decomposed, not approximated):
+      - BETWEEN, IN-list, LIKE, IS NULL / IS NOT NULL, NOT, OR
+      - EXISTS / IN-subquery / scalar subquery
+
+    The function never returns the `dummy_table` sentinel. When no
+    predicates survive, it emits `WHERE 1 = 1` so downstream alias-rewriting
+    still runs on the FROM clause.
+
+    Returns a flat SELECT COUNT(*) string suitable to substitute into the
+    rest of transform_sql_for_price.
+    """
+    if not HAS_SQLGLOT:
+        return None
+    # Normalize epoch dates before parsing so `date '...'` doesn't become
+    # an opaque sub-expression that we can't classify.
+    sql = _convert_timestamps_to_epoch(sql)
+    try:
+        ast = sqlglot.parse_one(sql)
+    except Exception:
+        return None
+    if not isinstance(ast, sqlglot_exp.Select):
+        return None
+
+    # Skip CTE references (treat as residual).
+    cte_names = set()
+    with_node = ast.find(sqlglot_exp.With)
+    if with_node is not None:
+        for cte in with_node.expressions:
+            if cte.alias:
+                cte_names.add(cte.alias.lower())
+            elif hasattr(cte, "name") and cte.name:
+                cte_names.add(cte.name.lower())
+
+    in_scope_aliases = set()
+    base_table_parts = []
+    from_node = ast.args.get("from_")
+    if from_node is None:
+        return None
+    primary = from_node.this
+    if isinstance(primary, sqlglot_exp.Table) and primary.name.lower() not in cte_names:
+        in_scope_aliases.add(primary.alias_or_name.lower())
+        base_table_parts.append(primary.sql())
+    for join in (ast.args.get("joins") or []):
+        src = join.this
+        if isinstance(src, sqlglot_exp.Table) and src.name.lower() not in cte_names:
+            in_scope_aliases.add(src.alias_or_name.lower())
+            base_table_parts.append(src.sql())
+
+    if not base_table_parts:
+        return None
+
+    # Allowed atom shapes per PRICE_B rules.
+    _SIMPLE_OPS = (sqlglot_exp.EQ, sqlglot_exp.NEQ,
+                   sqlglot_exp.GT, sqlglot_exp.GTE,
+                   sqlglot_exp.LT, sqlglot_exp.LTE)
+
+    # Bare-column → in-scope check via TPC-{H,DS} column-prefix mapping.
+    # Catches columns from dropped derived-table projections (e.g. a UNION-ALL
+    # subquery's `ws_item_sk AS sold_item_sk` leaving `sold_item_sk` as a
+    # bare ref in outer WHERE — it doesn't match any in-scope table's prefix).
+    _col_prefix_to_table = None
+    if db_name in ("tpcds", "tpch"):
+        _prefixes = _TPCDS_COL_PREFIX if db_name == "tpcds" else _TPCH_COL_PREFIX
+        _in_scope_phys = set()
+        if isinstance(primary, sqlglot_exp.Table) and primary.name.lower() not in cte_names:
+            _in_scope_phys.add(primary.name.lower())
+        for join in (ast.args.get("joins") or []):
+            src = join.this
+            if isinstance(src, sqlglot_exp.Table) and src.name.lower() not in cte_names:
+                _in_scope_phys.add(src.name.lower())
+        _col_prefix_to_table = [(p, t) for p, t in _prefixes if t in _in_scope_phys]
+
+    def _bare_col_in_scope(col_name):
+        if _col_prefix_to_table is None:
+            return True  # unknown workload — don't reject
+        lc = col_name.lower()
+        for prefix, _t in sorted(_col_prefix_to_table, key=lambda x: -len(x[0])):
+            if lc.startswith(prefix):
+                return True
+        return False
+
+    def _is_in_scope(col):
+        if col.table:
+            return col.table.lower() in in_scope_aliases
+        return _bare_col_in_scope(col.name or "")
+
+    def _is_allowed_atom(node):
+        """True iff node is an equi-join (col = col) or col-op-literal."""
+        if not isinstance(node, _SIMPLE_OPS):
+            return False
+        lhs, rhs = node.left, node.right
+        # col = col (equi-join), only for EQ.
+        if (isinstance(node, sqlglot_exp.EQ)
+                and isinstance(lhs, sqlglot_exp.Column)
+                and isinstance(rhs, sqlglot_exp.Column)
+                and _is_in_scope(lhs) and _is_in_scope(rhs)):
+            return True
+        # col op literal (any of the 6 simple ops).
+        if isinstance(lhs, sqlglot_exp.Column) and _is_in_scope(lhs) and _is_constant(rhs):
+            return True
+        if isinstance(rhs, sqlglot_exp.Column) and _is_in_scope(rhs) and _is_constant(lhs):
+            return True
+        return False
+
+    kept = []
+    where_node = ast.args.get("where")
+    if where_node is not None:
+        # Top-level conjuncts only. _flatten_and respects And and stops at Or,
+        # so any conjunct that's itself an Or-block (mixed-column disjunction)
+        # becomes a single non-allowed atom that we drop wholesale.
+        conjuncts = []
+        _flatten_and(where_node.this, conjuncts)
+        for cond in conjuncts:
+            if _is_inside_subquery(cond):
+                continue
+            # Strip a paren wrapper for classification.
+            target = cond.this if isinstance(cond, sqlglot_exp.Paren) else cond
+            # Reject anything containing a subquery (correlated or otherwise).
+            if target.find(sqlglot_exp.Subquery) is not None:
+                continue
+            if not _is_allowed_atom(target):
+                continue
+            kept.append(target.sql())
+
+    where_part = " AND ".join(kept) if kept else "1 = 1"
+    return (f"SELECT COUNT(*) FROM {', '.join(base_table_parts)} "
+            f"WHERE {where_part}")
+
+
 def transform_sql_for_price(sql, db_name, price_m=False, price_s=False,
                             price_n_parsing=False, price_n_filter=False,
-                            price_n_fanout=False, price_n_pairwise=False):
+                            price_n_fanout=False, price_n_pairwise=False,
+                            price_b=False):
     """
     Transform a standard SQL query into PRICE-compatible format.
 
@@ -3407,7 +3815,22 @@ def transform_sql_for_price(sql, db_name, price_m=False, price_s=False,
             outer-join side info and stash it in _PRICE_N_SIDE_CACHE.
         price_n_pairwise: Reserved for PRICE_N pairwise encoding (forwarded
             to _preprocess_predicates for future use).
+        price_b: When True, use original-PRICE semantics — keep only
+            equi-join (`t1.col = t2.col`) and `col op literal` predicates
+            (op ∈ {=, <, <=, >, >=, !=}). Drop everything else (BETWEEN,
+            IN, LIKE, NULL, NOT, OR, subqueries) without decomposition or
+            approximation. Never returns the dummy_table sentinel.
     """
+    # --- PRICE_B: original-PRICE-only encoding ---
+    # Skip the rest of the pipeline (preprocess_predicates etc.) — _build_price_b_sql
+    # has already produced a flat SELECT COUNT(*) with the surviving predicates.
+    # Just run the standard alias-rewrite on it.
+    if price_b:
+        prepared = _build_price_b_sql(sql, db_name)
+        if prepared is None:
+            return "SELECT COUNT(*) FROM dummy_table WHERE 1 = 1"
+        sql = prepared
+        # Fall through to alias-rewrite block below.
     # --- PRICE_N early bail-out for non-simple CTEs ---
     # When price_n_parsing is active, the pipeline only inlines CTEs whose bodies
     # pass _check_cte_body_simple (no GROUP BY / aggregates / UNION / window fns).
@@ -3416,7 +3839,22 @@ def transform_sql_for_price(sql, db_name, price_m=False, price_s=False,
     # either produce mangled SQL or silently discard aggregation context.
     # Detect this case early and return a safe sentinel so the PRICE_N residual
     # collector can harvest CTEs / UNION / aggregates from the original AST.
+    # When PRICE_N parsing can't faithfully represent the whole query
+    # (non-simple CTEs, scalar subqueries in projections, UNION-ALL derived
+    # tables), don't give up — encode the OUTER SELECT's representable parts
+    # and let LLM-residual cover the rest. The partial SQL is substituted
+    # into `sql` so the rest of the pipeline (alias rewriting, bare-column
+    # prefix injection, etc.) processes it normally. Fall back to the
+    # dummy_table sentinel only when nothing useful remains in outer scope.
+    def _maybe_partial_or_dummy(orig_sql):
+        # [BISECTION REVERT] Partial-outer-encoding disabled — always return
+        # the dummy_table sentinel so PRICE_N's stat-core contributes nothing
+        # for non-simple-CTE / scalar-subq-in-projection / UNION-ALL-derived
+        # queries, matching the pre-partial-encoder behavior.
+        return "SELECT COUNT(*) FROM dummy_table WHERE 1 = 1"
+
     if price_n_parsing and HAS_SQLGLOT:
+        _bailed = False
         try:
             _ast_input = sqlglot.parse_one(sql)
             _with_input = _ast_input.find(sqlglot_exp.With)
@@ -3429,9 +3867,18 @@ def transform_sql_for_price(sql, db_name, price_m=False, price_s=False,
                     for cte in _with_input.expressions
                 )
                 if _has_non_simple_input:
-                    return "SELECT COUNT(*) FROM dummy_table WHERE 1 = 1"
+                    _bailed = True
+            # [BISECTION REVERT] q9 and q71 early-bailout disabled.
         except Exception:
-            pass
+            _bailed = False
+
+        if _bailed:
+            replacement = _maybe_partial_or_dummy(sql)
+            if "dummy_table" in replacement:
+                return replacement
+            sql = replacement
+            # Fall through: process partial SQL through the rest of the pipeline
+            # (alias rewriting, prefix injection, etc.).
 
     sides_collected = []
     if price_n_fanout:
@@ -3451,7 +3898,7 @@ def transform_sql_for_price(sql, db_name, price_m=False, price_s=False,
         elif 'revenue0' in sql_lower:
             needs_flattening = True
         else:
-            # Check if there's a top-level FROM...WHERE or just FROM (subquery)
+            # [BISECTION REVERT] Restored \s+ after from (was \s* in fix).
             from_match_check = re.search(r'\bfrom\b\s+(.*?)\s+\bwhere\b', sql, re.IGNORECASE | re.DOTALL)
             if not from_match_check:
                 needs_flattening = True
@@ -3482,7 +3929,7 @@ def transform_sql_for_price(sql, db_name, price_m=False, price_s=False,
                             for cte in _with_node.expressions
                         )
                         if _has_non_simple:
-                            return "SELECT COUNT(*) FROM dummy_table WHERE 1 = 1"
+                            return _maybe_partial_or_dummy(sql)
                 except Exception:
                     pass
         else:
@@ -3622,8 +4069,7 @@ def transform_sql_for_price(sql, db_name, price_m=False, price_s=False,
                 prefix_to_price.append((prefix, abbrev[table_name]))
 
         for prefix, price_alias in prefix_to_price:
-            # Match bare column name starting with this prefix,
-            # NOT preceded by a dot or word char (already qualified)
+            # [BISECTION REVERT] Removed the AS-alias negative lookbehind.
             new_where = re.sub(
                 r'(?<!\w)(?<!\.)(' + re.escape(prefix) + r'\w+)\b',
                 price_alias + r'.\1',
@@ -3908,7 +4354,8 @@ def generate_price_features(workload, sql_list, db_name, bin_size=40,
                             price_n_parsing=False, price_n_filter=False,
                             price_n_fanout=False, price_n_pairwise=False,
                             already_price_format=False,
-                            price_n_or=False, price_n_or_max_clauses=16):
+                            price_n_or=False, price_n_or_max_clauses=16,
+                            price_b=False):
     """
     Generate PRICE features for each SQL query using Sql2Feature (or Sql2FeatureM/S/N).
 
@@ -3947,6 +4394,7 @@ def generate_price_features(workload, sql_list, db_name, bin_size=40,
         PRICE_N.
     """
     parts = []
+    if price_b:           parts.append("b")
     if price_s:           parts.append("s")
     if price_m:           parts.append("m")
     if price_n_filter:    parts.append("nflt")
@@ -3977,6 +4425,17 @@ def generate_price_features(workload, sql_list, db_name, bin_size=40,
 
     use_price_n = any([price_n_parsing, price_n_filter, price_n_fanout, price_n_pairwise])
     if use_price_n:
+        # Defensive: sys.path / sys.modules may have been mutated since module
+        # import (e.g. an inference-only entry path re-prepends /root/PRICE
+        # before this function runs). Re-assert that PRICE_ROOT is first and
+        # evict any stale `setup` module pointing elsewhere.
+        if sys.path and sys.path[0] != PRICE_ROOT:
+            sys.path = [PRICE_ROOT] + [p for p in sys.path if p != PRICE_ROOT]
+        _cs = sys.modules.get("setup")
+        if _cs is not None and not (getattr(_cs, "__file__", "") or "").startswith(PRICE_ROOT):
+            for _k in [m for m in sys.modules
+                       if m == "setup" or m.startswith("setup.")]:
+                sys.modules.pop(_k, None)
         from setup.features_tool_n import Sql2FeatureN
         sql2feat = Sql2FeatureN(db_name, bin_size, "finetune")
         # Sql2FeatureN ALWAYS emits 75-dim filter and 42-dim fanout tokens
@@ -4036,7 +4495,8 @@ def generate_price_features(workload, sql_list, db_name, bin_size=40,
                     price_n_parsing=price_n_parsing,
                     price_n_filter=price_n_filter,
                     price_n_fanout=price_n_fanout,
-                    price_n_pairwise=price_n_pairwise)
+                    price_n_pairwise=price_n_pairwise,
+                    price_b=price_b)
                 # PRICE expects lowercase (except inside quotes)
                 transformed_sql = _lower_except_quotes(transformed_sql)
                 # Collapse self-join aliases (tpcds_dd2 → tpcds_dd) where only tautological joins
@@ -4276,7 +4736,7 @@ def pad_and_cache_features(data_features, n_join_cols, n_fanouts, n_tables,
         filter_dim: filter feature dimension (default bin_size+3 = 43, or
             bin_size+21 for PRICE_M, or 75 for PRICE_N)
         fanout_dim: fanout token dimension (default bin_size for non-N, 42 for N)
-        pairwise_intra_dim: pairwise token dimension (default 129 for PRICE_N)
+        pairwise_intra_dim: pairwise token dimension (default 70 for PRICE_N (anti-diagonal range-slot format))
         cache_path: if set, save/load from this pickle path
         price_m: if True use PRICE_M filter_dim (bin_size+21)
         price_n_pairwise: if True, handle 5-tuple input and pad the pairwise
@@ -4308,7 +4768,7 @@ def pad_and_cache_features(data_features, n_join_cols, n_fanouts, n_tables,
             filter_dim = bin_size + 21
         effective_fanout_dim = fanout_dim if fanout_dim is not None else bin_size
         if pairwise_intra_dim is None:
-            pairwise_intra_dim = 129
+            pairwise_intra_dim = 70
 
         # Gather all counts across all queries and all clauses to compute
         # per-batch maxima.
@@ -4455,7 +4915,7 @@ def pad_and_cache_features(data_features, n_join_cols, n_fanouts, n_tables,
         # extended fanout_dim and the new pairwise axis ourselves.
         # ----------------------------------------------------------------
         if pairwise_intra_dim is None:
-            pairwise_intra_dim = 129
+            pairwise_intra_dim = 70
         if n_pairwise_intras is None:
             n_pairwise_intras = [0] * len(data_features)
 

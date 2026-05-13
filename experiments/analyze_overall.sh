@@ -1,3 +1,21 @@
+# python experiment_scripts/compare_selection_budgets.py
+python experiment_scripts/compare_round_pareto.py
+python experiment_scripts/rank_correlation_epochs.py
+
+python experiment_scripts/compare_round_pareto.py --init_strategy kmeans                                                                          
+python experiment_scripts/compare_round_pareto.py --init_strategy stratified   # default                                                          
+python experiment_scripts/compare_round_pareto.py --init_strategy random
+python experiment_scripts/compare_round_pareto.py --init_strategy stratified_arch_round --rounds 2 --keep_ratio 0.75 --keep_strategy stratified
+python experiment_scripts/compare_round_pareto.py --init_strategy stratified_kmeans_round --rounds 2 --keep_ratio 0.75 --keep_strategy stratified
+python experiment_scripts/compare_round_pareto.py --init_strategy stratified_kmeans_round --rounds 4 --keep_ratio 0.85 --keep_strategy stratified
+ python experiment_scripts/compare_round_pareto.py \                                                                                                                                                                                
+      --init_strategy stratified_kmeans_round \
+      --keep_strategy stratified \                                                                                                                                                                                                   
+      --decision_epochs 12 \                                                                                                                                                                                                         
+      --keep_ratio 0.85
+
+python experiment_scripts/ablate_init_and_keep.py
+python experiment_scripts/plot_hv_vs_hours.py --output ./model_selection.png --title "Stats workload: HV vs compute"
 # bash compare_results.sh
 # python analysis_scripts/summarize_inference_logs.py --log_dir logs_results_embeddings_10.11/logs
 # python analysis_scripts/summarize_train_eval_logs.py --log_dir logs_results_embeddings_10.11/logs_train_eval

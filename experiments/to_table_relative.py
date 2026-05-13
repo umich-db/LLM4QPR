@@ -73,6 +73,44 @@ def strip_seed(filename):
     return re.sub(r'_seed\d+', '', filename)
 
 
+def _price_n_qrt_suffix(col_name):
+    """Compact display suffix for the PRICE_N family + QRT cross-attn.
+
+    Mirrors utilsLLM._price_flags_cache_tag's collapsing rules so the row name
+    in the heatmap/table reflects which PRICE_N sub-flags + QRT were active:
+
+        --price_n                                  → '_priceN'
+        --price_n --price_n_or                     → '_priceN-or'
+        --price_n --price_n_or --use_qrt_cross_attn → '_priceN-or-qrt'
+        --price_n_filter --price_n_fanout          → '_priceN-flt-fan'
+        --use_qrt_cross_attn alone                 → '_qrt'
+        (none)                                     → ''
+
+    Detection is by substring match on the PRICE save-path tokens
+    (_priceNflt, _priceNfan, _priceNpw, _priceNprs, _priceNor, _qrt).
+    """
+    subs = []
+    if '_priceNflt' in col_name: subs.append('flt')
+    if '_priceNfan' in col_name: subs.append('fan')
+    if '_priceNpw'  in col_name: subs.append('pw')
+    if '_priceNprs' in col_name: subs.append('prs')
+    if '_priceNor'  in col_name: subs.append('or')
+    has_qrt = '_qrt' in col_name
+    out = []
+    if subs:
+        core = {'flt', 'fan', 'pw', 'prs'}
+        s = set(subs)
+        if s == core:
+            out.append('priceN')
+        elif s == core | {'or'}:
+            out.append('priceN-or')
+        else:
+            out.append('priceN-' + '-'.join(subs))
+    if has_qrt:
+        out.append('qrt')
+    return ('_' + '-'.join(out)) if out else ''
+
+
 def extract_display_name(col_name):
     """Extract display name from column name"""
     if 'llm' in col_name:
@@ -105,9 +143,14 @@ def extract_display_name(col_name):
                 else:
                     display_name = f"[JointPrice] {display_name}"
 
-            price_variant_match = re.search(r'_(priceM|priceS)', col_name)
+            # priceB = original-PRICE-design (equi-join + col-op-literal only).
+            # Negative lookahead `(?!i)` excludes `priceBi…` (mode 12 / BiCrossAttnJoint).
+            price_variant_match = re.search(r'_(priceM|priceS|priceB)(?!i)', col_name)
             if price_variant_match:
                 display_name += f"_{price_variant_match.group(1)}"
+
+            # Extract PRICE_N family + QRT (compact form, e.g. _priceN-or-qrt).
+            display_name += _price_n_qrt_suffix(col_name)
 
             pretrained_match = re.search(r'pretrained-(\w+)', col_name)
             if pretrained_match:

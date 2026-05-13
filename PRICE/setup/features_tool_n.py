@@ -42,10 +42,150 @@ class Sql2FeatureN(Sql2Feature):
             "nonequi_fanout_op40.pkl") or {}
         # Build reverse mapping: price_alias -> raw_table_name
         # (used to look up null_fraction keys which use raw table names)
-        abbrev = self.information_coltype.get("abbrev", {})
-        self._alias_to_table = {v: k for k, v in abbrev.items()}
+        self._abbrev = self.information_coltype.get("abbrev", {})
+        self._alias_to_table = {v: k for k, v in self._abbrev.items()}
+        # SQL-alias -> canonical stats key. Populated by parse_sql so self-join
+        # instances like `tpcds_dd2` resolve to the base stats key `tpcds_dd`.
+        # Stats dicts (histogram/size/summary/col_type) are keyed once per
+        # physical table via abbrev; self-join SQL aliases are not stats keys.
+        self._stats_alias_key = {}
         # Cache for lex-sorted SpaceSaving summaries (populated lazily).
         self._lex_sorted_summary = {}
+        # Constructor args remembered for lazy Sql2FeatureS helper used to
+        # produce table tokens byte-identical to PRICE_S (see _get_s_helper).
+        self._init_database = database
+        self._init_bin_size = bin_size
+        self._init_usage = usage
+        self._s_helper = None
+
+    def _get_s_helper(self):
+        """Lazily build a Sql2FeatureS instance to delegate table-token
+        computation. PRICE_N reuses PRICE_S's table-feature output verbatim
+        so the table token is byte-identical between the two extractors.
+        """
+        if self._s_helper is None:
+            from setup.features_tool_s import Sql2FeatureS
+            self._s_helper = Sql2FeatureS(
+                self._init_database, self._init_bin_size, self._init_usage)
+        return self._s_helper
+
+    @staticmethod
+    def _is_inside_subquery(node):
+        """True if `node` has a Subquery/Exists ancestor (PRICE_N treats those
+        as residual; their tables/columns must not pollute outer stat-core)."""
+        p = node.parent
+        while p is not None:
+            if isinstance(p, (sqlglot.exp.Subquery, sqlglot.exp.Exists)):
+                return True
+            p = p.parent
+        return False
+
+    def parse_sql(self, sql):
+        """PRICE_N override: like the base parser but skips Tables/Columns/EQs
+        that live inside a Subquery or Exists node.
+
+        Why: parse_sql in features_tool.py uses `find_all(Table)` /
+        `find_all(Column)` which recurse into subqueries. Under PRICE_N,
+        subqueries are intentionally left in the SQL as residual (their atoms
+        become QRT input). If their inner tables get pulled into the outer
+        `tables` list, downstream lookups like `get_table_size("lineitem")`
+        fail with KeyError (TPC-H q18's `lineitem` (no alias) in the inner
+        SELECT is a classic example).
+        """
+        parsed = sqlglot.parse_one(sql)
+        is_sub = self._is_inside_subquery
+
+        columns = []
+        for column in parsed.find_all(sqlglot.exp.Column):
+            if is_sub(column):
+                continue
+            col_str = f"{column.table}.{column.name}" if column.table else column.name
+            if col_str not in columns:
+                columns.append(col_str)
+
+        tables = []
+        ref_to_tables = {}
+        for table in parsed.find_all(sqlglot.exp.Table):
+            if is_sub(table):
+                continue
+            name = table.alias_or_name
+            if name not in tables:
+                tables.append(name)
+                ref_to_tables[name] = table.name
+
+        # Build the SQL-alias -> canonical-stats-key map. Stats are keyed once
+        # per physical table via `abbrev` (e.g. {date_dim: tpcds_dd}); the SQL
+        # may use self-join aliases like `tpcds_dd2`. Resolve each SQL alias
+        # back to the canonical key so downstream lookups index the real entry.
+        self._stats_alias_key = {
+            alias: self._abbrev[phys]
+            for alias, phys in ref_to_tables.items()
+            if phys in self._abbrev
+        }
+
+        joins = []
+        where_clause = parsed.args.get("where")
+        if where_clause is not None:
+            for eq in where_clause.find_all(sqlglot.exp.EQ):
+                if is_sub(eq):
+                    continue
+                if isinstance(eq.args["expression"], sqlglot.exp.Column):
+                    left = eq.args["this"]
+                    right = eq.args["expression"]
+                    left_str = (f"{left.table}.{left.name}"
+                                if hasattr(left, 'table') and left.table else str(left))
+                    right_str = (f"{right.table}.{right.name}"
+                                 if hasattr(right, 'table') and right.table else str(right))
+                    joins.append(f"{left_str} = {right_str}")
+        return columns, tables, joins, ref_to_tables
+
+    # ---- canonical stats-key resolution ----
+
+    def _canon_table(self, token: str) -> str:
+        """Return the canonical stats-dict key for a SQL-alias table token.
+
+        Stats dicts (histogram/size/summary/col_type) are keyed once per
+        physical table; SQL self-join aliases like `tpcds_dd2` resolve to
+        the same key as `tpcds_dd`. Falls back to the input token when no
+        mapping exists (e.g. parse_sql wasn't called, or the table isn't
+        in abbrev).
+        """
+        return self._stats_alias_key.get(token, token)
+
+    def _canon_col(self, column: str) -> str:
+        """Canonicalize the table prefix of a `table.column` string."""
+        if "." not in column:
+            return column
+        t, c = column.split(".", 1)
+        return f"{self._canon_table(t)}.{c}"
+
+    def get_column_histograms(self, column):
+        """Override: look up stats under the canonical table key, but cache
+        under the original SQL-alias key so downstream callers indexing
+        `columns_bin_edges['tpcds_dd2.d_year']` continue to work."""
+        canon_t = self._canon_table(column.split(".", 1)[0])
+        c = column.split(".", 1)[1]
+        info = self.information_histogram[canon_t][c]
+        self.columns_distributions[column] = info['hist']
+        self.columns_bin_edges[column] = info['bin_edges']
+        return list(info['hist'] / info['len'])
+
+    def get_table_size(self, table):
+        return self.information_size[self._canon_table(table)]['size']
+
+    def get_fanout_features(self, join):
+        """Override: canonicalize both sides of `L.col = R.col` before
+        indexing the fanout dict. Returns zero-fanout when the canonical
+        key has no entry — e.g. self-joins like `tpcds_dd ⋈ tpcds_dd` on
+        the same PK, which collapse to (same_col, same_col) and aren't
+        in fanout40.pkl (it only stores cross-table joins)."""
+        left_join, right_join = join.split(" = ")[0], join.split(" = ")[1]
+        canon_key = (self._canon_col(left_join), self._canon_col(right_join))
+        rec = self.information_fanout.get(canon_key)
+        if rec is None:
+            zeros = [0.0] * self.bin_size
+            return zeros, zeros
+        return rec[0], rec[1]
 
     @property
     def filter_dim_n(self) -> int:
@@ -86,7 +226,10 @@ class Sql2FeatureN(Sql2Feature):
         """
         if column in self._lex_sorted_summary:
             return self._lex_sorted_summary[column]
-        keys, vals = super().space_saving_summary(column)
+        # super() splits column.table.col and indexes information_summary[t][c];
+        # rewrite the table prefix to its canonical key so self-join aliases
+        # like `tpcds_dd2.d_year` resolve to the `tpcds_dd` entry.
+        keys, vals = super().space_saving_summary(self._canon_col(column))
         # keys is length bin_size = 40. keys[39] is 'OtHeRs' (or padding).
         # Sort top-39 by lex using str(k) as the sort key, but preserve original
         # key types so that existing index lookups remain compatible.
@@ -690,14 +833,37 @@ class Sql2FeatureN(Sql2Feature):
         """
         col_table = filter_column.split(".")[0]
         col_name = filter_column.split(".")[-1]
-        raw_table = self._alias_to_table.get(col_table, col_table)
+        canon_table = self._canon_table(col_table)
+        raw_table = self._alias_to_table.get(canon_table, canon_table)
         table_size = self.get_table_size(col_table)
-        is_discrete = col_name in self.information_coltype['col_type'][col_table]['dsct']
+        is_discrete = col_name in self.information_coltype['col_type'][canon_table]['dsct']
 
+        # Refined rule: SpaceSaving (summary40) is meant for STRING discrete
+        # columns (where there's no natural ordering for bin-width histograms).
+        # Numeric discrete columns get the bin-width histogram (histogram40),
+        # matching PRICE_S's range-fallback path on the same column type.
+        is_string_discrete = False
         if is_discrete:
+            try:
+                _summary_keys = self.information_summary[canon_table][col_name]["keys"]
+                if _summary_keys:
+                    is_string_discrete = isinstance(_summary_keys[0], str)
+            except Exception:
+                is_string_discrete = False
+
+        if is_string_discrete:
             keys, vals = self.space_saving_summary(filter_column)
             histogram = (torch.tensor(vals, dtype=torch.float32)
                          / max(1.0, table_size))
+        elif is_discrete:
+            # Numeric discrete column — keep summary keys/vals for
+            # _compute_regions (which uses them to map atom values to bin
+            # indices), but use bin-width histogram (matches PRICE_S's
+            # range-fallback path on the same column).
+            keys, vals = self.space_saving_summary(filter_column)
+            histogram = torch.tensor(
+                self.get_column_histograms(filter_column),
+                dtype=torch.float32)
         else:
             keys, vals = None, None
             histogram = torch.tensor(
@@ -933,18 +1099,24 @@ class Sql2FeatureN(Sql2Feature):
             tok = self._encode_filter_token(fc, atoms)
             filter_tokens.append(tok)
             # token layout: hist[40] + (10×3) slots + tail(3) + (null_fraction, null_pred_flag)
-            # selectivity for the AVI/EBO/MinSel needs the strongest matched slot's sel.
-            slot_sels = tok[40:40 + 30:3]
+            # The (lo, hi, sel) triplet starts at offset 40, so sels live at
+            # 42, 45, 48, ..., 69 (every 3rd starting at offset 2 inside the
+            # slot block). The tail's sel is at offset 40+30+2=72.
+            #
+            # For PRICE_S compatibility, table_sels gets the TOTAL matched
+            # selectivity (sum of slot sels + tail sel), matching PRICE_S's
+            # bbox total_freq/table_size convention.
+            slot_sels = tok[42:40 + 30:3]
             tail_sel = tok[40 + 30 + 2].item()
-            sel_pos = max(slot_sels.tolist() + [tail_sel])
+            total_sel = sum(slot_sels.tolist()) + tail_sel
             null_pred = tok[-1].item()
             null_frac = tok[-2].item()
             if null_pred == 1.0:
                 effective = max(null_frac, 1e-6)
             elif null_pred == -1.0:
                 effective = max(1.0 - null_frac, 1e-6)
-            elif sel_pos > 0:
-                effective = sel_pos
+            elif total_sel > 0:
+                effective = total_sel
             else:
                 effective = 1e-6
             table_sels[fc.split(".")[0]].append(effective)
@@ -957,28 +1129,67 @@ class Sql2FeatureN(Sql2Feature):
             pairwise_tokens.append(self._encode_pairwise_intra_token(
                 l_t, cx, cy, op, right_table=r_t, right_col=r_c))
 
-        # Table tokens (existing PRICE machinery)
-        table_features = []
-        for t in tables:
-            sels = table_sels[t]
-            if not sels:
-                avi = torch.tensor([1.0]); minsel = torch.tensor([1.0]); ebo = torch.tensor([1.0])
-            else:
-                avi = torch.prod(torch.tensor(sels))
-                minsel = torch.min(torch.tensor(sels))
-                sorted_sels = sorted(sels, reverse=True)
-                ebo_v = 1.0
-                for i, s in enumerate(sorted_sels):
-                    if i > 3: break
-                    ebo_v *= s ** (1 / (2 ** i))
-                ebo = torch.tensor([ebo_v])
-            table_size = self.get_table_size(t)
-            table_features.append(torch.cat([
-                torch.tensor([np.log(table_size)], dtype=torch.float32),
-                torch.tensor([avi.item()], dtype=torch.float32),
-                torch.tensor([minsel.item()], dtype=torch.float32),
-                torch.tensor([ebo.item()], dtype=torch.float32),
-            ]))
+        # Table tokens: delegate to Sql2FeatureS for byte-identical output.
+        # PRICE_S computes per-column filter selectivity via histogram40
+        # integration (for ranges) or summary40 lookup (for eq/in/like), then
+        # feeds them into avi/minsel/ebo. PRICE_N's interval-arithmetic slot
+        # sels structurally differ (SpaceSaving OtHeRs underflow), so we use
+        # PRICE_S's result directly to keep table tokens equivalent.
+        try:
+            s_out = self._get_s_helper().create_sql_features(sql)
+            # PRICE_S returns (sql_features, n_jc, n_fo, n_tb, n_fc) where
+            # sql_features = (join_hist, fanout_feat, table_feat_cat, filter_feat).
+            # We want sql_features[2] (the cat'd table token of shape (n_tables*4,)).
+            # Use PRICE_S's reported n_tb so it matches the tensor length —
+            # PRICE_S may drop tables not in stats (partial encoding), so
+            # len(tables) from PRICE_N's parse_sql can overcount. The reported
+            # n_tb propagates to downstream padding, which then breaks
+            # torch.stack with size mismatches across queries/clauses.
+            table_features = [s_out[0][2]]
+            n_tb_from_s = int(s_out[3])
+            # WARN if PRICE_S silently dropped tables PRICE_N expected.
+            # This should be unreachable once PRICE_S's alias canonicalization
+            # is in place (porting `_stats_alias_key` from features_tool_n).
+            # If it fires, something — a new edge case or an alias outside
+            # `abbrev` — is being dropped from the table tokens while
+            # join_hist / fanout / filter were computed against the larger
+            # set. The encoder is then semantically inconsistent (per-table
+            # summary count differs from per-join cardinality count). Fix
+            # the canonicalization gap rather than silencing this warning.
+            if n_tb_from_s < len(tables):
+                import warnings
+                warnings.warn(
+                    f"PRICE_S dropped {len(tables) - n_tb_from_s} of "
+                    f"{len(tables)} tables ({tables!r}) under delegation "
+                    f"in Sql2FeatureN. table_features length is consistent "
+                    f"with PRICE_S's reduced view, but join/fanout/filter "
+                    f"tokens reflect PRICE_N's full view — possible "
+                    f"semantic mismatch. Fix the canonicalization gap.",
+                    RuntimeWarning, stacklevel=2)
+        except Exception:
+            # Fall back to PRICE_N's own computation if PRICE_S can't parse.
+            n_tb_from_s = None
+            table_features = []
+            for t in tables:
+                sels = table_sels[t]
+                if not sels:
+                    avi = torch.tensor([1.0]); minsel = torch.tensor([1.0]); ebo = torch.tensor([1.0])
+                else:
+                    avi = torch.prod(torch.tensor(sels))
+                    minsel = torch.min(torch.tensor(sels))
+                    sorted_sels = sorted(sels, reverse=True)
+                    ebo_v = 1.0
+                    for i, s in enumerate(sorted_sels):
+                        if i > 3: break
+                        ebo_v *= s ** (1 / (2 ** i))
+                    ebo = torch.tensor([ebo_v])
+                table_size = self.get_table_size(t)
+                table_features.append(torch.cat([
+                    torch.tensor([np.log(table_size)], dtype=torch.float32),
+                    torch.tensor([avi.item()], dtype=torch.float32),
+                    torch.tensor([minsel.item()], dtype=torch.float32),
+                    torch.tensor([ebo.item()], dtype=torch.float32),
+                ]))
 
         # Single-table fall-through: zero-pad join_hist + fanout (PRICE_M precedent)
         if len(join_columns) == 0:
@@ -1006,4 +1217,10 @@ class Sql2FeatureN(Sql2Feature):
         feats = (join_hist, fanout_feat,
                  torch.cat(table_features),
                  filter_feat, pairwise_feat)
-        return feats, n_jc, n_fo, len(tables), n_fc, n_pi
+        # n_tb must match the actual table_features tensor length so the
+        # downstream padding produces consistent shapes across queries.
+        # When PRICE_S delegated and reported a count, trust that; otherwise
+        # derive it from the concatenated tensor (each token is 4 floats).
+        n_tb_actual = (n_tb_from_s if n_tb_from_s is not None
+                       else feats[2].shape[0] // 4)
+        return feats, n_jc, n_fo, n_tb_actual, n_fc, n_pi

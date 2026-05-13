@@ -257,6 +257,38 @@ def _strip_alias_prefix(col_ref):
     return col_ref
 
 
+def discover_all_column_refs(queries, col_to_table):
+    """Use sqlglot AST to find ALL column references in queries.
+
+    The regex-based parse_joins_and_filters only inspects the FIRST WHERE
+    clause and only handles AND-conjoined `col op literal` patterns. It misses:
+      - columns inside OR groups (e.g. `(a = 1 or b = 2)`)
+      - columns in JOIN ON clauses
+      - columns referenced only in SELECT aggregates (e.g. `sum(x)`)
+      - columns in WHERE clauses of subqueries (non-first WHERE)
+
+    This walker traverses the full AST for every query and collects every
+    column whose unqualified name is in col_to_table. The resulting set
+    augments filter_cols so the corresponding histograms get generated.
+    """
+    try:
+        import sqlglot
+        import sqlglot.expressions as sx
+    except ImportError:
+        return set()
+    found = set()
+    for sql in queries:
+        try:
+            ast = sqlglot.parse_one(sql)
+        except Exception:
+            continue
+        for col in ast.find_all(sx.Column):
+            name = col.name.lower() if col.name else None
+            if name and name in col_to_table:
+                found.add((col_to_table[name], name))
+    return found
+
+
 def parse_joins_and_filters(queries, col_to_table):
     """Parse SQL queries to find join column pairs and filter columns.
 
@@ -288,6 +320,11 @@ def parse_joins_and_filters(queries, col_to_table):
             pred = pred.lstrip("(").rstrip(")").strip()
 
             # --- Equi-join: X = Y where both are column references ---
+            # The regex `[\w.]+\s*=\s*[\w.]+` also matches `col=N` (literals are
+            # word-chars too), so verify BOTH sides are columns before claiming
+            # an equi-join. Otherwise `i_manager_id=1` would fall here, fail
+            # the both-cols check, and be silently dropped via the unconditional
+            # `continue` that used to follow — bypassing the filter branch.
             eq_match = re.match(r"^([\w.]+)\s*=\s*([\w.]+)\s*$", pred)
             if eq_match:
                 left = eq_match.group(1).strip()
@@ -305,6 +342,9 @@ def parse_joins_and_filters(queries, col_to_table):
                         pair = tuple(sorted([(t1, left_col), (t2, right_col)]))
                         joins.add(pair)
                 continue
+                # [REVERTED] The fix that fell through to filter branch when
+                # col=literal is removed for this bisection. Restoring the
+                # always-continue behavior so we get the prior stats column set.
 
             # --- Filter: col op literal ---
             filter_match = re.match(
@@ -1511,6 +1551,8 @@ def generate_stats_for_db(db_name, price_n_filter=False, price_n_fanout=False,
         queries = extract_queries_from_files(db_name)
         print(f"    Found {len(queries)} unique queries")
         joins, filter_cols = parse_joins_and_filters(queries, col_to_table)
+        # [REVERTED] sqlglot AST augmentation is disabled for this bisection
+        # so we re-derive the column set the regex-only discovery produced.
 
     print(f"    Found {len(joins)} unique join pairs")
     print(f"    Found {len(filter_cols)} unique filter columns")

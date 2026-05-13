@@ -10,7 +10,8 @@ class RegressionModel(nn.Module):
                  query_hidden_dim, final_hidden_dim, output_dim,
                  n_embd, n_layers, n_heads, dropout_rate, ffn_ratio=4,
                  n_pairwise_intra=0, pairwise_intra_dim=0,
-                 fanout_dim=None, use_or_transformer=False):
+                 fanout_dim=None, use_or_transformer=False,
+                 or_n_layers=1, or_n_heads=4, or_ffn_ratio=1.0):
         super(RegressionModel, self).__init__()
         self.n_join_col, self.n_fanout = n_join_col, n_fanout
         self.n_table, self.n_filter_col = n_table, n_filter_col
@@ -39,9 +40,17 @@ class RegressionModel(nn.Module):
         self.filter_encoder = Encoder(n_embd, n_layers, n_heads, dropout_rate, ffn_ratio)
 
         if use_or_transformer:
+            # Minimal-size OR-Transformer: 1 encoder layer, 4 heads, ffn_ratio=1.0
+            # (~396K params at n_embd=256). Override with `or_*` constructor args
+            # if you need a different size. The 263K floor is from the QKV/out
+            # projections at d_model=256; further reduction would require
+            # dropping d_model.
             self.or_transformer = OrTransformer(
-                n_embd, n_layers=2, n_heads=n_heads,
-                dropout_rate=dropout_rate, ffn_ratio=ffn_ratio)
+                n_embd,
+                n_layers=or_n_layers,
+                n_heads=or_n_heads,
+                dropout_rate=dropout_rate,
+                ffn_ratio=or_ffn_ratio)
         else:
             self.or_transformer = None
 

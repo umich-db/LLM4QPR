@@ -78,6 +78,44 @@ def strip_seed(filename):
     """Removes seed information to group files with same prefix"""
     return re.sub(r'_seed\d+', '', filename)
 
+
+def _price_n_qrt_suffix(col_name):
+    """Compact display suffix for the PRICE_N family + QRT cross-attn.
+
+    Mirrors utilsLLM._price_flags_cache_tag's collapsing rules so the row name
+    in the heatmap/table reflects which PRICE_N sub-flags + QRT were active:
+
+        --price_n                                  → '_priceN'
+        --price_n --price_n_or                     → '_priceN-or'
+        --price_n --price_n_or --use_qrt_cross_attn → '_priceN-or-qrt'
+        --price_n_filter --price_n_fanout          → '_priceN-flt-fan'
+        --use_qrt_cross_attn alone                 → '_qrt'
+        (none)                                     → ''
+
+    Detection is by substring match on the PRICE save-path tokens
+    (_priceNflt, _priceNfan, _priceNpw, _priceNprs, _priceNor, _qrt).
+    """
+    subs = []
+    if '_priceNflt' in col_name: subs.append('flt')
+    if '_priceNfan' in col_name: subs.append('fan')
+    if '_priceNpw'  in col_name: subs.append('pw')
+    if '_priceNprs' in col_name: subs.append('prs')
+    if '_priceNor'  in col_name: subs.append('or')
+    has_qrt = '_qrt' in col_name
+    out = []
+    if subs:
+        core = {'flt', 'fan', 'pw', 'prs'}
+        s = set(subs)
+        if s == core:
+            out.append('priceN')
+        elif s == core | {'or'}:
+            out.append('priceN-or')
+        else:
+            out.append('priceN-' + '-'.join(subs))
+    if has_qrt:
+        out.append('qrt')
+    return ('_' + '-'.join(out)) if out else ''
+
 def extract_display_name(col_name):
     """Extract display name from column name"""
     # For LLM: extract model name
@@ -115,10 +153,15 @@ def extract_display_name(col_name):
                     # Existing JointPrice (no explicit mode suffix)
                     display_name = f"[JointPrice] {display_name}"
 
-            # Extract PRICE variant suffix (priceM or priceS)
-            price_variant_match = re.search(r'_(priceM|priceS)', col_name)
+            # Extract PRICE variant suffix (priceM, priceS, or priceB).
+            # priceB is the original-PRICE-design restriction (equi-join +
+            # col-op-literal predicates only) — same filter_dim as priceS.
+            price_variant_match = re.search(r'_(priceM|priceS|priceB)(?!i)', col_name)
             if price_variant_match:
                 display_name += f"_{price_variant_match.group(1)}"
+
+            # Extract PRICE_N family + QRT (compact form, e.g. _priceN-or-qrt).
+            display_name += _price_n_qrt_suffix(col_name)
 
             # Extract pretrained status
             pretrained_match = re.search(r'pretrained-(\w+)', col_name)
@@ -254,10 +297,13 @@ def create_heatmap_with_comparison(table, output_path):
     - Bold LLM names that beat lowest non-LLM in ≥2 columns
     - Add *** prefix for LLM names that beat second lowest non-LLM in ≥2 columns
     """
-    # Separate LLM and non-LLM columns
-    llm_cols = [col for col in table.columns if is_llm_method(col)]
-    non_llm_cols = [col for col in table.columns if not is_llm_method(col)]
-    
+    # Separate LLM and non-LLM columns; sort by display name so the order
+    # matches to_table_relative.py (which sorts after column renaming).
+    llm_cols = sorted([col for col in table.columns if is_llm_method(col)],
+                      key=extract_display_name)
+    non_llm_cols = sorted([col for col in table.columns if not is_llm_method(col)],
+                          key=extract_display_name)
+
     # Reorder: non-LLM first, then LLM
     ordered_cols = non_llm_cols + llm_cols
     table = table[ordered_cols]

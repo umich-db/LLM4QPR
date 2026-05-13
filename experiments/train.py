@@ -50,8 +50,9 @@ def _price_dims(argsP, bin_size):
 
 
 def _price_path_suffix(argsP):
-    """PRICE-mode suffix: priceS / priceM / priceN_*, plus DNF flags."""
+    """PRICE-mode suffix: priceB / priceS / priceM / priceN_*, plus DNF flags."""
     parts = []
+    if getattr(argsP, 'price_b', False):           parts.append("priceB")
     if getattr(argsP, 'price_s', False):           parts.append("priceS")
     if getattr(argsP, 'price_m', False):           parts.append("priceM")
     if getattr(argsP, 'price_n_filter', False):    parts.append("priceNflt")
@@ -89,6 +90,7 @@ def _arch_path_suffix(argsP):
     if getattr(argsP, 'refined_pool', False):                 parts.append("refinedPool")
     if getattr(argsP, 'triple_concat', False):                parts.append("tripleConcat")
     if getattr(argsP, 'inflate_price', False):                parts.append("inflatePRICE")
+    if getattr(argsP, 'use_qrt_cross_attn', False):           parts.append("qrt")
     # Other architecture toggles
     if getattr(argsP, 'use_price_gate', False):               parts.append("priceGate")
     if getattr(argsP, 'price_init_frozen_joint', False):      parts.append("frozenInit")
@@ -148,13 +150,27 @@ def _arch_path_suffix(argsP):
     fr = getattr(argsP, 'price_ffn_ratio', 4.0)
     if fr != 4.0:
         parts.append(f"fr{fr}")
+    # OR-Transformer config — emit only when --price_n_or is active and the
+    # value is non-default (default = the new minimal config: 1 layer, 4 heads,
+    # ffn_ratio 1.0). Lets you A/B different OR-Transformer sizes without
+    # path collisions.
+    if getattr(argsP, 'price_n_or', False):
+        or_nl = getattr(argsP, 'or_n_layers', 1)
+        if or_nl != 1:
+            parts.append(f"orNL{or_nl}")
+        or_nh = getattr(argsP, 'or_n_heads', 4)
+        if or_nh != 4:
+            parts.append(f"orNH{or_nh}")
+        or_fr = getattr(argsP, 'or_ffn_ratio', 1.0)
+        if or_fr != 1.0:
+            parts.append(f"orFR{or_fr:g}")
     # Schedule overrides (only when --price_random_init is on, since that's
     # when the price-warmup→2e-5 schedule actually fires).
     if getattr(argsP, 'price_random_init', False):
         pwm = getattr(argsP, 'price_warmup_epochs', 10)
         if pwm != 10:
             parts.append(f"pwm{pwm}")
-        plr = getattr(argsP, 'price_lr', None)
+        plr = getattr(argsP, 'price_warmup_lr', None)
         if plr is not None and plr != 1e-3:
             parts.append(f"pLR{plr:g}")
     return ("_" + "_".join(parts)) if parts else ""
@@ -231,30 +247,15 @@ if (argsP.algo == "llm_price"
           f"(price_weights_source: {argsP.price_weights_source} → joint)")
     argsP.price_weights_source = "joint"
 
-# ─── Early retrain_mlp cache check: skip LLM/data loading if embeddings cached ──
-_retrain_mlp_cache_hit = False
-if (argsP.algo == "llm_price" and getattr(argsP, 'retrain_mlp', False) and
-    getattr(argsP, 'price_weights_source', 'pretrained') in ("cross_attn_joint", "bi_cross_attn_joint", "reverse_cross_attn_joint")):
-    # Compute the cache path from args alone (same logic as the model construction section)
-    _pws = argsP.price_weights_source
-    _ft_bs = getattr(argsP, 'ft_batch_size', 16)
-    _task_str = "card" if argsP.card else "time"
-    _price_suffix = _price_path_suffix(argsP)
-    _arch_suffix = _arch_path_suffix(argsP)
-    _ri = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
-    _ft_epochs = getattr(argsP, 'ft_num_epoch', 0)
-    _es = f"_e{_ft_epochs}" if _ft_epochs > 0 else ""
-    _weight_prefix = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{_task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{_ft_bs}{_price_suffix}_llm_price{_arch_suffix}{_ri}{_es}"
-    _test_tag = f"_test-{argsP.workload_test}" if getattr(argsP, 'workload_test', '') else ""
-    _early_cache_path = f"{_weight_prefix}{_test_tag}_retrainMLP_embeddings.pt"
-    if os.path.exists(_early_cache_path):
-        print(f"[retrain_mlp] Embedding cache exists: {_early_cache_path}")
-        print(f"[retrain_mlp] Skipping LLM loading, data loading, and model construction")
-        _retrain_mlp_cache_hit = True
+# --retrain_mlp was removed 2026-05-11. Mode 7/12 inference now caches the
+# post-PRICE + post-cross-attn combined embeddings by default in
+# get_embeddings(); subsequent runs skip LLM forward, PRICE encoder, AND
+# cross-attn fusion, then train a fresh MLP head on the cached combined
+# features.
 
 # Print CUDA availability (optional, for verification)
 print(f"Cuda available? {torch.cuda.is_available()}")
-if "llm" in argsP.algo and not _retrain_mlp_cache_hit:
+if "llm" in argsP.algo:
   if not argsP.embeddings_exist:
     from utilsLLM import QueryPlanDataset, QueryPlanPredictor, get_llm_ds_from_csv
     
@@ -282,7 +283,8 @@ if "llm" in argsP.algo and not _retrain_mlp_cache_hit:
         rand_init_suffix = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
         ft_epochs = getattr(argsP, 'ft_num_epoch', 0)
         epoch_suffix = f"_e{ft_epochs}" if ft_epochs > 0 else ""
-        llm_path = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{_price_suffix}_llm_price{_arch_suffix}{rand_init_suffix}{epoch_suffix}_llm.pt"
+        seed_suffix = f"_seed{argsP.seed}" if hasattr(argsP, 'seed') else ""
+        llm_path = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{_price_suffix}_llm_price{_arch_suffix}{rand_init_suffix}{epoch_suffix}{seed_suffix}_llm.pt"
       else:
         # Standalone LLM finetune: weights saved with _llm suffix
         llm_path = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}_llm.pt"
@@ -373,10 +375,19 @@ def llm_collate(batch):
 
 def llm_price_collate(batch):
     """Collate function for LLMPriceDataset.
-    Each item: (text, price_feat, pad_mask, njc, nfo, ntb, nfc, label)
-    Returns: ((texts, price_feats, pad_masks, njcs, nfos, ntbs, nfcs), labels_tensor)
+    Each item: (text, price_feat, pad_mask, njc, nfo, ntb, nfc, [residual_text,] label)
+    Returns: ((texts, price_feats, pad_masks, njcs, nfos, ntbs, nfcs, [residual_texts]), labels_tensor)
+    The residual_texts tail tuple is only present when the dataset was built
+    with --use_qrt_cross_attn (i.e., residual_texts was passed to LLMPriceDataset).
     """
-    texts, pf, pm, njc, nfo, ntb, nfc, labels = zip(*batch)
+    # Detect presence of residual_text by item length: base is 8 (incl. label),
+    # +1 when residual_text is included.
+    has_residual = len(batch[0]) == 9
+    if has_residual:
+        texts, pf, pm, njc, nfo, ntb, nfc, rtxt, labels = zip(*batch)
+    else:
+        texts, pf, pm, njc, nfo, ntb, nfc, labels = zip(*batch)
+        rtxt = None
     labels_tensor = torch.tensor(labels, dtype=torch.float32, device=device).unsqueeze(1)
     price_feats = torch.stack([f if isinstance(f, torch.Tensor) else torch.tensor(f, dtype=torch.float32) for f in pf]).float().to(device)
     pad_masks = torch.stack([m if isinstance(m, torch.Tensor) else torch.tensor(m) for m in pm]).float().to(device)
@@ -384,19 +395,28 @@ def llm_price_collate(batch):
     nfos = torch.tensor(nfo, dtype=torch.float32, device=device).unsqueeze(1)
     ntbs = torch.tensor(ntb, dtype=torch.float32, device=device).unsqueeze(1)
     nfcs = torch.tensor(nfc, dtype=torch.float32, device=device).unsqueeze(1)
-    return (list(texts), price_feats, pad_masks, njcs, nfos, ntbs, nfcs), labels_tensor
+    base = (list(texts), price_feats, pad_masks, njcs, nfos, ntbs, nfcs)
+    if has_residual:
+        base = base + (list(rtxt),)
+    return base, labels_tensor
 
 
 def llm_price_or_collate(batch):
     """Collate function for LLMPriceDataset under --price_n_or (multi-clause DNF).
-    Each item: (text, price_feat, pad_mask, njc, nfo, ntb, nfc, num_clauses_i, label)
+    Each item: (text, price_feat, pad_mask, njc, nfo, ntb, nfc, num_clauses_i, [residual_text,] label)
         where price_feat has shape (max_clauses, flat_size) and pad_mask matches
         (max_clauses, mask_len) — the dataset stores per-query packed tensors.
-    Returns: ((texts, price_feats, pad_masks, njcs, nfos, ntbs, nfcs, num_clauses), labels_tensor)
+    Returns: ((texts, price_feats, pad_masks, njcs, nfos, ntbs, nfcs, num_clauses, [residual_texts]), labels_tensor)
         where price_feats is reshaped to (batch * max_clauses, flat_size) — the
-        flat layout RegressionModel.forward expects in multi-clause mode.
+        flat layout RegressionModel.forward expects in multi-clause mode. The
+        residual_texts tail is only present when --use_qrt_cross_attn is on.
     """
-    texts, pf, pm, njc, nfo, ntb, nfc, nc, labels = zip(*batch)
+    has_residual = len(batch[0]) == 10
+    if has_residual:
+        texts, pf, pm, njc, nfo, ntb, nfc, nc, rtxt, labels = zip(*batch)
+    else:
+        texts, pf, pm, njc, nfo, ntb, nfc, nc, labels = zip(*batch)
+        rtxt = None
     labels_tensor = torch.tensor(labels, dtype=torch.float32, device=device).unsqueeze(1)
     # Each pf[i]/pm[i] is (max_clauses, *) → stack gives (batch, max_clauses, *).
     price_feats = torch.stack([f if isinstance(f, torch.Tensor) else torch.tensor(f, dtype=torch.float32) for f in pf]).float().to(device)
@@ -414,7 +434,10 @@ def llm_price_or_collate(batch):
     if pad_masks.dim() == 3:
         bsz, max_c, mask_len = pad_masks.shape
         pad_masks = pad_masks.view(bsz * max_c, mask_len)
-    return (list(texts), price_feats, pad_masks, njcs, nfos, ntbs, nfcs, num_clauses), labels_tensor
+    base = (list(texts), price_feats, pad_masks, njcs, nfos, ntbs, nfcs, num_clauses)
+    if has_residual:
+        base = base + (list(rtxt),)
+    return base, labels_tensor
 
 def price_only_collate(batch):
     """Collate function for PriceOnlyDataset.
@@ -471,76 +494,7 @@ def frozen_llm_price_collate(batch):
     nfcs = torch.tensor(nfc, dtype=torch.float32, device=device).unsqueeze(1)
     return (llm_embs_tensor, price_feats, pad_masks, njcs, nfos, ntbs, nfcs), labels_tensor
 
-if _retrain_mlp_cache_hit:
-  # Skip all data loading and model construction — go straight to retrain_mlp
-  from trainer import *
-  device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-  argsP.device = device
-  torch.manual_seed(argsP.seed)
-  torch.cuda.manual_seed_all(argsP.seed)
-  torch.backends.cudnn.deterministic = True
-  torch.backends.cudnn.benchmark = False
-
-  # Load cached embeddings
-  print(f"[retrain_mlp] Loading cached embeddings from {_early_cache_path}")
-  _cached = torch.load(_early_cache_path, map_location="cpu", weights_only=False)
-  all_embeddings = _cached["embeddings"]
-  all_labels = _cached["labels"]
-  for split_name in ("train", "val", "test"):
-      print(f"  {split_name}: {all_embeddings[split_name].shape[0]} samples, embed_dim={all_embeddings[split_name].shape[1]}")
-
-  # Apply FeatureNormalizer — match the slow-path retrain_mlp section. Without
-  # this, the fresh MLP sees raw mixed-scale features and underperforms.
-  from utilsLLM import FeatureNormalizer
-  _all_for_fit = torch.cat([all_embeddings["train"], all_embeddings["val"], all_embeddings["test"]], dim=0)
-  _feat_norm = FeatureNormalizer()
-  _feat_norm.fit(_all_for_fit)
-  for _split in ("train", "val", "test"):
-      all_embeddings[_split] = _feat_norm.transform(all_embeddings[_split])
-  print(f"[retrain_mlp] Applied FeatureNormalizer (fit on {_all_for_fit.shape[0]} combined samples)")
-
-  # Build fresh MLP and loaders
-  combined_dim = all_embeddings["train"].shape[1]
-  model_comb = Prediction(combined_dim, argsP.hid_units)
-  print(f"[retrain_mlp] Fresh MLP: input_dim={combined_dim}, hid_units={argsP.hid_units}")
-
-  ds = TensorDataset(all_embeddings["train"], all_labels["train"])
-  val_ds = TensorDataset(all_embeddings["val"], all_labels["val"])
-  test_ds = TensorDataset(all_embeddings["test"], all_labels["test"])
-
-  train_loader = DataLoader(ds, batch_size=argsP.batch_size, shuffle=True,
-                            generator=torch.Generator().manual_seed(argsP.seed))
-  val_loader = DataLoader(val_ds, batch_size=argsP.batch_size, shuffle=False)
-  test_loader = DataLoader(test_ds, batch_size=1, shuffle=False)
-
-  argsP.algo = "llm_price"
-  argsP.embed_size = combined_dim
-  print(f"[retrain_mlp] Fast path: skipped LLM/data loading ({argsP.num_epoch} MLP epochs)")
-
-  # Reconstruct ds_info with cost_norm from cache (or fall back to label range)
-  ds_info = dat_dict['ds_info']
-  from utils import Normalizer
-  _cost_norm_data = _cached.get("cost_norm", None)
-  if _cost_norm_data:
-      ds_info.cost_norm = Normalizer(mini=_cost_norm_data["mini"], maxi=_cost_norm_data["maxi"])
-      print(f"[retrain_mlp] Loaded cost_norm from cache: mini={ds_info.cost_norm.mini:.4f}, maxi={ds_info.cost_norm.maxi:.4f}")
-  else:
-      # Old cache without cost_norm — use label range as approximation
-      _all_labels_np = all_labels["train"].numpy().flatten()
-      ds_info.cost_norm = Normalizer(mini=float(_all_labels_np.min()), maxi=float(_all_labels_np.max()))
-      print(f"[retrain_mlp] WARNING: Old cache without cost_norm, using label range: mini={ds_info.cost_norm.mini:.4f}, maxi={ds_info.cost_norm.maxi:.4f}")
-  test_lengths = test_templates = None
-  train_roots = train_js_nodes = train_costs = None
-  val_roots = val_js_nodes = val_costs_raw = None
-  test_roots = test_js_nodes = test_costs_raw = None
-  crit = nn.MSELoss()
-  price_finetune_optimizer = None
-  price_finetune_scheduler = None
-  _ckpt_prefix = None
-  argsP.checkpoint_prefix = None
-  start_epoch = 0
-
-elif argsP.algo == "price_finetune":
+if argsP.algo == "price_finetune":
   from utilsLLM import get_price_only_ds_from_csv
   ds, val_ds, test_ds, val_costs, test_costs = get_price_only_ds_from_csv(
       dat_paths_train_list, dat_path_test, dat_dict['ds_info'], argsP
@@ -687,14 +641,13 @@ elif argsP.algo == "llm_stats":
     print("AutoGluon does not support llm_stats; using MLP instead.")
   MLP = Prediction(input_dim, argsP.hid_units)
   model_comb = MLP
-elif argsP.algo == "llm_price" and not _retrain_mlp_cache_hit:
+elif argsP.algo == "llm_price":
   # Standard llm_price inference: pre-computed LLM+PRICE combined embeddings → MLP.
   # The earlier unified-routing block (above) has already converted any biCross /
   # cross-attn / reverse-cross-attn price_weights_source to "joint", so we always
   # land on this MLP path. Cross-attn featurization (when n_cross_layers > 0) is
-  # handled inside utilsLLM.py:get_llm_ds_from_csv via
-  # LLMPriceJointModel.forward_embeddings, which produces post-cross-attn
-  # combined embeddings.
+  # handled inside utilsLLM.py:get_embeddings via _compute_combined_for_dat_path,
+  # which produces post-cross-attn combined embeddings cached to CSV.
   input_dim = argsP.embed_size
   MLP = Prediction(input_dim, argsP.hid_units)
   model_comb = MLP
@@ -743,7 +696,10 @@ elif argsP.algo == "llm_price_finetune":
           query_hidden_dim=512, final_hidden_dim=1024, output_dim=1,
           n_embd=_price_n_embd_nr, n_layers=getattr(argsP, 'price_n_layers', 6),
           n_heads=_price_n_heads_nr, dropout_rate=0.1, ffn_ratio=_price_ffn_ratio_nr,
-          use_or_transformer=_use_or_transformer_nr
+          use_or_transformer=_use_or_transformer_nr,
+        or_n_layers=getattr(argsP, "or_n_layers", 1),
+        or_n_heads=getattr(argsP, "or_n_heads", 4),
+        or_ffn_ratio=getattr(argsP, "or_ffn_ratio", 1.0),
       )
       if not getattr(argsP, 'price_random_init', False):
           _nr_sd = torch.load(argsP.price_model_path, map_location=device)
@@ -817,7 +773,10 @@ elif argsP.algo == "llm_price_finetune":
         query_hidden_dim=_query_hidden_dim, final_hidden_dim=1024, output_dim=1,
         n_embd=_price_n_embd, n_layers=getattr(argsP, 'price_n_layers', 6), n_heads=_price_n_heads,
         dropout_rate=0.1, ffn_ratio=_price_ffn_ratio,
-        use_or_transformer=_use_or_transformer
+        use_or_transformer=_use_or_transformer,
+        or_n_layers=getattr(argsP, "or_n_layers", 1),
+        or_n_heads=getattr(argsP, "or_n_heads", 4),
+        or_ffn_ratio=getattr(argsP, "or_ffn_ratio", 1.0),
     )
     # Load weights with partial init for PRICE_M (histogram bins shared, operator dims differ)
     def _load_price_sd(model, ckpt_sd, label=""):
@@ -905,7 +864,10 @@ elif argsP.algo == "llm_price_finetune":
               f"cross-attention layers randomly initialized")
       model_comb = LLMPriceJointModel(
           LLM, inf_price_embedder, argsP.embed_size,
-          inf_price_embedder.price_output_dim, argsP.hid_units
+          inf_price_embedder.price_output_dim, argsP.hid_units,
+          residual_pred=getattr(argsP, 'residual_pred', False),
+          delta_bound=getattr(argsP, 'delta_bound', 0.0),
+          use_qrt_cross_attn=getattr(argsP, 'use_qrt_cross_attn', False),
       )
       n_cross_params = sum(p.numel() for p in inf_price_embedder.cross_attn_parameters())
       print(f"[inflated_bi_cross] {n_cross} cross-attention layers, {n_cross_params:,} new params via unified PRICEEmbedder")
@@ -960,7 +922,10 @@ elif argsP.algo == "llm_price_finetune":
       if getattr(argsP, 'use_price_gate', False):
         model_comb = GatedLLMPriceJointModel(LLM, price_embedder, argsP.embed_size, 512, argsP.hid_units)
       else:
-        model_comb = LLMPriceJointModel(LLM, price_embedder, argsP.embed_size, 512, argsP.hid_units)
+        model_comb = LLMPriceJointModel(LLM, price_embedder, argsP.embed_size, 512, argsP.hid_units,
+                                         residual_pred=getattr(argsP, 'residual_pred', False),
+                                         delta_bound=getattr(argsP, 'delta_bound', 0.0),
+                                         use_qrt_cross_attn=getattr(argsP, 'use_qrt_cross_attn', False))
 
     # Freeze PRICE parameters if requested
     if getattr(argsP, 'freeze_all_price', False):
@@ -1046,7 +1011,10 @@ elif argsP.algo == "price_finetune":
       query_hidden_dim=512, final_hidden_dim=1024, output_dim=1,
       n_embd=_price_n_embd, n_layers=getattr(argsP, 'price_n_layers', 6), n_heads=_price_n_heads,
       dropout_rate=0.1, ffn_ratio=_price_ffn_ratio,
-      use_or_transformer=_use_or_transformer
+      use_or_transformer=_use_or_transformer,
+        or_n_layers=getattr(argsP, "or_n_layers", 1),
+        or_n_heads=getattr(argsP, "or_n_heads", 4),
+        or_ffn_ratio=getattr(argsP, "or_ffn_ratio", 1.0),
   )
   # Load with partial init for PRICE_M (histogram bins shared, operator dims differ)
   def _load_price_sd_ft(model, ckpt_sd, label=""):
@@ -1076,100 +1044,9 @@ elif argsP.algo == "price_finetune":
   model_comb.to(device)
 
 
-# ─── Retrain MLP: pre-compute frozen cross-attn embeddings ─────────────
-if getattr(argsP, '_retrain_mlp_active', False):
-    # Cache path derived from the finetuned weight prefix (set during cross-attn model construction)
-    _test_tag = f"_test-{argsP.workload_test}" if getattr(argsP, 'workload_test', '') else ""
-    _retrain_cache_path = f"{weight_prefix}{_test_tag}_retrainMLP_embeddings.pt"
-    _cache_hit = os.path.exists(_retrain_cache_path)
-
-    if _cache_hit:
-        print(f"[retrain_mlp] Loading cached embeddings from {_retrain_cache_path}")
-        _cached = torch.load(_retrain_cache_path, map_location="cpu", weights_only=False)
-        all_embeddings = _cached["embeddings"]
-        all_labels = _cached["labels"]
-        for split_name in ("train", "val", "test"):
-            print(f"  {split_name}: {all_embeddings[split_name].shape[0]} samples, embed_dim={all_embeddings[split_name].shape[1]}")
-        # No need for the full model
-        model_comb.cpu()
-        del model_comb
-        torch.cuda.empty_cache()
-    else:
-        print("[retrain_mlp] Pre-computing frozen cross-attention embeddings...")
-        model_comb.to(device)
-        model_comb.eval()
-
-        # Rebuild loaders with smaller batch size — full LLM+biCross forward
-        # at b=64 OOMs on 16 GiB GPUs. b=4 matches the finetune batch size.
-        _embed_bs = 4
-        _train_ds = train_loader.dataset
-        _val_ds = val_loader.dataset
-        _test_ds = test_loader.dataset
-        train_loader = DataLoader(_train_ds, batch_size=_embed_bs, shuffle=False,
-                                  collate_fn=getattr(train_loader, 'collate_fn', None))
-        val_loader = DataLoader(_val_ds, batch_size=_embed_bs, shuffle=False,
-                                collate_fn=getattr(val_loader, 'collate_fn', None))
-        test_loader = DataLoader(_test_ds, batch_size=1, shuffle=False,
-                                 collate_fn=getattr(test_loader, 'collate_fn', None))
-
-        all_embeddings = {}
-        all_labels = {}
-        for split_name, loader in [("train", train_loader), ("val", val_loader), ("test", test_loader)]:
-            emb_list, lab_list = [], []
-            n_batches = len(loader)
-            with torch.no_grad():
-                for bi, (batch_x, batch_y) in enumerate(loader):
-                    emb = model_comb.forward_embeddings(batch_x)
-                    emb_list.append(emb.cpu())
-                    lab_list.append(batch_y.cpu())
-                    if (bi + 1) % max(1, n_batches // 10) == 0 or bi + 1 == n_batches:
-                        print(f"  [{split_name}] {bi+1}/{n_batches} batches", flush=True)
-            all_embeddings[split_name] = torch.cat(emb_list, dim=0)
-            all_labels[split_name] = torch.cat(lab_list, dim=0)
-            print(f"  {split_name}: {all_embeddings[split_name].shape[0]} samples, embed_dim={all_embeddings[split_name].shape[1]}")
-
-        # Save cache (include cost_norm for fast-path reconstruction)
-        _cost_norm_data = {"mini": ds_info.cost_norm.mini, "maxi": ds_info.cost_norm.maxi} if ds_info.cost_norm else None
-        torch.save({"embeddings": all_embeddings, "labels": all_labels, "cost_norm": _cost_norm_data}, _retrain_cache_path)
-        print(f"[retrain_mlp] Cached embeddings to {_retrain_cache_path}")
-
-        # Free the full model from GPU
-        model_comb.cpu()
-        del model_comb
-        torch.cuda.empty_cache()
-
-    # Apply FeatureNormalizer (min-max per-dim → [0, 1]) — same treatment as
-    # mode 7's get_llm_ds_from_csv path. Without this, cached features have
-    # arbitrary mixed scales (LLM ~unit-norm, PRICE post-ELU ~0-30) and the
-    # fresh MLP fails to balance branches → systematically worse test results.
-    # Fit on train+val+test combined, like mode 7 does.
-    from utilsLLM import FeatureNormalizer
-    _all_for_fit = torch.cat([all_embeddings["train"], all_embeddings["val"], all_embeddings["test"]], dim=0)
-    _feat_norm = FeatureNormalizer()
-    _feat_norm.fit(_all_for_fit)
-    for _split in ("train", "val", "test"):
-        all_embeddings[_split] = _feat_norm.transform(all_embeddings[_split])
-    print(f"[retrain_mlp] Applied FeatureNormalizer (fit on {_all_for_fit.shape[0]} combined samples)")
-
-    # Build fresh MLP and new loaders
-    combined_dim = all_embeddings["train"].shape[1]
-    model_comb = Prediction(combined_dim, argsP.hid_units)
-    print(f"[retrain_mlp] Fresh MLP: input_dim={combined_dim}, hid_units={argsP.hid_units}")
-
-    ds = TensorDataset(all_embeddings["train"], all_labels["train"])
-    val_ds = TensorDataset(all_embeddings["val"], all_labels["val"])
-    test_ds = TensorDataset(all_embeddings["test"], all_labels["test"])
-
-    train_loader = DataLoader(ds, batch_size=argsP.batch_size, shuffle=True,
-                              generator=torch.Generator().manual_seed(argsP.seed))
-    val_loader = DataLoader(val_ds, batch_size=argsP.batch_size, shuffle=False)
-    test_loader = DataLoader(test_ds, batch_size=1, shuffle=False)
-
-    # Switch algo so training loop uses standard MLP path (StepLR scheduler)
-    argsP.algo = "llm_price"
-    argsP.embed_size = combined_dim
-    print(f"[retrain_mlp] Switched to algo=llm_price for MLP-only training ({argsP.num_epoch} epochs)")
-
+# --retrain_mlp removed 2026-05-11: the post-PRICE + cross-attn combined
+# embedding caching now lives inside get_embeddings() and runs by default
+# for argsP.algo == "llm_price" (Mode 7 / Mode 12 inference).
 
 crit = nn.MSELoss()
 
@@ -1178,7 +1055,7 @@ price_finetune_optimizer = None
 price_finetune_scheduler = None
 if argsP.algo == "llm_price_finetune" and getattr(argsP, 'freeze_llm', False):
     # Only optimize PRICE + MLP params (LLM is frozen)
-    _raw_price_lr = getattr(argsP, 'price_lr', None)
+    _raw_price_lr = getattr(argsP, 'price_warmup_lr', None)
     price_lr = _raw_price_lr if _raw_price_lr is not None else (1e-3 if getattr(argsP, 'price_random_init', False) else 2.85e-5)
     lr = argsP.learning_rate
     param_groups = [
@@ -1204,7 +1081,7 @@ if argsP.algo == "llm_price_finetune" and getattr(argsP, 'freeze_llm', False):
         )
         print(f"[freeze_llm] Custom optimizer: PRICE lr={price_lr}, MLP lr={lr}")
 elif argsP.algo == "price_finetune":
-    _raw_price_lr = getattr(argsP, 'price_lr', None)
+    _raw_price_lr = getattr(argsP, 'price_warmup_lr', None)
     price_lr = _raw_price_lr if _raw_price_lr is not None else (1e-3 if getattr(argsP, 'price_random_init', False) else 2.85e-5)
     price_finetune_optimizer = torch.optim.Adam(model_comb.parameters(), lr=price_lr)
     if getattr(argsP, 'price_random_init', False):
@@ -1392,7 +1269,8 @@ elif argsP.algo == "llm_price_finetune" and not getattr(argsP, '_cross_attn_infe
     _arch_suffix = _arch_path_suffix(argsP)
     rand_init_suffix = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
     epoch_suffix = f"_e{argsP.num_epoch}"
-    prefix = f"{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{_price_suffix}_llm_price{_arch_suffix}{rand_init_suffix}{epoch_suffix}"
+    seed_suffix = f"_seed{argsP.seed}" if hasattr(argsP, 'seed') else ""
+    prefix = f"{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{_price_suffix}_llm_price{_arch_suffix}{rand_init_suffix}{epoch_suffix}{seed_suffix}"
 
     if not getattr(argsP, 'freeze_llm', False):
         llm_sd = trained_model.llm.model.state_dict()
@@ -1411,6 +1289,15 @@ elif argsP.algo == "llm_price_finetune" and not getattr(argsP, '_cross_attn_infe
     mlp_out = os.path.join(save_path, f"{prefix}_mlp.pt")
     torch.save(mlp_sd, mlp_out)
     print(f"Saved MLP weights to {mlp_out}")
+
+    # Save Stat-core ↔ QRT cross-attn weights (top-level submodule on the
+    # joint model, not inside PRICEEmbedder). Only emitted under
+    # --use_qrt_cross_attn so legacy modes are unaffected.
+    if getattr(trained_model, 'stat_qrt', None) is not None:
+        qrt_sd = trained_model.stat_qrt.state_dict()
+        qrt_out = os.path.join(save_path, f"{prefix}_stat_qrt.pt")
+        torch.save(qrt_sd, qrt_out)
+        print(f"Saved stat_qrt weights to {qrt_out}")
 
     if hasattr(trained_model, 'gate'):
         gate_sd = trained_model.gate.state_dict()
@@ -1441,8 +1328,9 @@ elif argsP.algo == "llm_price_finetune" and not getattr(argsP, '_cross_attn_infe
 
     # Trained-model test evaluation: run the joint LLM+PRICE+MLP forward on the
     # test split (same path used for val during training) and report q-errors.
-    # This is independent of the retrain_mlp inference invocation and isolates
-    # how well the trained MLP head itself generalizes to unseen test queries.
+    # This is independent of the (separate) llm_price inference invocation and
+    # isolates how well the trained joint MLP head itself generalises to
+    # unseen test queries.
     try:
         _norm_train_test = ds_info.card_norm if argsP.card else ds_info.cost_norm
         print("\n[Trained-MLP-head] Running test evaluation on trained joint model...")
@@ -1453,7 +1341,7 @@ elif argsP.algo == "llm_price_finetune" and not getattr(argsP, '_cross_attn_infe
             workload_test=argsP.workload_test, verbose_info=False,
             train_embeddings=None, test_texts=None,
         )
-        print("\n[Trained-MLP-head] Test Q-errors (joint LLM+PRICE+MLP, no retrain_mlp):")
+        print("\n[Trained-MLP-head] Test Q-errors (joint LLM+PRICE+MLP, end-to-end):")
         print("Q Errors:", _q_errs_train)
     except Exception as _e_eval:
         print(f"[Trained-MLP-head] Test evaluation failed: {_e_eval}")

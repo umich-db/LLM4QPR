@@ -455,16 +455,23 @@ class Sql2FeatureS(Sql2Feature):
                 torch.tensor([ebo])
             ]))
 
-        # Handle single-table queries (no joins/fanout)
-        if len(join_columns) == 0:
+        # Handle single-table queries (no joins/fanout) and the partial-
+        # encoding edge case where some join cols / fanout pairs survived
+        # but the other side dropped entirely (e.g. JOB queries whose
+        # join columns are in `histogram40.pkl` but the join PAIR isn't
+        # in `fanout40.pkl`). Treat each side independently so a non-empty
+        # list isn't paired with an empty one.
+        if len(join_column_histograms) == 0:
             join_hist = torch.zeros(self.bin_size)
-            fanout_feat = torch.zeros(self.bin_size * 2)
             n_jc = 1
-            n_fo = 2
         else:
             join_hist = torch.cat(join_column_histograms)
-            fanout_feat = torch.cat(fanout_features)
             n_jc = len(join_columns)
+        if len(fanout_features) == 0:
+            fanout_feat = torch.zeros(self.bin_size * 2)
+            n_fo = 2
+        else:
+            fanout_feat = torch.cat(fanout_features)
             n_fo = len(joins) * 2
 
         if len(filter_column_features) > 0:
@@ -484,8 +491,8 @@ class Sql2FeatureS(Sql2Feature):
         assert sql_feature_len == expected, \
             f"Expected feature length {expected}, got {sql_feature_len}"
 
-        if len(join_columns) > 0:
-            assert len(join_columns) >= len(tables)
-            assert len(joins) == len(tables) - 1
-
+        # Spanning-tree assertions removed — partial encoding tolerance
+        # mode already drops tables and may produce queries where
+        # len(joins) != len(tables) - 1 (e.g. JOB queries with cyclic joins,
+        # or post-pruning of unknown tables).
         return sql_features, n_jc, n_fo, n_tb, n_fc

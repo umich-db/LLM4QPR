@@ -42,6 +42,12 @@
 #   MODES="7 12" bash experiment_scripts/compare_modes_tpcds.sh   # mode subset
 #   WORKLOADS="stats" bash experiment_scripts/compare_modes_tpcds.sh   # workload subset
 #   MODES="12w" WORKLOADS="tpcds" bash compare_modes_tpcds.sh     # both subsets
+#   SEEDS="42 43 44" bash experiment_scripts/compare_modes_tpcds.sh   # multi-seed
+#
+# Seeds: with joint-finetune weights now saved seedless (commit e92a317),
+# the first seed pays the full LLM+PRICE+MLP finetune cost; subsequent
+# seeds detect the existing seedless artifact, skip retrain, and only
+# pay the cheap inference-time MLP retrain + per-seed result CSV write.
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUN_SCRIPT="$SCRIPT_DIR/run_different_llms.sh"
@@ -65,9 +71,14 @@ fi
 if [[ -n "${WORKLOADS:-}" ]]; then
     read -ra WORKLOADS_ARR <<< "$WORKLOADS"
 else
-    WORKLOADS_ARR=(tpcds)
+    WORKLOADS_ARR=(tpcds tpch)
     # WORKLOADS_ARR=(tpcds stats)
 fi
+
+# Seeds via $SEEDS env var (space-separated), default 42.
+# Multiple seeds reuse the same joint-finetune weights and only retrain
+# the inference-time MLP head per seed.
+SEEDS="${SEEDS:-42}"
 
 # ─── Shared training arguments (workload set per-run via build_shared) ───
 build_shared () {
@@ -89,7 +100,7 @@ build_shared () {
         --ft_batch_size           "4"
         --ft_num_epoch            "30"
         --removed_fields          ""
-        --seeds                   "42"
+        --seeds                   "$SEEDS"
         --db                      "postgres"
         --workloads               "$wl"
         --checkpoint_interval     "5"

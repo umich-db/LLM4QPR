@@ -6,6 +6,12 @@ import pickle
 
 
 class Sql2Feature():
+    # Spanning-tree check: assert len(tables) == len(joins) + 1.
+    # Subclasses (e.g. Sql2FeatureB for original-PRICE semantics on real
+    # workloads) can set this to False to encode queries with cyclic join
+    # graphs (extra equi-joins beyond a tree) without rejecting the query.
+    _strict_spanning_tree = True
+
     def __init__(self, database, bin_size, usage):
         """ initialize Sql2Feature
         :param database: database name (type: str)
@@ -372,7 +378,7 @@ class Sql2Feature():
         """
 
         columns, tables, joins, ref_to_tables = self.parse_sql(sql)
-        if len(tables) != len(joins) + 1:
+        if self._strict_spanning_tree and len(tables) != len(joins) + 1:
             # Mismatch between tables and joins (e.g. self-join or parse error)
             return None
 

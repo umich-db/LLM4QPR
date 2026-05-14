@@ -709,19 +709,37 @@ def _rewrite_disjoint_or_to_in(ast):
     if not HAS_SQLGLOT:
         return
 
-    def _eq_atom(node):
-        # Strip Paren wrappers (sqlglot wraps `(c=v)` as Paren(EQ(c,v)))
+    def _strip_paren(node):
         while isinstance(node, sqlglot_exp.Paren):
             node = node.this
-        if not isinstance(node, sqlglot_exp.EQ):
-            return None
-        col = node.this
-        rhs = node.expression
-        if not isinstance(col, sqlglot_exp.Column):
-            return None
-        if isinstance(rhs, sqlglot_exp.Column):
-            return None  # join condition, not filter
-        return (str(col), rhs)
+        return node
+
+    def _leaf_to_col_and_values(node):
+        """Return (col_str, [Literal values], col_node) if leaf is an EQ or
+        IN-list on a single fully-qualified column, else None.
+
+        Treats `c = v` as a 1-element value list and `c IN (v1, v2, …)` as
+        a multi-element value list. This lets the OR-collapse pass merge
+        mixed `IN + EQ + IN` chains into one IN-list (rather than dropping
+        the entire OR — which produces an incorrect empty region when the
+        downstream atom extractor mixes `eq_values` and `in_values`
+        semantically).
+        """
+        node = _strip_paren(node)
+        if isinstance(node, sqlglot_exp.EQ):
+            col = node.this
+            rhs = node.expression
+            if not isinstance(col, sqlglot_exp.Column):
+                return None
+            if isinstance(rhs, sqlglot_exp.Column):
+                return None  # join, not filter
+            return (str(col), [rhs], col)
+        if isinstance(node, sqlglot_exp.In) and node.args.get("query") is None:
+            col = node.this
+            if not isinstance(col, sqlglot_exp.Column):
+                return None
+            return (str(col), list(node.expressions), col)
+        return None
 
     changed = True
     while changed:
@@ -731,19 +749,18 @@ def _rewrite_disjoint_or_to_in(ast):
             if or_node.parent is None:
                 continue
             leaves = _flatten_or(or_node)
-            atoms = [_eq_atom(leaf) for leaf in leaves]
-            if any(a is None for a in atoms):
+            decoded = [_leaf_to_col_and_values(leaf) for leaf in leaves]
+            if any(d is None for d in decoded):
                 continue
-            cols = {a[0] for a in atoms}
+            cols = {d[0] for d in decoded}
             if len(cols) != 1:
                 continue
-            # All leaves share the same column → rewrite to IN.
-            col_node = leaves[0]
-            # Strip Paren on the column-bearing leaf
-            while isinstance(col_node, sqlglot_exp.Paren):
-                col_node = col_node.this
-            col_node = col_node.this.copy()
-            values = [a[1].copy() for a in atoms]
+            # All leaves share the same column → rewrite to a single IN.
+            col_node = decoded[0][2].copy()
+            values = []
+            for _, vals, _ in decoded:
+                for v in vals:
+                    values.append(v.copy())
             in_node = sqlglot_exp.In(this=col_node, expressions=values)
             or_node.replace(sqlglot_exp.Paren(this=in_node))
             changed = True
@@ -2349,8 +2366,12 @@ def _preprocess_predicates(sql, db_name=None, price_m=False, price_s=False,
                 node.replace(sqlglot_exp.Paren(this=and_expr))
 
     # IN (value list) → OR equalities (subquery INs already handled in Phase 1)
-    # PRICE_M/PRICE_S: preserve IN as-is for SpaceSaving encoding
-    if not (price_m or price_s):
+    # PRICE_M/PRICE_S: preserve IN as-is for SpaceSaving encoding.
+    # PRICE_N: also preserve IN — `_extract_filter_atoms` walks `In` nodes
+    # natively (line ~1125) and populates `in_values`. Expanding to OR would
+    # round-trip through `_rewrite_disjoint_or_to_in` at best, or fragment
+    # into separate DNF clauses at worst under --price_n_or.
+    if not (price_m or price_s or price_n_parsing):
         for node in list(ast.find_all(sqlglot_exp.In)):
             col = node.this
             values = node.expressions
@@ -2381,19 +2402,24 @@ def _preprocess_predicates(sql, db_name=None, price_m=False, price_s=False,
             if isinstance(child, (sqlglot_exp.Like, sqlglot_exp.ILike)):
                 not_node.replace(tautology.copy())
 
-    # Drop non-EQ comparisons on string literals
-    for cmp_type in (sqlglot_exp.GT, sqlglot_exp.GTE, sqlglot_exp.LT,
-                     sqlglot_exp.LTE, sqlglot_exp.NEQ):
-        for node in list(ast.find_all(cmp_type)):
-            rhs = node.args.get("expression")
-            if rhs and isinstance(rhs, sqlglot_exp.Literal) and rhs.is_string:
-                node.replace(tautology.copy())
-    for node in list(ast.find_all(sqlglot_exp.Not)):
-        child = node.this
-        if isinstance(child, sqlglot_exp.EQ):
-            rhs = child.args.get("expression")
-            if rhs and isinstance(rhs, sqlglot_exp.Literal) and rhs.is_string:
-                node.replace(tautology.copy())
+    # Drop non-EQ comparisons on string literals.
+    # PRICE_N preserves them: its lex-sorted SpaceSaving summary maps
+    # `col < 'M'` etc. to a contiguous bin range with a real selectivity
+    # via _atom_to_slot. PRICE_S/PRICE_B's frequency-sorted bins can't
+    # encode `col op 'string'` meaningfully, so the drop stays for them.
+    if not price_n_parsing:
+        for cmp_type in (sqlglot_exp.GT, sqlglot_exp.GTE, sqlglot_exp.LT,
+                         sqlglot_exp.LTE, sqlglot_exp.NEQ):
+            for node in list(ast.find_all(cmp_type)):
+                rhs = node.args.get("expression")
+                if rhs and isinstance(rhs, sqlglot_exp.Literal) and rhs.is_string:
+                    node.replace(tautology.copy())
+        for node in list(ast.find_all(sqlglot_exp.Not)):
+            child = node.this
+            if isinstance(child, sqlglot_exp.EQ):
+                rhs = child.args.get("expression")
+                if rhs and isinstance(rhs, sqlglot_exp.Literal) and rhs.is_string:
+                    node.replace(tautology.copy())
 
     # --- Phase 3: Arithmetic evaluation ---
     _eval_constant_arithmetic(ast)
@@ -2735,9 +2761,16 @@ def _hoist_joins_from_or_blocks(sql):
     return f"SELECT COUNT(*) FROM {from_str} WHERE {' AND '.join(new_parts)}"
 
 
-def _clean_sql_artifacts(sql):
+def _clean_sql_artifacts(sql, price_n_parsing=False):
     """
     Clean up SQL artifacts left by incomplete CTE/subquery flattening.
+
+    Args:
+        price_n_parsing: When True, preserve BETWEEN conditions. PRICE_N's
+            atom extractor walks `Between` nodes natively and encodes their
+            bounds via the slot format. Non-PRICE_N paths already decompose
+            BETWEEN to `>=/<=` upstream, so a surviving BETWEEN here is a
+            sign of incomplete handling and is safe to strip.
 
     Handles:
     - Trailing GROUP BY, ORDER BY, LIMIT, HAVING after WHERE clause
@@ -2813,8 +2846,10 @@ def _clean_sql_artifacts(sql):
         cond_lower = cond.lower().strip()
         if 'substring(' in cond_lower:
             continue  # Drop substring conditions
-        if ' between ' in cond_lower:
-            continue  # Drop BETWEEN (mixed type dates, etc.)
+        if ' between ' in cond_lower and not price_n_parsing:
+            continue  # Drop BETWEEN (mixed type dates, etc.) — PRICE_N
+                      # natively encodes BETWEEN via its slot format, so
+                      # only drop on non-PRICE_N paths.
         if 'exists' in cond_lower:
             continue  # Drop EXISTS subqueries
         cleaned_conditions.append(cond)
@@ -4458,6 +4493,15 @@ def generate_price_features(workload, sql_list, db_name, bin_size=40,
         filter_dim = bin_size + 3
         fanout_dim = bin_size
         pairwise_dim = 0
+    elif price_b:
+        # PRICE_B: original PRICE design, but with the spanning-tree assertion
+        # relaxed so real workloads (JOB et al.) with cyclic join graphs
+        # don't get rejected with None.
+        from setup.features_tool_b import Sql2FeatureB
+        sql2feat = Sql2FeatureB(db_name, bin_size, "finetune")
+        filter_dim = bin_size + 3
+        fanout_dim = bin_size
+        pairwise_dim = 0
     else:
         from setup.features_tool import Sql2Feature
         sql2feat = Sql2Feature(db_name, bin_size, "finetune")
@@ -4510,7 +4554,8 @@ def generate_price_features(workload, sql_list, db_name, bin_size=40,
                 # Strip same-table conditions and dangling references
                 transformed_sql = _strip_same_table_conditions(transformed_sql)
                 # Clean trailing SQL artifacts (GROUP BY, unbalanced parens, CASE, substring)
-                transformed_sql = _clean_sql_artifacts(transformed_sql)
+                transformed_sql = _clean_sql_artifacts(transformed_sql,
+                                                       price_n_parsing=price_n_parsing)
                 # Hoist joins from inside OR blocks to top level (e.g., TPC-H Q19)
                 transformed_sql = _hoist_joins_from_or_blocks(transformed_sql)
                 # Remove disconnected tables (islands from subquery inlining)

@@ -1077,27 +1077,49 @@ class Sql2FeatureN(Sql2Feature):
         join_columns = self.flatten_list(list(table_join_cols.values()))
         filter_columns = self.flatten_list(list(table_filter_cols.values()))
 
-        # Join-column histograms (existing PRICE machinery)
+        # Join-column histograms (existing PRICE machinery).
+        # Skip any column whose stats are missing — mirrors PRICE_S's partial
+        # encoding tolerance so a single unknown column doesn't reject the
+        # whole query.  The list `join_columns` is rebuilt to reflect which
+        # ones actually got encoded so downstream `n_join_cols` agrees with
+        # the tensor length.
+        _kept_join_columns = []
         join_column_histograms = []
         for jc in join_columns:
-            join_column_histograms.append(
-                torch.tensor(self.get_column_histograms(jc), dtype=torch.float32))
+            try:
+                join_column_histograms.append(
+                    torch.tensor(self.get_column_histograms(jc), dtype=torch.float32))
+                _kept_join_columns.append(jc)
+            except (KeyError, IndexError, AttributeError):
+                continue
+        join_columns = _kept_join_columns
 
-        # Extended fanout tokens (rule g)
+        # Extended fanout tokens (rule g). Same partial-encoding tolerance.
+        _kept_joins = []
         fanout_tokens = []
         for j in joins:
             side = join_sides.get(j, "INNER")
-            f_lr, f_rl = self._encode_fanout_tokens_extended(j, side=side)
-            fanout_tokens.append(f_lr)
-            fanout_tokens.append(f_rl)
+            try:
+                f_lr, f_rl = self._encode_fanout_tokens_extended(j, side=side)
+                fanout_tokens.append(f_lr)
+                fanout_tokens.append(f_rl)
+                _kept_joins.append(j)
+            except (KeyError, IndexError, AttributeError):
+                continue
+        joins = _kept_joins
 
         # Filter tokens (75 dim each)
         filter_tokens = []
+        _kept_filter_columns = []
         table_sels = {t: [] for t in tables}
         for fc in filter_columns:
             atoms = filter_atoms.get(fc, dict(self.EMPTY_ATOMS))
-            tok = self._encode_filter_token(fc, atoms)
+            try:
+                tok = self._encode_filter_token(fc, atoms)
+            except (KeyError, IndexError, AttributeError):
+                continue
             filter_tokens.append(tok)
+            _kept_filter_columns.append(fc)
             # token layout: hist[40] + (10×3) slots + tail(3) + (null_fraction, null_pred_flag)
             # The (lo, hi, sel) triplet starts at offset 40, so sels live at
             # 42, 45, 48, ..., 69 (every 3rd starting at offset 2 inside the
@@ -1120,14 +1142,21 @@ class Sql2FeatureN(Sql2Feature):
             else:
                 effective = 1e-6
             table_sels[fc.split(".")[0]].append(effective)
+        # Reassign filter_columns to the kept set so downstream uses of
+        # this list (e.g. n_filter_cols) reflect what actually got encoded.
+        filter_columns = _kept_filter_columns
 
-        # Pairwise intra-table tokens (rules h, j)
+        # Pairwise intra-table tokens (rules h, j). Tolerant: skip atoms
+        # whose stats lookup fails.
         pairwise_tokens = []
         for atom in pairwise_atoms:
             # atom: (left_table, col_x, col_y, op, right_table, right_col)
             l_t, cx, cy, op, r_t, r_c = atom
-            pairwise_tokens.append(self._encode_pairwise_intra_token(
-                l_t, cx, cy, op, right_table=r_t, right_col=r_c))
+            try:
+                pairwise_tokens.append(self._encode_pairwise_intra_token(
+                    l_t, cx, cy, op, right_table=r_t, right_col=r_c))
+            except (KeyError, IndexError, AttributeError):
+                continue
 
         # Table tokens: delegate to Sql2FeatureS for byte-identical output.
         # PRICE_S computes per-column filter selectivity via histogram40

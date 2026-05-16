@@ -20,12 +20,16 @@
 # per-phase multiplication.
 
 set -uo pipefail
-cd /root/LLM4QPR/experiments
-source ~/venvs/tmpenv/bin/activate
-export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"   # RTX 5080 (16 GB)
+SCRIPT_DIR_LOCAL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "${SCRIPT_DIR_LOCAL}/.."   # → repo's experiments/ dir (works on any host)
+if [ -f ~/venvs/tmpenv/bin/activate ]; then
+    source ~/venvs/tmpenv/bin/activate
+fi
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 
-MODEL_DB="/root/LLM4QPR/experiments/analysis_scripts/model_db.csv"
-OUT_CSV="/root/LLM4QPR/experiments/analysis_scripts/profile_model_db_warmup_e2.csv"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+MODEL_DB="${REPO_ROOT}/experiments/analysis_scripts/model_db.csv"
+OUT_CSV="${REPO_ROOT}/experiments/analysis_scripts/profile_model_db_warmup_e2.csv"
 LOG_DIR="logs/postgres/logs_Train_stats_Test_stats_ours/warmup_e2_profile"
 mkdir -p "$LOG_DIR"
 
@@ -38,10 +42,22 @@ PRICE_LR="0.001"
 FT_BATCH_SIZE="24"
 HID_UNITS="2048"
 QUANT="4-bit"
-PRICE_MODEL_PATH="/root/LLM4QPR/experiments/price_statistics/model/model_params.pth"
+PRICE_MODEL_PATH="${PRICE_MODEL_PATH:-${REPO_ROOT}/experiments/price_statistics/model/model_params.pth}"
 PRICE_BIN_SIZE="40"
 N_CROSS_LAYERS="4"
 SEED="42"
+
+if [ ! -f "$PRICE_MODEL_PATH" ]; then
+    echo "ERROR: PRICE_MODEL_PATH not found: $PRICE_MODEL_PATH" >&2
+    echo "Set PRICE_MODEL_PATH=/path/to/model_params.pth and rerun." >&2
+    exit 1
+fi
+if [ ! -d "$DAT_PATH" ]; then
+    echo "ERROR: query plans dir not found: $DAT_PATH (cwd=$(pwd))" >&2
+    exit 1
+fi
+echo "Using PRICE_MODEL_PATH=$PRICE_MODEL_PATH"
+echo "Using DAT_PATH=$DAT_PATH"
 
 # Minimal-cost overrides (the whole point of this script).
 NUM_EPOCH="2"
@@ -61,6 +77,8 @@ while IFS=, read -r model rest; do
     log_file="${LOG_DIR}/time_llm_price_finetune_lora_biCrossAttn_${DB}_${LR}_b${FT_BATCH_SIZE}_h${HID_UNITS}_${model_dashed}_quant-${QUANT}_priceS_inflatePRICE_randInit_cx4_pwm${PRICE_WARMUP_EPOCHS}_frzLLM${FREEZE_LLM_UNTIL_EPOCH}_e${NUM_EPOCH}_tr${TRAIN_RATIO}_seed${SEED}.log"
     echo "[$i/$N] $model"
 
+    # Tee train.py output to ${log_file}.stdout AND the terminal so progress
+    # / errors are visible. PIPESTATUS captures train.py's rc (not tee's).
     python train.py \
         --dat_paths_train "$DAT_PATH" --dat_path_test "$DAT_PATH" \
         --log_file "$log_file" \
@@ -77,12 +95,13 @@ while IFS=, read -r model rest; do
         --price_bin_size "$PRICE_BIN_SIZE" \
         --quantification "$QUANT" \
         --price_s --price_random_init \
+        --checkpoint_interval "$NUM_EPOCH" \
         --n_cross_layers "$N_CROSS_LAYERS" --inflate_price \
         --freeze_llm_until_epoch "$FREEZE_LLM_UNTIL_EPOCH" \
         --price_warmup_epochs "$PRICE_WARMUP_EPOCHS" \
         --subdir_tag warmup_e2_profile \
-        > "${log_file}.stdout" 2>&1
-    rc=$?
+        2>&1 | tee "${log_file}.stdout"
+    rc=${PIPESTATUS[0]}
 
     # Extract per-epoch totals + inference time from the trainer log.
     warmup_ms=$(grep -oE "\[Train\] Epoch 0 total — [0-9.]+ ms" "$log_file" 2>/dev/null \

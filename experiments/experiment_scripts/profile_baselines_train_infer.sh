@@ -33,46 +33,59 @@ export DB_ENGINE="${DB_ENGINE:-postgres}"
 ALGOS=(qf aimai e2e_cost bao)
 WORKLOADS=(tpch tpcds syn job job_full stats)
 
-# Optional caps to keep this script's runtime bounded. Override via env:
-#   FAST_PROFILE=1                       → cap num_epoch via early stop
-#   EARLY_STOP_PATIENCE=10               → stop after 10 epochs without improvement
-#   EARLY_STOP_AFTER_EPOCH=20            → only start counting patience after epoch 20
-if [[ -n "${EARLY_STOP_PATIENCE:-}" ]]; then
-    export EARLY_STOP_PATIENCE
-fi
-if [[ -n "${EARLY_STOP_AFTER_EPOCH:-}" ]]; then
-    export EARLY_STOP_AFTER_EPOCH
-fi
-
 echo "algo,workload,train_ms,infer_ms,exit_code,log" > "$OUT_CSV"
+
+NUM_EPOCH="1"
+RESULTS_DIR="results/${DB_ENGINE}"
+
+# Map workload → query-plan dir (matches run_baseline.sh's resolution).
+plans_dir() {
+    case "$1" in
+        syn|job|job_full|jobm) echo "../queryPlans/imdb/${DB_ENGINE}/" ;;
+        *)                     echo "../queryPlans/$1/${DB_ENGINE}/" ;;
+    esac
+}
 
 total=$(( ${#ALGOS[@]} * ${#WORKLOADS[@]} ))
 i=0
 for algo in "${ALGOS[@]}"; do
+    case "$algo" in
+        bao)      hid_units=256;      lr=0.001;  batch_size=16 ;;
+        aimai)    hid_units=256;      lr=0.0001; batch_size=64 ;;
+        qf)       hid_units=256;      lr=0.001;  batch_size=64 ;;
+        e2e_cost) hid_units=256;      lr=0.001;  batch_size=64 ;;
+    esac
     for wl in "${WORKLOADS[@]}"; do
         i=$((i+1))
-        # Recompute the per-run log path that run_baseline.sh will write to.
-        # run_baseline.sh resolves base_name based on algo's hardcoded hyperparams;
-        # we match its format exactly so the grep below finds the right file.
-        case "$algo" in
-          bao)      hid_units=256;      lr=0.001;  batch_size=16 ;;
-          aimai)    hid_units=256;      lr=0.0001; batch_size=64 ;;
-          qf)       hid_units=256;      lr=0.001;  batch_size=64 ;;
-          e2e_cost) hid_units=256;      lr=0.001;  batch_size=64 ;;
-        esac
+        dat_path=$(plans_dir "$wl")
         base="${TASK}_${algo}_${TRAIN_RATIO}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_seed${SEED}"
         log_dir="${LOG_BASE}/logs_Train_${wl}_Test_${wl}_ours"
+        res_dir="${RESULTS_DIR}/results_Train_${wl}_Test_${wl}_ours"
         log_file="${log_dir}/${base}.log"
-        mkdir -p "$log_dir"
+        mkdir -p "$log_dir" "$res_dir"
 
         echo ""
-        echo "[$i/$total] algo=${algo}  workload=${wl}  → ${log_file}"
+        echo "[$i/$total] algo=${algo}  workload=${wl}  num_epoch=${NUM_EPOCH}"
+        echo "  log:  ${log_file}"
 
-        # run_baseline.sh signature:
-        #   $1=TRAIN_WLS  $2=WORKLOAD_TEST  $3=train_ratio  $4=SEED  $5=ALGO  $6=TASK
-        bash experiment_scripts/core_scripts/run_baseline.sh \
-            "$wl" "$wl" "$TRAIN_RATIO" "$SEED" "$algo" "$TASK"
-        rc=$?
+        # Bypass run_baseline.sh so we can override num_epoch=1 (it hardcodes 100).
+        # All other args mirror run_baseline.sh:114-128 (time task path).
+        python train.py \
+            --dat_paths_train "$dat_path" --dat_path_test "$dat_path" \
+            --output_dir_qerror "${res_dir}/${base}.csv" \
+            --output_dir_abs    "${res_dir}/${base}_abs.txt" \
+            --log_file          "$log_file" \
+            --db                "$DB_ENGINE" \
+            --workloads_train   "$wl" \
+            --workload_test     "$wl" \
+            --algo              "$algo" \
+            --num_epoch         "$NUM_EPOCH" \
+            --learning_rate     "$lr" \
+            --batch_size        "$batch_size" \
+            --train_ratio       "$TRAIN_RATIO" \
+            --seed              "$SEED" \
+            2>&1 | tee "${log_file}.stdout"
+        rc=${PIPESTATUS[0]}
 
         train_ms=$(grep -oE "\[Train\] Training took [0-9.]+ ms" "$log_file" 2>/dev/null \
                    | head -1 | grep -oE "[0-9.]+" | head -1)

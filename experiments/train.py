@@ -279,13 +279,15 @@ if "llm" in argsP.algo:
       _price_suffix = _price_path_suffix(argsP)
       if pws in ("joint", "joint_frozen_init", "gated_joint", "cross_attn_joint", "bi_cross_attn_joint", "reverse_cross_attn_joint"):
         # Joint finetuning: LLM weights saved with _llm_price_llm suffix.
-        # Path is seedless to allow cross-seed reuse of the joint-finetune
-        # artifact (must match the seedless save in train.py around line 1273).
+        # Per-seed path — matches the per-seed save in train.py:1376 and the
+        # PRICE-side loader in utilsLLM._load_price_embedder.
         _arch_suffix = _arch_path_suffix(argsP)
         rand_init_suffix = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
         ft_epochs = getattr(argsP, 'ft_num_epoch', 0)
         epoch_suffix = f"_e{ft_epochs}" if ft_epochs > 0 else ""
-        llm_path = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{_price_suffix}_llm_price{_arch_suffix}{rand_init_suffix}{epoch_suffix}_llm.pt"
+        seed_suffix = (f"_seed{int(argsP.seed)}"
+                       if getattr(argsP, 'seed', None) is not None else "")
+        llm_path = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{_price_suffix}_llm_price{_arch_suffix}{rand_init_suffix}{epoch_suffix}{seed_suffix}_llm.pt"
       else:
         # Standalone LLM finetune: weights saved with _llm suffix
         llm_path = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}_llm.pt"

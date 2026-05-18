@@ -55,7 +55,7 @@ RUN_SCRIPT="$SCRIPT_DIR/run_different_llms.sh"
 source ~/venvs/tmpenv/bin/activate
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-1}
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export GRAD_ACCUM_STEPS=${GRAD_ACCUM_STEPS:-4}
+# export GRAD_ACCUM_STEPS=${GRAD_ACCUM_STEPS:-4}
 
 # Modes can be supplied as positional args (legacy) or via $MODES env var.
 if [[ $# -gt 0 ]]; then
@@ -63,7 +63,7 @@ if [[ $# -gt 0 ]]; then
 elif [[ -n "${MODES:-}" ]]; then
     read -ra MODES <<< "$MODES"
 else
-    MODES=(7b 7)
+    MODES=(12 12w)
     # MODES=(1 2 7 12 12w)
 fi
 
@@ -71,7 +71,7 @@ fi
 if [[ -n "${WORKLOADS:-}" ]]; then
     read -ra WORKLOADS_ARR <<< "$WORKLOADS"
 else
-    WORKLOADS_ARR=(tpcds tpch)
+    WORKLOADS_ARR=(stats)
     # WORKLOADS_ARR=(tpcds stats)
 fi
 
@@ -97,7 +97,7 @@ build_shared () {
         # OOMs on a 16 GiB GPU at b=24 (max_clauses ≈ 9 for tpcds q13). Keep
         # ft_batch_size small under --price_n_or and use GRAD_ACCUM_STEPS to
         # control the effective optimization batch.
-        --ft_batch_size           "4"
+        --ft_batch_size           "24"
         --ft_num_epoch            "30"
         --removed_fields          ""
         --seeds                   "$SEEDS"
@@ -151,9 +151,9 @@ MODE12_SCHED=(
 # Mode 12w schedule: 5 epochs warmup at 1e-4 → 2e-5 thereafter.
 # (Path suffix gets _pwm5_pLR0.0001 so files don't overwrite mode 12's.)
 MODE12W_SCHED=(
-    --price_warmup_lr         "1e-4"
-    --price_warmup_epochs     "5"
-    --freeze_llm_until_epoch  "5"
+    # --price_warmup_lr         "1e-4"
+    --price_warmup_epochs     "0"
+    --freeze_llm_until_epoch  "0"
 )
 
 run_mode () {

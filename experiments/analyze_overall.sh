@@ -8,14 +8,13 @@ python experiment_scripts/compare_round_pareto.py --init_strategy random
 python experiment_scripts/compare_round_pareto.py --init_strategy stratified_arch_round --rounds 2 --keep_ratio 0.75 --keep_strategy stratified
 python experiment_scripts/compare_round_pareto.py --init_strategy stratified_kmeans_round --rounds 2 --keep_ratio 0.75 --keep_strategy stratified
 python experiment_scripts/compare_round_pareto.py --init_strategy stratified_kmeans_round --rounds 4 --keep_ratio 0.85 --keep_strategy stratified
- python experiment_scripts/compare_round_pareto.py \                                                                                                                                                                                
-      --init_strategy stratified_kmeans_round \
-      --keep_strategy stratified \                                                                                                                                                                                                   
-      --decision_epochs 12 \                                                                                                                                                                                                         
-      --keep_ratio 0.85
+python experiment_scripts/compare_round_pareto.py --init_strategy stratified_kmeans_round --keep_strategy topval --decision_epochs 12 --keep_ratio 0.85
 
 python experiment_scripts/ablate_init_and_keep.py
 python experiment_scripts/plot_hv_vs_hours.py --output ./model_selection.png --title "Stats workload: HV vs compute"
+python experiment_scripts/plot_hv_vs_hours.py --settings C D F G H --output ./model_selection.png --title "Stats workload: HV vs compute" 
+
+python experiment_scripts/plot_true_frontier.py --output ./true_pareto_frontier.png --annotate --logy --max_qerror 10 --max_latency 20
 # bash compare_results.sh
 # python analysis_scripts/summarize_inference_logs.py --log_dir logs_results_embeddings_10.11/logs
 # python analysis_scripts/summarize_train_eval_logs.py --log_dir logs_results_embeddings_10.11/logs_train_eval

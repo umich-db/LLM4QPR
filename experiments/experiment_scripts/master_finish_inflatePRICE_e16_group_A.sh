@@ -10,10 +10,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUN_SCRIPT="$SCRIPT_DIR/run_different_llms.sh"
 
 MODELS=(
-    "google/bert_uncased_L-2_H-512_A-8"
-    "albert/albert-large-v1"
-    "google/bert_uncased_L-10_H-768_A-12"
-    "sentence-transformers/paraphrase-MiniLM-L6-v2"
+    "sentence-transformers/all-MiniLM-L6-v2"
+    # "google/bert_uncased_L-2_H-512_A-8"
+    # "albert/albert-large-v1"
+    # "google/bert_uncased_L-10_H-768_A-12"
+    # "sentence-transformers/paraphrase-MiniLM-L6-v2"
 )
 
 MODELS_CSV=$(IFS=','; echo "${MODELS[*]}")

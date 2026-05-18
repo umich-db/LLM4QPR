@@ -229,7 +229,7 @@ def parse_args():
                         help="Learning rate schedule: step (StepLR), cosine (CosineAnnealingLR), or warmup_cosine (linear warmup + cosine)")
     parser.add_argument("--warmup_epochs", type=int, default=3,
                         help="Number of warmup epochs for warmup_cosine schedule (default 3)")
-    parser.add_argument("--price_warmup_epochs", type=int, default=10,
+    parser.add_argument("--price_warmup_epochs", type=int, default=0,
                         help="Number of PRICE warmup epochs at high LR before dropping to finetune LR (default 10)")
     parser.add_argument("--price_lr_schedule", type=str, default=None, choices=["step", "cosine", "warmup_cosine"],
                         help="Separate LR schedule for PRICE optimizer (default: same as --lr_schedule)")
@@ -298,6 +298,10 @@ def parse_args():
                              "on cached joint-model embeddings (matches mode 7's workflow). "
                              "Set this flag to instead evaluate the joint-trained MLP directly "
                              "(legacy behavior).")
+    parser.add_argument("--skip_train_load_finetuned_weights", action="store_true", default=False,
+                        help="For llm_price_finetune: load saved LLM/PRICE/MLP weights from "
+                             "finetuned_models/ and skip training. Used to regenerate the "
+                             "finetune-phase eval CSV without rerunning the expensive finetune.")
     parser.add_argument("--legacy_price_inference", action="store_true", default=False,
                         help="Restore pre-fix behavior of _load_price_embedder where PRICE_N "
                              "silently falls back to filter_dim=43 (truncating the 75-dim "

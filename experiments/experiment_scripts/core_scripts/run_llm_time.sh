@@ -62,10 +62,11 @@ for elt in "${TRAIN_WLS[@]:1}"; do
 done
 
 # Canonical training workload for shared model files.
-# IMDB-based workloads (syn, job_full, jobm) map to 'job' so finetuned models are shared.
+# IMDB-based workloads (job, syn, job_full, jobm) map to 'imdb' so finetuned
+# model files match the prefix produced by utilsTrain.py's _CANONICAL_MAP.
 _canonical_wl() {
   case "$1" in
-    syn|job_full|jobm) echo "job" ;;
+    job|syn|job_full|jobm) echo "imdb" ;;
     *) echo "$1" ;;
   esac
 }
@@ -377,12 +378,14 @@ if [[ -n "${EARLY_STOP_PATIENCE:-}" ]] && [[ "$EARLY_STOP_PATIENCE" -gt 0 ]]; th
 fi
 
 FREEZE_LLM_ARG=""
+FREEZE_LLM_SUFFIX=""
 if [[ -n "${FREEZE_LLM_UNTIL_EPOCH:-}" ]] && [[ "$FREEZE_LLM_UNTIL_EPOCH" -gt 0 ]]; then
   FREEZE_LLM_ARG="--freeze_llm_until_epoch $FREEZE_LLM_UNTIL_EPOCH"
+  FREEZE_LLM_SUFFIX="_frzLLM${FREEZE_LLM_UNTIL_EPOCH}"
 fi
 PRICE_WARMUP_ARG=""
 PRICE_WARMUP_SUFFIX=""
-if [[ -n "${PRICE_WARMUP_EPOCHS:-}" ]] && [[ "$PRICE_WARMUP_EPOCHS" -ne 10 ]]; then
+if [[ -n "${PRICE_WARMUP_EPOCHS:-}" ]] && [[ "$PRICE_WARMUP_EPOCHS" -ne 0 ]]; then
   PRICE_WARMUP_ARG="--price_warmup_epochs $PRICE_WARMUP_EPOCHS"
   if [[ "${PRICE_RANDOM_INIT:-}" == "true" ]]; then
     PRICE_WARMUP_SUFFIX="_pwm${PRICE_WARMUP_EPOCHS}"
@@ -769,65 +772,68 @@ if [ "$finetune" == "JointPrice" ]; then
 
   # Check if finetuned JointPrice weights already exist
   # Seedless joint-finetune weight prefix — must match train.py:1273.
-  # Different seeds reuse the same finetuned LLM+PRICE+MLP artifact;
-  # only the inference-time MLP retrain + result CSVs are per-seed.
-  JOINT_PRICE_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}_llm_price${NO_LLM_RESIDUAL_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${EPOCH_SUFFIX}"
+  # Per-seed JointPrice weights — distinct SEED → distinct finetune artifact
+  # (matches train.py per-seed save). Different seeds re-finetune from scratch.
+  JOINT_PRICE_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}_llm_price${NO_LLM_RESIDUAL_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${EPOCH_SUFFIX}_seed${SEED}"
+  algo=llm_price_finetune
+  hid_units=2048
+  lr=${LLM_LR:-0.0001}
+  price_lr=${PRICE_LR:-$PRICE_LR_DEFAULT}
+  batch_size=$FT_BATCH_SIZE
+  grad_accum_steps=${GRAD_ACCUM_STEPS:-1}
+
+  GRAD_ACCUM_ARG=""
+  if [[ "$grad_accum_steps" -gt 1 ]]; then
+    GRAD_ACCUM_ARG="--grad_accum_steps $grad_accum_steps"
+  fi
+
   if [ -f "${JOINT_PRICE_PREFIX}_llm.pt" ] && [ -f "${JOINT_PRICE_PREFIX}_price.pt" ]; then
-    echo "Finetuned JointPrice weights already exist, skipping finetune:"
+    echo "Finetuned JointPrice weights already exist; loading + emitting finetune-phase eval CSV:"
     echo "  LLM:   ${JOINT_PRICE_PREFIX}_llm.pt"
     echo "  PRICE: ${JOINT_PRICE_PREFIX}_price.pt"
+    SKIP_TRAIN_ARG="--skip_train_load_finetuned_weights"
   else
-    #########################Joint LLM+PRICE finetune#########################
-    algo=llm_price_finetune
-    hid_units=2048
-    lr=${LLM_LR:-0.0001}
-    price_lr=${PRICE_LR:-$PRICE_LR_DEFAULT}
-    batch_size=$FT_BATCH_SIZE
-    grad_accum_steps=${GRAD_ACCUM_STEPS:-1}
-
     echo "Joint LLM+PRICE finetune"
-
-    # Build grad_accum arg
-    GRAD_ACCUM_ARG=""
+    SKIP_TRAIN_ARG=""
     if [[ "$grad_accum_steps" -gt 1 ]]; then
-      GRAD_ACCUM_ARG="--grad_accum_steps $grad_accum_steps"
       echo "  Gradient accumulation: ${grad_accum_steps} steps (effective batch = ${batch_size} * ${grad_accum_steps})"
     fi
-
-    setup_args_and_suffixes
-
-    python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_lora_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${EPOCH_SUFFIX}_seed${SEED}.log \
-                                        --db $DB_ENGINE \
-                                        --workloads_train "${TRAIN_WLS[@]}" \
-                                        --workload_test ${WORKLOAD_TEST} \
-                                        --algo ${algo} \
-                                        --learning_rate $lr \
-                                        --price_lr $price_lr \
-                                        --batch_size $batch_size \
-                                        --hid_units $hid_units \
-                                        --model_name $model_name \
-                                        --train_ratio $train_ratio \
-                                        --llm_mode lora \
-                                        --num_epoch $FT_NUM_EPOCH \
-                                        --seed $SEED \
-                                        --price_model_path $PRICE_MODEL_PATH \
-                                        --price_bin_size $PRICE_BIN_SIZE \
-                                        $BUCKETIZE_ARG \
-                                        $QUANTIFICATION_ARG \
-                                        $REMOVED_FIELDS_ARG \
-                                        $PRICE_M_ARG $PRICE_S_ARG $PRICE_B_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
-                                        $PRICE_RANDOM_INIT_FLAG \
-                                        $CHECKPOINT_INTERVAL_ARG \
-                                        $GRAD_ACCUM_ARG \
-                                        $PRICE_N_LAYERS_ARG \
-                                        $PRICE_FFN_RATIO_ARG $OR_N_LAYERS_ARG $OR_N_HEADS_ARG $OR_FFN_RATIO_ARG \
-                                        $EARLY_STOP_ARG \
-                                        $FREEZE_LLM_ARG \
-                                        $PRICE_WARMUP_ARG \
-                                        $PRICE_LR_ARG \
-                                        $SUBDIR_ARG
   fi
+
+  setup_args_and_suffixes
+
+  python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
+                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_lora_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${EPOCH_SUFFIX}_seed${SEED}.log \
+                                      --db $DB_ENGINE \
+                                      --workloads_train "${TRAIN_WLS[@]}" \
+                                      --workload_test ${WORKLOAD_TEST} \
+                                      --algo ${algo} \
+                                      --learning_rate $lr \
+                                      --price_lr $price_lr \
+                                      --batch_size $batch_size \
+                                      --hid_units $hid_units \
+                                      --model_name $model_name \
+                                      --train_ratio $train_ratio \
+                                      --llm_mode lora \
+                                      --num_epoch $FT_NUM_EPOCH \
+                                      --seed $SEED \
+                                      --price_model_path $PRICE_MODEL_PATH \
+                                      --price_bin_size $PRICE_BIN_SIZE \
+                                      $BUCKETIZE_ARG \
+                                      $QUANTIFICATION_ARG \
+                                      $REMOVED_FIELDS_ARG \
+                                      $PRICE_M_ARG $PRICE_S_ARG $PRICE_B_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
+                                      $PRICE_RANDOM_INIT_FLAG \
+                                      $CHECKPOINT_INTERVAL_ARG \
+                                      $GRAD_ACCUM_ARG \
+                                      $PRICE_N_LAYERS_ARG \
+                                      $PRICE_FFN_RATIO_ARG $OR_N_LAYERS_ARG $OR_N_HEADS_ARG $OR_FFN_RATIO_ARG \
+                                      $EARLY_STOP_ARG \
+                                      $FREEZE_LLM_ARG \
+                                      $PRICE_WARMUP_ARG \
+                                      $PRICE_LR_ARG \
+                                      $SUBDIR_ARG \
+                                      $SKIP_TRAIN_ARG
 
   #########################inference: pre-trained JointPrice#########################
   algo=llm_price
@@ -1409,7 +1415,7 @@ if [ "$finetune" == "CrossAttentionJoint" ]; then
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
   # Check if finetuned CrossAttentionJoint weights already exist
-  CROSS_ATTN_JOINT_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}_llm_price${NO_LLM_RESIDUAL_SUFFIX}${CROSS_ATTN_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${CROSS_ATTN_DROPOUT_SUFFIX}${CROSS_ATTN_GATE_SUFFIX}${RESIDUAL_PRED_SUFFIX}${DELTA_BOUND_SUFFIX}${PRICE_EMB_DROPOUT_SUFFIX}${INIT_LLM_FROM_SUFFIX}${DETERMINISTIC_SUFFIX}${CROSS_ATTN_NOOP_SUFFIX}${FORCE_INFLATE_SUFFIX}${PRICE_OUTPUT_DIM_SUFFIX}${PRICE_WARMUP_SUFFIX}${PRICE_LR_SUFFIX}${EPOCH_SUFFIX}"
+  CROSS_ATTN_JOINT_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}_llm_price${NO_LLM_RESIDUAL_SUFFIX}${CROSS_ATTN_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${CROSS_ATTN_DROPOUT_SUFFIX}${CROSS_ATTN_GATE_SUFFIX}${RESIDUAL_PRED_SUFFIX}${DELTA_BOUND_SUFFIX}${PRICE_EMB_DROPOUT_SUFFIX}${INIT_LLM_FROM_SUFFIX}${DETERMINISTIC_SUFFIX}${CROSS_ATTN_NOOP_SUFFIX}${FORCE_INFLATE_SUFFIX}${PRICE_OUTPUT_DIM_SUFFIX}${FREEZE_LLM_SUFFIX}${PRICE_WARMUP_SUFFIX}${PRICE_LR_SUFFIX}${EPOCH_SUFFIX}"
   if [ -f "${CROSS_ATTN_JOINT_PREFIX}_llm.pt" ] && [ -f "${CROSS_ATTN_JOINT_PREFIX}_price.pt" ]; then
     echo "Finetuned CrossAttentionJoint weights already exist, skipping finetune:"
     echo "  LLM:   ${CROSS_ATTN_JOINT_PREFIX}_llm.pt"
@@ -1435,7 +1441,7 @@ if [ "$finetune" == "CrossAttentionJoint" ]; then
     setup_args_and_suffixes
 
     python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_lora_crossAttn_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${CROSS_ATTN_DROPOUT_SUFFIX}${CROSS_ATTN_GATE_SUFFIX}${RESIDUAL_PRED_SUFFIX}${DELTA_BOUND_SUFFIX}${PRICE_EMB_DROPOUT_SUFFIX}${INIT_LLM_FROM_SUFFIX}${DETERMINISTIC_SUFFIX}${CROSS_ATTN_NOOP_SUFFIX}${FORCE_INFLATE_SUFFIX}${PRICE_OUTPUT_DIM_SUFFIX}${PRICE_WARMUP_SUFFIX}${PRICE_LR_SUFFIX}${EPOCH_SUFFIX}.log \
+                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_lora_crossAttn_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${CROSS_ATTN_DROPOUT_SUFFIX}${CROSS_ATTN_GATE_SUFFIX}${RESIDUAL_PRED_SUFFIX}${DELTA_BOUND_SUFFIX}${PRICE_EMB_DROPOUT_SUFFIX}${INIT_LLM_FROM_SUFFIX}${DETERMINISTIC_SUFFIX}${CROSS_ATTN_NOOP_SUFFIX}${FORCE_INFLATE_SUFFIX}${PRICE_OUTPUT_DIM_SUFFIX}${FREEZE_LLM_SUFFIX}${PRICE_WARMUP_SUFFIX}${PRICE_LR_SUFFIX}${EPOCH_SUFFIX}.log \
                                         --db $DB_ENGINE \
                                         --workloads_train "${TRAIN_WLS[@]}" \
                                         --workload_test ${WORKLOAD_TEST} \
@@ -1535,7 +1541,7 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
   # Check if finetuned BiCrossAttentionJoint weights already exist
-  BI_CROSS_ATTN_JOINT_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}_llm_price${NO_LLM_RESIDUAL_SUFFIX}${BI_CROSS_ATTN_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${CROSS_ATTN_DROPOUT_SUFFIX}${CROSS_ATTN_GATE_SUFFIX}${RESIDUAL_PRED_SUFFIX}${DELTA_BOUND_SUFFIX}${PRICE_EMB_DROPOUT_SUFFIX}${INIT_LLM_FROM_SUFFIX}${DETERMINISTIC_SUFFIX}${CROSS_ATTN_NOOP_SUFFIX}${FORCE_INFLATE_SUFFIX}${PRICE_OUTPUT_DIM_SUFFIX}${PRICE_WARMUP_SUFFIX}${PRICE_LR_SUFFIX}${EPOCH_SUFFIX}"
+  BI_CROSS_ATTN_JOINT_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}_llm_price${NO_LLM_RESIDUAL_SUFFIX}${BI_CROSS_ATTN_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${CROSS_ATTN_DROPOUT_SUFFIX}${CROSS_ATTN_GATE_SUFFIX}${RESIDUAL_PRED_SUFFIX}${DELTA_BOUND_SUFFIX}${PRICE_EMB_DROPOUT_SUFFIX}${INIT_LLM_FROM_SUFFIX}${DETERMINISTIC_SUFFIX}${CROSS_ATTN_NOOP_SUFFIX}${FORCE_INFLATE_SUFFIX}${PRICE_OUTPUT_DIM_SUFFIX}${FREEZE_LLM_SUFFIX}${PRICE_WARMUP_SUFFIX}${PRICE_LR_SUFFIX}${EPOCH_SUFFIX}"
   if [ -f "${BI_CROSS_ATTN_JOINT_PREFIX}_llm.pt" ] && [ -f "${BI_CROSS_ATTN_JOINT_PREFIX}_price.pt" ]; then
     echo "Finetuned BiCrossAttentionJoint weights already exist, skipping finetune:"
     echo "  LLM:   ${BI_CROSS_ATTN_JOINT_PREFIX}_llm.pt"
@@ -1567,12 +1573,12 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
     # the PRICE_N suffix tags so multi-mode/multi-seed runs don't collide.
     NO_LLM_RES_QERROR_ARG=""
     if [[ -n "$NO_LLM_RESIDUAL_ARG" ]]; then
-      NO_LLM_RES_QERROR_ARG="--output_dir_qerror ${RESULTS_DIR}/results_Train_${TRAIN_WLS_HYPHEN}_Test_${WORKLOAD_TEST}_ours${SUBDIR_PART}/time_${algo}_priceBiCrossAttnJoint_noLLMres_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${CROSS_ATTN_DROPOUT_SUFFIX}${CROSS_ATTN_GATE_SUFFIX}${RESIDUAL_PRED_SUFFIX}${DELTA_BOUND_SUFFIX}${PRICE_EMB_DROPOUT_SUFFIX}${INIT_LLM_FROM_SUFFIX}${DETERMINISTIC_SUFFIX}${CROSS_ATTN_NOOP_SUFFIX}${FORCE_INFLATE_SUFFIX}${PRICE_OUTPUT_DIM_SUFFIX}${PRICE_WARMUP_SUFFIX}${PRICE_LR_SUFFIX}${EPOCH_SUFFIX}_seed${SEED}.csv"
+      NO_LLM_RES_QERROR_ARG="--output_dir_qerror ${RESULTS_DIR}/results_Train_${TRAIN_WLS_HYPHEN}_Test_${WORKLOAD_TEST}_ours${SUBDIR_PART}/time_${algo}_priceBiCrossAttnJoint_noLLMres_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${CROSS_ATTN_DROPOUT_SUFFIX}${CROSS_ATTN_GATE_SUFFIX}${RESIDUAL_PRED_SUFFIX}${DELTA_BOUND_SUFFIX}${PRICE_EMB_DROPOUT_SUFFIX}${INIT_LLM_FROM_SUFFIX}${DETERMINISTIC_SUFFIX}${CROSS_ATTN_NOOP_SUFFIX}${FORCE_INFLATE_SUFFIX}${PRICE_OUTPUT_DIM_SUFFIX}${FREEZE_LLM_SUFFIX}${PRICE_WARMUP_SUFFIX}${PRICE_LR_SUFFIX}${EPOCH_SUFFIX}_seed${SEED}.csv"
       mkdir -p "${RESULTS_DIR}/results_Train_${TRAIN_WLS_HYPHEN}_Test_${WORKLOAD_TEST}_ours${SUBDIR_PART}"
     fi
 
     python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_lora_biCrossAttn_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}${NO_LLM_RESIDUAL_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${CROSS_ATTN_DROPOUT_SUFFIX}${CROSS_ATTN_GATE_SUFFIX}${RESIDUAL_PRED_SUFFIX}${DELTA_BOUND_SUFFIX}${PRICE_EMB_DROPOUT_SUFFIX}${INIT_LLM_FROM_SUFFIX}${DETERMINISTIC_SUFFIX}${CROSS_ATTN_NOOP_SUFFIX}${FORCE_INFLATE_SUFFIX}${PRICE_OUTPUT_DIM_SUFFIX}${PRICE_WARMUP_SUFFIX}${PRICE_LR_SUFFIX}${EPOCH_SUFFIX}_seed${SEED}.log \
+                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_lora_biCrossAttn_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}${NO_LLM_RESIDUAL_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${CROSS_ATTN_DROPOUT_SUFFIX}${CROSS_ATTN_GATE_SUFFIX}${RESIDUAL_PRED_SUFFIX}${DELTA_BOUND_SUFFIX}${PRICE_EMB_DROPOUT_SUFFIX}${INIT_LLM_FROM_SUFFIX}${DETERMINISTIC_SUFFIX}${CROSS_ATTN_NOOP_SUFFIX}${FORCE_INFLATE_SUFFIX}${PRICE_OUTPUT_DIM_SUFFIX}${FREEZE_LLM_SUFFIX}${PRICE_WARMUP_SUFFIX}${PRICE_LR_SUFFIX}${EPOCH_SUFFIX}_seed${SEED}.log \
                                         --db $DB_ENGINE \
                                         --workloads_train "${TRAIN_WLS[@]}" \
                                         --workload_test ${WORKLOAD_TEST} \
@@ -1702,7 +1708,7 @@ if [ "$finetune" == "ReverseCrossAttentionJoint" ]; then
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
   # Check if finetuned ReverseCrossAttentionJoint weights already exist
-  REV_CROSS_ATTN_JOINT_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}_llm_price${NO_LLM_RESIDUAL_SUFFIX}${REV_CROSS_ATTN_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${CROSS_ATTN_DROPOUT_SUFFIX}${CROSS_ATTN_GATE_SUFFIX}${RESIDUAL_PRED_SUFFIX}${DELTA_BOUND_SUFFIX}${PRICE_EMB_DROPOUT_SUFFIX}${INIT_LLM_FROM_SUFFIX}${DETERMINISTIC_SUFFIX}${CROSS_ATTN_NOOP_SUFFIX}${FORCE_INFLATE_SUFFIX}${PRICE_OUTPUT_DIM_SUFFIX}${PRICE_WARMUP_SUFFIX}${PRICE_LR_SUFFIX}${EPOCH_SUFFIX}"
+  REV_CROSS_ATTN_JOINT_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}_llm_price${NO_LLM_RESIDUAL_SUFFIX}${REV_CROSS_ATTN_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${CROSS_ATTN_DROPOUT_SUFFIX}${CROSS_ATTN_GATE_SUFFIX}${RESIDUAL_PRED_SUFFIX}${DELTA_BOUND_SUFFIX}${PRICE_EMB_DROPOUT_SUFFIX}${INIT_LLM_FROM_SUFFIX}${DETERMINISTIC_SUFFIX}${CROSS_ATTN_NOOP_SUFFIX}${FORCE_INFLATE_SUFFIX}${PRICE_OUTPUT_DIM_SUFFIX}${FREEZE_LLM_SUFFIX}${PRICE_WARMUP_SUFFIX}${PRICE_LR_SUFFIX}${EPOCH_SUFFIX}"
   if [ -f "${REV_CROSS_ATTN_JOINT_PREFIX}_llm.pt" ] && [ -f "${REV_CROSS_ATTN_JOINT_PREFIX}_price.pt" ]; then
     echo "Finetuned ReverseCrossAttentionJoint weights already exist, skipping finetune:"
     echo "  LLM:   ${REV_CROSS_ATTN_JOINT_PREFIX}_llm.pt"
@@ -1721,7 +1727,7 @@ if [ "$finetune" == "ReverseCrossAttentionJoint" ]; then
     setup_args_and_suffixes
 
     python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_revCrossAttn_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${CROSS_ATTN_DROPOUT_SUFFIX}${CROSS_ATTN_GATE_SUFFIX}${RESIDUAL_PRED_SUFFIX}${DELTA_BOUND_SUFFIX}${PRICE_EMB_DROPOUT_SUFFIX}${INIT_LLM_FROM_SUFFIX}${DETERMINISTIC_SUFFIX}${CROSS_ATTN_NOOP_SUFFIX}${FORCE_INFLATE_SUFFIX}${PRICE_OUTPUT_DIM_SUFFIX}${PRICE_WARMUP_SUFFIX}${PRICE_LR_SUFFIX}${EPOCH_SUFFIX}.log \
+                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_revCrossAttn_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${CROSS_ATTN_DROPOUT_SUFFIX}${CROSS_ATTN_GATE_SUFFIX}${RESIDUAL_PRED_SUFFIX}${DELTA_BOUND_SUFFIX}${PRICE_EMB_DROPOUT_SUFFIX}${INIT_LLM_FROM_SUFFIX}${DETERMINISTIC_SUFFIX}${CROSS_ATTN_NOOP_SUFFIX}${FORCE_INFLATE_SUFFIX}${PRICE_OUTPUT_DIM_SUFFIX}${FREEZE_LLM_SUFFIX}${PRICE_WARMUP_SUFFIX}${PRICE_LR_SUFFIX}${EPOCH_SUFFIX}.log \
                                         --db $DB_ENGINE \
                                         --workloads_train "${TRAIN_WLS[@]}" \
                                         --workload_test ${WORKLOAD_TEST} \

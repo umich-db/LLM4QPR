@@ -3125,7 +3125,10 @@ def _compute_combined_for_dat_path(predictor, ds_info, dat_path, argsP, device,
         combined = torch.cat(_combined_list, dim=0)
         print(f"[combined cx={n_cross}] done. combined.shape={combined.shape}  "
               f"took {_time.time()-_t0_cx:.0f}s", flush=True)
-        _model_comb.cpu()
+        # Do NOT move _model_comb to CPU before delete: it shares the LLM
+        # submodule with `predictor`, and a 4-bit fp4 quantized LLM cannot
+        # run on CPU (bitsandbytes only supports nf4 on CPU). Just drop the
+        # wrapper; non-shared sub-modules (cross-attn, MLP) get GC'd.
         del _model_comb
         price_embedder.to("cpu")
         torch.cuda.empty_cache()
@@ -3715,8 +3718,8 @@ def _load_price_embedder(argsP, max_njc, max_nfo, max_ntb, max_nfc, device):
                 parts.append(f"orFR{or_fr:g}")
         # Schedule overrides (only when random_init is on)
         if getattr(ap, 'price_random_init', False):
-            pwm = getattr(ap, 'price_warmup_epochs', 10)
-            if pwm != 10:
+            pwm = getattr(ap, 'price_warmup_epochs', 0)
+            if pwm != 0:
                 parts.append(f"pwm{pwm}")
             plr = getattr(ap, 'price_lr', None)
             if plr is not None and plr != 1e-3:
@@ -3732,10 +3735,10 @@ def _load_price_embedder(argsP, max_njc, max_nfo, max_ntb, max_nfc, device):
     n_layers_suffix = f"_pL{argsP.price_n_layers}" if getattr(argsP, 'price_n_layers', 6) != 6 else ""
     ft_epochs = getattr(argsP, 'ft_num_epoch', 0)
     epoch_suffix = f"_e{ft_epochs}" if ft_epochs > 0 else ""
-    # Joint-finetune weights are now saved seedless (train.py:1273) so that
-    # different evaluation seeds can reuse the same heavy LLM+PRICE+MLP
-    # finetune instead of retraining. Keep this string empty to match.
-    seed_suffix = ""
+    # Joint-finetune weights are now per-seed (train.py saves with _seed{N}),
+    # so the inference loader picks the correct artifact for argsP.seed.
+    seed_suffix = (f"_seed{int(argsP.seed)}"
+                   if getattr(argsP, 'seed', None) is not None else "")
     # Helper: load checkpoint into model with partial init for size-mismatched weights.
     # For PRICE_M, filter_embeddings.weight changes from [n_embd,43] to [n_embd,61];
     # copies the overlapping columns (histogram bins) and leaves the rest randomly initialized.

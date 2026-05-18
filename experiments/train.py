@@ -167,8 +167,8 @@ def _arch_path_suffix(argsP):
     # Schedule overrides (only when --price_random_init is on, since that's
     # when the price-warmup→2e-5 schedule actually fires).
     if getattr(argsP, 'price_random_init', False):
-        pwm = getattr(argsP, 'price_warmup_epochs', 10)
-        if pwm != 10:
+        pwm = getattr(argsP, 'price_warmup_epochs', 0)
+        if pwm != 0:
             parts.append(f"pwm{pwm}")
         plr = getattr(argsP, 'price_warmup_lr', None)
         if plr is not None and plr != 1e-3:
@@ -1066,7 +1066,7 @@ if argsP.algo == "llm_price_finetune" and getattr(argsP, 'freeze_llm', False):
     price_finetune_optimizer = torch.optim.Adam(param_groups)
     if getattr(argsP, 'price_random_init', False):
         _finetune_lr = 2e-5
-        _price_warmup = getattr(argsP, 'price_warmup_epochs', 10)
+        _price_warmup = getattr(argsP, 'price_warmup_epochs', 0)
         def _random_init_schedule_frozen(epoch, _price_lr=price_lr, _ft_lr=_finetune_lr, _pw=_price_warmup):
             if epoch < _pw:
                 return 1.0
@@ -1087,7 +1087,7 @@ elif argsP.algo == "price_finetune":
     price_finetune_optimizer = torch.optim.Adam(model_comb.parameters(), lr=price_lr)
     if getattr(argsP, 'price_random_init', False):
         _finetune_lr = 2e-5
-        _price_warmup = getattr(argsP, 'price_warmup_epochs', 10)
+        _price_warmup = getattr(argsP, 'price_warmup_epochs', 0)
         def _random_init_schedule_ft(epoch, _price_lr=price_lr, _ft_lr=_finetune_lr, _pw=_price_warmup):
             if epoch < _pw:
                 return 1.0
@@ -1227,6 +1227,67 @@ if getattr(argsP, '_cross_attn_inference', False):
     trained_model.to(argsP.device)
     training_time = 0.0
     argsP.main_logger.info(f"[Train] Skipped training (cross-attention inference with pre-loaded weights)")
+elif getattr(argsP, 'skip_train_load_finetuned_weights', False) and argsP.algo == "llm_finetune":
+    # Load saved LLM + MLP weights and skip training so we can regenerate the
+    # mode-2 finetune-phase eval CSV without rerunning the heavy LLM finetune.
+    _sp = f"finetuned_models/{argsP.db}{_GSUB}/"
+    _ts = "card" if argsP.card else "time"
+    _stats_suffix = ""
+    if getattr(argsP, "stats_token_inject", False):
+        _stats_suffix = f"_statTok-{getattr(argsP, 'stats_token_mode', 'per_column')}"
+    _prefix = f"{argsP.canonical_wl_prefix}_{_ts}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{_stats_suffix}"
+    _llm_p = os.path.join(_sp, f"{_prefix}_llm.pt")
+    # model_comb is nn.Sequential(LLM, MLP); LLM is index 0, MLP is index 1.
+    _r = model_comb[0].model.load_state_dict(
+        torch.load(_llm_p, map_location=argsP.device), strict=False)
+    print(f"[skip_train] Loaded LLM weights from {_llm_p}"
+          f" (missing={len(_r.missing_keys)}, unexpected={len(_r.unexpected_keys)})")
+    _mlp_p = os.path.join(_sp, f"{_prefix}_mlp.pt")
+    if os.path.exists(_mlp_p):
+        _r = model_comb[1].load_state_dict(
+            torch.load(_mlp_p, map_location=argsP.device), strict=False)
+        print(f"[skip_train] Loaded MLP weights from {_mlp_p}"
+              f" (missing={len(_r.missing_keys)}, unexpected={len(_r.unexpected_keys)})")
+    else:
+        print(f"[skip_train] WARNING: no saved MLP at {_mlp_p}; MLP is freshly initialised")
+    model_comb.to(argsP.device)
+    trained_model = model_comb
+    training_time = 0.0
+    argsP.main_logger.info(f"[Train] Skipped training (loaded saved llm_finetune weights from {_sp})")
+elif getattr(argsP, 'skip_train_load_finetuned_weights', False) and argsP.algo == "llm_price_finetune":
+    # Load saved finetune weights and skip training so we can regenerate the
+    # finetune-phase eval CSV without rerunning the heavy joint finetune.
+    _sp = f"finetuned_models/{argsP.db}{_GSUB}/"
+    _ts = "card" if argsP.card else "time"
+    _ps = _price_path_suffix(argsP)
+    _as = _arch_path_suffix(argsP)
+    _ri = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
+    _es = f"_e{argsP.num_epoch}"
+    _seed_suf = f"_seed{argsP.seed}" if getattr(argsP, 'seed', None) is not None else ""
+    _prefix = f"{argsP.canonical_wl_prefix}_{_ts}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{_ps}_llm_price{_as}{_ri}{_es}{_seed_suf}"
+    # strict=False tolerates bitsandbytes 4-bit quant metadata keys
+    # (.absmax / .quant_map / .quant_state.*) present in saved weights but
+    # not in the freshly-built PEFT model.
+    if not getattr(argsP, 'freeze_llm', False):
+        _llm_p = os.path.join(_sp, f"{_prefix}_llm.pt")
+        _r = model_comb.llm.model.load_state_dict(
+            torch.load(_llm_p, map_location=argsP.device), strict=False)
+        print(f"[skip_train] Loaded LLM weights from {_llm_p}"
+              f" (missing={len(_r.missing_keys)}, unexpected={len(_r.unexpected_keys)})")
+    _price_p = os.path.join(_sp, f"{_prefix}_price.pt")
+    _r = model_comb.price.load_state_dict(
+        torch.load(_price_p, map_location=argsP.device), strict=False)
+    print(f"[skip_train] Loaded PRICE weights from {_price_p}"
+          f" (missing={len(_r.missing_keys)}, unexpected={len(_r.unexpected_keys)})")
+    _mlp_p = os.path.join(_sp, f"{_prefix}_mlp.pt")
+    _r = model_comb.mlp.load_state_dict(
+        torch.load(_mlp_p, map_location=argsP.device), strict=False)
+    print(f"[skip_train] Loaded MLP weights from {_mlp_p}"
+          f" (missing={len(_r.missing_keys)}, unexpected={len(_r.unexpected_keys)})")
+    model_comb.to(argsP.device)
+    trained_model = model_comb
+    training_time = 0.0
+    argsP.main_logger.info(f"[Train] Skipped training (loaded saved finetune weights from {_sp})")
 elif _baseline_cached:
     training_time = 0.0
     argsP.main_logger.info(f"[Train] Skipped training (loaded from cache)")
@@ -1254,12 +1315,51 @@ if argsP.algo == "llm_finetune":
     if getattr(argsP, "stats_token_inject", False):
         stats_mode = getattr(argsP, "stats_token_mode", "per_column")
         stats_suffix = f"_statTok-{stats_mode}"
-    if argsP.card:
-        llm_out = os.path.join(save_dir, f"{argsP.canonical_wl_prefix}_card_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{stats_suffix}_llm.pt")
-    else:
-        llm_out = os.path.join(save_dir, f"{argsP.canonical_wl_prefix}_time_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{stats_suffix}_llm.pt")
+    task_str = "card" if argsP.card else "time"
+    _ft_prefix = f"{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{stats_suffix}"
+    llm_out = os.path.join(save_dir, f"{_ft_prefix}_llm.pt")
     torch.save(llm_sd, llm_out)
     print(f"🔖  Saved LLM weights to {llm_out}")
+    # Also save the jointly-trained MLP head so it can be reloaded for
+    # finetune-phase evaluation (skip_train_load_finetuned_weights).
+    # trained_model is nn.Sequential(LLM, MLP); MLP is index 1.
+    mlp_out = os.path.join(save_dir, f"{_ft_prefix}_mlp.pt")
+    torch.save(trained_model[1].state_dict(), mlp_out)
+    print(f"🔖  Saved MLP weights to {mlp_out}")
+
+    # Trained-MLP-head test evaluation + CSV (mirrors the llm_price_finetune
+    # branch). Derives CSV path from --log_file so it lands in results/
+    # alongside the retrain-MLP CSV with a distinct _llm_finetune_ token.
+    try:
+        import re as _re
+        _norm_ft = ds_info.card_norm if argsP.card else ds_info.cost_norm
+        _ft_csv_path = None
+        _lf = getattr(argsP, 'log_file', None)
+        if _lf:
+            _csv_dir = _re.sub(r'(^|/)logs/', r'\1results/',
+                               os.path.dirname(_lf), count=1)
+            _csv_dir = _csv_dir.replace('logs_Train_', 'results_Train_', 1)
+            _stem = os.path.basename(_lf).rsplit('.log', 1)[0]
+            _csv_name = _re.sub(r'_seed(\d+)$', r'_cdf_seed\1', _stem)
+            # Tag with _cdf if no _seed (mode 2 logs are often seedless).
+            if _csv_name == _stem:
+                _csv_name = _stem + '_cdf'
+            _csv_name = _csv_name + '.csv'
+            _ft_csv_path = os.path.join(_csv_dir, _csv_name)
+            os.makedirs(_csv_dir, exist_ok=True)
+        print("\n[Trained-MLP-head] Running test evaluation on trained joint LLM+MLP...")
+        _q_errs_ft, _, _q_dist_ft, _ = evaluate(
+            trained_model, argsP, test_loader, _norm_ft, device, data_sec="test",
+            save_embeddings=False, test_embeddings=None,
+            test_templates=test_templates, output_dir_qerror=None,
+            workload_test=argsP.workload_test, verbose_info=False,
+            train_embeddings=None, test_texts=None,
+        )
+        print("[Trained-MLP-head] Test Q-errors (joint LLM+MLP):", _q_errs_ft)
+        if _ft_csv_path is not None and _q_dist_ft is not None:
+            save_error_cdf(_q_dist_ft, _ft_csv_path, error_type="Qerror")
+    except Exception as _e_eval:
+        print(f"[Trained-MLP-head] Test evaluation failed: {_e_eval}")
 elif argsP.algo == "llm_price_finetune" and not getattr(argsP, '_cross_attn_inference', False):
     # Save components: LLM (if not frozen), PRICE, MLP
     save_path = f"finetuned_models/{argsP.db}{_GSUB}/"
@@ -1270,12 +1370,11 @@ elif argsP.algo == "llm_price_finetune" and not getattr(argsP, '_cross_attn_infe
     _arch_suffix = _arch_path_suffix(argsP)
     rand_init_suffix = "_randInit" if getattr(argsP, 'price_random_init', False) else ""
     epoch_suffix = f"_e{argsP.num_epoch}"
-    # Final joint-finetune weights are deliberately seedless: the heavy
-    # train (LLM LoRA + PRICE + MLP) is expensive, and different evaluation
-    # seeds (which only affect the inference-time MLP retraining + result
-    # CSVs) can share the same finetuned artifact instead of retraining.
-    # Checkpoints and inference-result paths still carry the seed.
-    prefix = f"{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{_price_suffix}_llm_price{_arch_suffix}{rand_init_suffix}{epoch_suffix}"
+    # Per-seed joint-finetune weights: different evaluation seeds get distinct
+    # LLM+PRICE+MLP artifacts (re-finetune required) so a result CSV with
+    # seedN can be traced back to a finetune run that actually used seedN.
+    seed_suffix = f"_seed{argsP.seed}" if getattr(argsP, 'seed', None) is not None else ""
+    prefix = f"{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{_price_suffix}_llm_price{_arch_suffix}{rand_init_suffix}{epoch_suffix}{seed_suffix}"
 
     if not getattr(argsP, 'freeze_llm', False):
         llm_sd = trained_model.llm.model.state_dict()
@@ -1338,6 +1437,23 @@ elif argsP.algo == "llm_price_finetune" and not getattr(argsP, '_cross_attn_infe
     # unseen test queries.
     try:
         _norm_train_test = ds_info.card_norm if argsP.card else ds_info.cost_norm
+        # Derive a CSV path from --log_file so the finetune-phase MLP results
+        # land in results/ alongside the retrain-MLP CSVs (same dir, distinct
+        # name via _finetune_lora_ token vs _pretrained-lora_). Insert _cdf
+        # before _seed so the filename matches to_table_seeds' *cdf*seed* glob.
+        import re as _re
+        _ft_csv_path = None
+        _lf = getattr(argsP, 'log_file', None)
+        if _lf:
+            # Swap top-level logs/ → results/ and the per-experiment
+            # logs_Train_… → results_Train_… subdir.
+            _csv_dir = _re.sub(r'(^|/)logs/', r'\1results/',
+                               os.path.dirname(_lf), count=1)
+            _csv_dir = _csv_dir.replace('logs_Train_', 'results_Train_', 1)
+            _stem = os.path.basename(_lf).rsplit('.log', 1)[0]
+            _csv_name = _re.sub(r'_seed(\d+)$', r'_cdf_seed\1', _stem) + '.csv'
+            _ft_csv_path = os.path.join(_csv_dir, _csv_name)
+            os.makedirs(_csv_dir, exist_ok=True)
         print("\n[Trained-MLP-head] Running test evaluation on trained joint model...")
         _q_errs_train, _, _q_dist_train, _ = evaluate(
             trained_model, argsP, test_loader, _norm_train_test, device, data_sec="test",
@@ -1348,6 +1464,8 @@ elif argsP.algo == "llm_price_finetune" and not getattr(argsP, '_cross_attn_infe
         )
         print("\n[Trained-MLP-head] Test Q-errors (joint LLM+PRICE+MLP, end-to-end):")
         print("Q Errors:", _q_errs_train)
+        if _ft_csv_path is not None and _q_dist_train is not None:
+            save_error_cdf(_q_dist_train, _ft_csv_path, error_type="Qerror")
     except Exception as _e_eval:
         print(f"[Trained-MLP-head] Test evaluation failed: {_e_eval}")
 

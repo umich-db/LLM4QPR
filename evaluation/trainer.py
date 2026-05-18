@@ -743,7 +743,7 @@ def train(model, train_loader, val_loader, \
             _raw_price_lr = getattr(args, 'price_lr', None)
             _price_lr_eff = _raw_price_lr if _raw_price_lr is not None else 1e-3
             _finetune_lr = 2e-5
-            _price_warmup = getattr(args, 'price_warmup_epochs', 10)
+            _price_warmup = getattr(args, 'price_warmup_epochs', 0)
             def _price_random_fn(epoch, _plr=_price_lr_eff, _flr=_finetune_lr, _pw=_price_warmup):
                 if epoch < _pw:
                     return 1.0

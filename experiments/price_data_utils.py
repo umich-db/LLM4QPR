@@ -4566,8 +4566,11 @@ def generate_price_features(workload, sql_list, db_name, bin_size=40,
                 transformed_sql = _strip_tautologies(transformed_sql)
 
             # Handle single-table queries specially (PRICE doesn't support them)
-            # PRICE_M/S/N handle single-table internally (they zero-pad join/fanout)
-            if _is_single_table_query(transformed_sql) and not price_m and not price_s and not use_price_n:
+            # PRICE_M/S/B/N handle single-table internally and apply the
+            # numeric-vs-string-discrete refined-rule histogram branch — keep
+            # them out of the helper, which still uses the legacy "always
+            # SpaceSaving for any discrete column" path.
+            if _is_single_table_query(transformed_sql) and not price_m and not price_s and not price_b and not use_price_n:
                 result = _create_single_table_features(sql2feat, transformed_sql, bin_size)
                 if result is None:
                     raise ValueError("single-table feature generation returned None")

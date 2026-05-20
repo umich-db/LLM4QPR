@@ -3649,10 +3649,18 @@ def _load_price_embedder(argsP, max_njc, max_nfo, max_ntb, max_nfc, device):
         if getattr(ap, 'price_b', False):           parts.append("priceB")
         if getattr(ap, 'price_s', False):           parts.append("priceS")
         if getattr(ap, 'price_m', False):           parts.append("priceM")
-        if getattr(ap, 'price_n_filter', False):    parts.append("priceNflt")
-        if getattr(ap, 'price_n_fanout', False):    parts.append("priceNfan")
-        if getattr(ap, 'price_n_pairwise', False):  parts.append("priceNpw")
-        if getattr(ap, 'price_n_parsing', False):   parts.append("priceNprs")
+        # Same collapse logic as train._price_path_suffix — keep in sync.
+        _pn = (getattr(ap, 'price_n_filter', False),
+               getattr(ap, 'price_n_fanout', False),
+               getattr(ap, 'price_n_pairwise', False),
+               getattr(ap, 'price_n_parsing', False))
+        if all(_pn):
+            parts.append("priceN")
+        else:
+            if _pn[0]: parts.append("priceNflt")
+            if _pn[1]: parts.append("priceNfan")
+            if _pn[2]: parts.append("priceNpw")
+            if _pn[3]: parts.append("priceNprs")
         if getattr(ap, 'price_n_or', False):        parts.append("priceNor")
         mc = getattr(ap, 'price_n_or_max_clauses', 16)
         if mc != 16:

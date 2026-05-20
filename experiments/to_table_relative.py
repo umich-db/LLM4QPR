@@ -92,10 +92,15 @@ def _price_n_qrt_suffix(col_name):
     (_priceNflt, _priceNfan, _priceNpw, _priceNprs, _priceNor, _qrt).
     """
     subs = []
-    if '_priceNflt' in col_name: subs.append('flt')
-    if '_priceNfan' in col_name: subs.append('fan')
-    if '_priceNpw'  in col_name: subs.append('pw')
-    if '_priceNprs' in col_name: subs.append('prs')
+    # train._price_path_suffix collapses the full PRICE_N set to "_priceN"
+    # (and emits individual sub-tokens only for partial subsets).
+    if re.search(r'_priceN(?![a-zA-Z])', col_name):
+        subs.extend(['flt', 'fan', 'pw', 'prs'])
+    else:
+        if '_priceNflt' in col_name: subs.append('flt')
+        if '_priceNfan' in col_name: subs.append('fan')
+        if '_priceNpw'  in col_name: subs.append('pw')
+        if '_priceNprs' in col_name: subs.append('prs')
     if '_priceNor'  in col_name: subs.append('or')
     has_qrt = '_qrt' in col_name
     out = []

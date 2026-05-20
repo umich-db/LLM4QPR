@@ -130,8 +130,8 @@ PRICE_N_SUFFIX=""
 if [[ "${PRICE_N:-}" == "true" || "${PRICE_N:-}" == "True" ]]; then
   PRICE_N_ARGS="$PRICE_N_ARGS --price_n"
   # --price_n shorthand sets all four sub-flags; train._price_path_suffix
-  # then emits priceNflt/priceNfan/priceNpw/priceNprs.
-  PRICE_N_SUFFIX="${PRICE_N_SUFFIX}_priceNflt_priceNfan_priceNpw_priceNprs"
+  # collapses that into a single "priceN" token (filename length).
+  PRICE_N_SUFFIX="${PRICE_N_SUFFIX}_priceN"
 else
   if [[ "${PRICE_N_FILTER:-}" == "true" || "${PRICE_N_FILTER:-}" == "True" ]]; then
     PRICE_N_ARGS="$PRICE_N_ARGS --price_n_filter"

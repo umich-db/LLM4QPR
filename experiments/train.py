@@ -55,10 +55,20 @@ def _price_path_suffix(argsP):
     if getattr(argsP, 'price_b', False):           parts.append("priceB")
     if getattr(argsP, 'price_s', False):           parts.append("priceS")
     if getattr(argsP, 'price_m', False):           parts.append("priceM")
-    if getattr(argsP, 'price_n_filter', False):    parts.append("priceNflt")
-    if getattr(argsP, 'price_n_fanout', False):    parts.append("priceNfan")
-    if getattr(argsP, 'price_n_pairwise', False):  parts.append("priceNpw")
-    if getattr(argsP, 'price_n_parsing', False):   parts.append("priceNprs")
+    # PRICE_N sub-flags: collapse to a single "priceN" token when all four are
+    # set (the common case after the --price_n shorthand) — keeps filenames
+    # under the ext4 255-byte limit. Otherwise emit only the active subset.
+    _pn = (getattr(argsP, 'price_n_filter', False),
+           getattr(argsP, 'price_n_fanout', False),
+           getattr(argsP, 'price_n_pairwise', False),
+           getattr(argsP, 'price_n_parsing', False))
+    if all(_pn):
+        parts.append("priceN")
+    else:
+        if _pn[0]: parts.append("priceNflt")
+        if _pn[1]: parts.append("priceNfan")
+        if _pn[2]: parts.append("priceNpw")
+        if _pn[3]: parts.append("priceNprs")
     if getattr(argsP, 'price_n_or', False):        parts.append("priceNor")
     # Default for max_clauses is 16 — only emit if non-default
     mc = getattr(argsP, 'price_n_or_max_clauses', 16)

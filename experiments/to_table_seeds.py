@@ -14,6 +14,9 @@ parser.add_argument("--dir", type=str)
 parser.add_argument("--task", type=str)
 parser.add_argument("--sentbert_only", action="store_true",
                     help="Only show sentBert-all_quant variants (plus non-LLM baselines) in .png")
+parser.add_argument("--exclude_retrain_mlp", action="store_true",
+                    help="Drop _retrainMLP (inference-phase pretrained-lora) variants from the .png heatmap. "
+                         "Useful when comparing against jointMLP (finetune-phase) results only.")
 parser.add_argument("--special_set1", action="store_true",
                     help="Special set 1: only the 4 setups from master_cross_engine_comparison.sh spark section "
                          "(Mode 1 pretrained, Mode 2 LoRA, Mode 7 JointPrice priceS, Mode 12 inflatePRICE cx4) "
@@ -174,6 +177,16 @@ def extract_display_name(col_name):
             if '_randInit' in col_name:
                 display_name += '_randInit'
 
+            # Extract freeze-llm-until-epoch (_frzLLM{N}) and PRICE-warmup-epochs
+            # (_pwm{N}). Both indicate the mode-12 warmup schedule. Filenames
+            # include them only when the value is non-zero, so absence == 0.
+            frz_match = re.search(r'_frzLLM(\d+)', col_name)
+            if frz_match:
+                display_name += f"_frzLLM{frz_match.group(1)}"
+            pwm_match = re.search(r'_pwm(\d+)', col_name)
+            if pwm_match:
+                display_name += f"_pwm{pwm_match.group(1)}"
+
             # Extract PRICE n_layers (e.g., _pL3, _pL12)
             pl_match = re.search(r'_pL(\d+)', col_name)
             if pl_match:
@@ -212,6 +225,14 @@ def extract_display_name(col_name):
 
             # Extract retrainMLP flag
             if '_retrainMLP' in col_name:
+                display_name += '_retrainMLP'
+
+            # Distinguish finetune-phase MLP (joint MLP, saved during
+            # llm_price_finetune) from inference-phase MLP (retrained on
+            # cached embeddings at inference time, _pretrained-lora_ files).
+            if '_llm_price_finetune_' in col_name or '_finetune_lora_' in col_name:
+                display_name += '_jointMLP'
+            elif '_pretrained-lora_' in col_name:
                 display_name += '_retrainMLP'
 
             return display_name
@@ -479,6 +500,13 @@ if args.sentbert_only:
 else:
     heatmap_table = quant_table
     suffix = ''
+
+# Drop retrainMLP variants from the heatmap if requested (CSV table keeps them).
+if args.exclude_retrain_mlp:
+    keep_cols = [col for col in heatmap_table.columns
+                 if '_pretrained-lora_' not in col]
+    heatmap_table = heatmap_table[keep_cols]
+    suffix += '_noRetrainMLP'
 
 # Create heatmap
 heatmap_path = csv_folder + f'/quantile_table_{args.dir.replace("/", "_")}_{args.task}{suffix}_heatmap.png'

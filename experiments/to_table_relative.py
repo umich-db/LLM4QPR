@@ -159,7 +159,9 @@ def extract_display_name(col_name):
             # Extract PRICE_N family + QRT (compact form, e.g. _priceN-or-qrt).
             display_name += _price_n_qrt_suffix(col_name)
 
-            pretrained_match = re.search(r'pretrained-(\w+)', col_name)
+            # Restrict to letters: filenames continue with `_<train_ratio>_…`,
+            # and `\w` would greedily eat the `_1` of `_1.0_cdf_…` → "_pt-None_1".
+            pretrained_match = re.search(r'pretrained-([A-Za-z]+)', col_name)
             if pretrained_match:
                 pt_status = pretrained_match.group(1)
                 if pt_status != 'None':
@@ -336,17 +338,28 @@ if not tables_by_dataset:
     print("No data found. Check --dirs and --task arguments.")
     exit(1)
 
-# 2. Rename columns to display names (resolve collisions by keeping prefix)
-#    First check for display name collisions
-dn_to_prefixes = defaultdict(list)
-for prefix, dn in display_name_map.items():
-    dn_to_prefixes[dn].append(prefix)
+# 2. Rename columns to display names (resolve collisions by keeping prefix).
+#    A collision is real only if a single dataset has multiple distinct prefixes
+#    mapping to the same display name (e.g. two LLM variants the display fn
+#    would label identically). The SAME display name appearing across MULTIPLE
+#    dirs (e.g. mode-7 jointMLP on stats vs tpch where one's prefix has _b24_
+#    and the other has _b4_ because of compare_modes_lib's micro-batch override)
+#    is the intended aggregation — do NOT flag those as collisions, or the
+#    intersection step below ends up empty for everything except mode 1.
+within_dir_dn_to_prefixes = defaultdict(set)  # display_name -> {prefixes in any single dir with >1 prefix}
+for ds_name, table in tables_by_dataset.items():
+    per_dir = defaultdict(list)
+    for col in table.columns:
+        dn = display_name_map[col]
+        per_dir[dn].append(col)
+    for dn, prefixes in per_dir.items():
+        if len(prefixes) > 1:
+            within_dir_dn_to_prefixes[dn].update(prefixes)
 
-# If collision, keep prefix as display name
 final_name_map = {}
 for prefix, dn in display_name_map.items():
-    if len(dn_to_prefixes[dn]) > 1:
-        final_name_map[prefix] = prefix  # keep full prefix
+    if dn in within_dir_dn_to_prefixes:
+        final_name_map[prefix] = prefix  # real collision → keep full prefix
     else:
         final_name_map[prefix] = dn
 

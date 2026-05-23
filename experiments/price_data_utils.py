@@ -779,7 +779,22 @@ def _column_str(node):
 
 
 def _literal_value(node):
-    """Best-effort native-Python value from a Literal/Number/etc."""
+    """Best-effort native-Python value from a Literal/Number/etc.
+
+    `Neg(Literal(N))` is how sqlglot represents `-N` literals (e.g. in
+    `col >= -2`). Without the Neg arm, the sign was silently dropped and
+    PRICE_N's atoms parser left `range_low=None`, causing dim40 mismatches
+    against PRICE_S/B (whose `get_filter_ranges` reads `str(expression)`
+    and correctly sees `-2`).
+    """
+    if isinstance(node, sqlglot_exp.Neg):
+        inner = _literal_value(node.this)
+        if inner is None:
+            return None
+        try:
+            return -inner
+        except TypeError:
+            return None
     if isinstance(node, sqlglot_exp.Literal):
         try:
             return int(str(node.name))
@@ -986,13 +1001,26 @@ def _build_atoms_meta_from_leaves(leaves, alias_map=None):
                 if v is None:
                     matched_range = True
                     break
+                # Match PRICE_S's strict/non-strict ε convention:
+                #   > v   → range_low = v + 1e-5  (exclude v)
+                #   >= v  → range_low = v        (include v)
+                #   < v   → range_high = v       (exclude v)
+                #   <= v  → range_high = v + 1e-5 (include v)
+                # Bake the ε into the atom value here so downstream
+                # _range_to_region_continuous doesn't need extra cases.
+                if cmp_cls is sqlglot_exp.GT:
+                    v_adj = v + 1e-5
+                elif cmp_cls is sqlglot_exp.LTE:
+                    v_adj = v + 1e-5
+                else:
+                    v_adj = v
                 entry = _ensure(col)
                 if side == "low":
-                    entry["range_low"] = v if entry["range_low"] is None \
-                                         else max(entry["range_low"], v)
+                    entry["range_low"] = v_adj if entry["range_low"] is None \
+                                         else max(entry["range_low"], v_adj)
                 else:
-                    entry["range_high"] = v if entry["range_high"] is None \
-                                          else min(entry["range_high"], v)
+                    entry["range_high"] = v_adj if entry["range_high"] is None \
+                                          else min(entry["range_high"], v_adj)
                 matched_range = True
                 break
         if matched_range:
@@ -1185,13 +1213,20 @@ def _extract_filter_atoms(ast):
             v = _literal_value(cmp.expression)
             if v is None:
                 continue
+            # Match PRICE_S's strict/non-strict ε convention (see comments in
+            # _build_atoms_meta_from_leaves above): bake +1e-5 for `> v` and
+            # `<= v` so _range_to_region_continuous needs no extra cases.
+            if cmp_cls is sqlglot_exp.GT or cmp_cls is sqlglot_exp.LTE:
+                v_adj = v + 1e-5
+            else:
+                v_adj = v
             entry = _ensure(col)
             if side == "low":
-                entry["range_low"] = v if entry["range_low"] is None \
-                                     else max(entry["range_low"], v)
+                entry["range_low"] = v_adj if entry["range_low"] is None \
+                                     else max(entry["range_low"], v_adj)
             else:
-                entry["range_high"] = v if entry["range_high"] is None \
-                                      else min(entry["range_high"], v)
+                entry["range_high"] = v_adj if entry["range_high"] is None \
+                                      else min(entry["range_high"], v_adj)
     # Between conjunctive extraction: col BETWEEN low AND high → range_low / range_high.
     # Only Between nodes NOT already consumed by the Or pass are handled here.
     for between in where.find_all(sqlglot_exp.Between):
@@ -1210,11 +1245,14 @@ def _extract_filter_atoms(ast):
             continue
         col = _column_str(col_node)
         entry = _ensure(col)
+        # BETWEEN is inclusive on both sides → match PRICE_S's `<=`-style
+        # ε on the high bound (`+1e-5`). Low bound is `>=` semantics, no ε.
+        high_adj = high + 1e-5
         # Conjunctive intersection (AND context)
         entry["range_low"] = low if entry["range_low"] is None \
                              else max(entry["range_low"], low)
-        entry["range_high"] = high if entry["range_high"] is None \
-                              else min(entry["range_high"], high)
+        entry["range_high"] = high_adj if entry["range_high"] is None \
+                              else min(entry["range_high"], high_adj)
     for is_node in where.find_all(sqlglot_exp.Is):
         if _is_inside_subquery(is_node):
             continue

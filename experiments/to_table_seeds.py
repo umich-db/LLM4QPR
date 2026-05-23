@@ -172,7 +172,8 @@ def extract_display_name(col_name):
             display_name += _price_n_qrt_suffix(col_name)
 
             # Extract pretrained status
-            pretrained_match = re.search(r'pretrained-(\w+)', col_name)
+            # See to_table_relative.py for rationale: \w eats `_1` of `_1.0_cdf_…`
+            pretrained_match = re.search(r'pretrained-([A-Za-z]+)', col_name)
             if pretrained_match:
                 pt_status = pretrained_match.group(1)
                 if pt_status != 'None':

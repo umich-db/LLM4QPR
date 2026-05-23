@@ -212,17 +212,15 @@ class Sql2FeatureN(Sql2Feature):
             return pickle.load(f)
 
     def space_saving_summary(self, column):
-        """PRICE_N override: returns top-39 keys sorted lexicographically
-        (OtHeRs stays at bin 39 as the catch-all).
+        """PRICE_N override: returns top-39 keys sorted lexicographically when
+        the keys are STRINGS (no natural numeric ordering, lex-bisect is the
+        best we can do for range predicates). For numeric-discrete columns
+        we now route ranges through _range_to_region_continuous (bin-edges),
+        so reordering the SpaceSaving bins is unnecessary AND would break EQ
+        on numeric-discrete top-K values (where PRICE_S/B uses the original
+        frequency-descending order — the SpaceSaving guarantee).
 
-        Range queries on discrete columns map to contiguous bins under this
-        ordering, so col </<=/>/>= literal can be encoded as a single range slot.
-        The frequencies themselves (vals[i]) are unchanged; only the bin
-        assignment (which key sits at which index) is reordered to follow lex.
-
-        Key types are preserved (not coerced to str) so that existing callers
-        using keys.index(value) with integer lookups continue to work.
-        The sort uses str(k) solely as the comparison key.
+        OtHeRs (bin 39) stays at the end as the catch-all.
         """
         if column in self._lex_sorted_summary:
             return self._lex_sorted_summary[column]
@@ -230,13 +228,17 @@ class Sql2FeatureN(Sql2Feature):
         # rewrite the table prefix to its canonical key so self-join aliases
         # like `tpcds_dd2.d_year` resolve to the `tpcds_dd` entry.
         keys, vals = super().space_saving_summary(self._canon_col(column))
-        # keys is length bin_size = 40. keys[39] is 'OtHeRs' (or padding).
-        # Sort top-39 by lex using str(k) as the sort key, but preserve original
-        # key types so that existing index lookups remain compatible.
-        top_pairs = list(zip(keys[:39], vals[:39]))
-        top_pairs.sort(key=lambda kv: str(kv[0]))
-        sorted_keys = [k for k, _ in top_pairs] + [keys[39]]
-        sorted_vals = [v for _, v in top_pairs] + [vals[39]]
+        # Only lex-sort if the top-39 keys are strings. Numeric keys keep the
+        # PRICE_S/B frequency order so EQ-on-top-K matches PRICE_S/B's
+        # SpaceSaving bin encoding.
+        non_pad_top = [k for k in keys[:39] if k != -1e3]
+        if non_pad_top and isinstance(non_pad_top[0], str):
+            top_pairs = list(zip(keys[:39], vals[:39]))
+            top_pairs.sort(key=lambda kv: str(kv[0]))
+            sorted_keys = [k for k, _ in top_pairs] + [keys[39]]
+            sorted_vals = [v for _, v in top_pairs] + [vals[39]]
+        else:
+            sorted_keys, sorted_vals = list(keys), list(vals)
         self._lex_sorted_summary[column] = (sorted_keys, sorted_vals)
         return self._lex_sorted_summary[column]
 
@@ -528,10 +530,17 @@ class Sql2FeatureN(Sql2Feature):
 
     @staticmethod
     def _intersect_one(r1, r2):
-        """Intersect two regions; return None if empty."""
+        """Intersect two regions; return None if empty.
+
+        Use strict `>` so a degenerate (lo == hi) boundary region survives —
+        PRICE_S/B emits e.g. (1.0, 1.0, sel=0) for out-of-range EQ predicates;
+        intersecting that with the initial (0, 1) here used to drop it under
+        the previous `>=`, leaving slot 0 = (0,0,0). The boundary-point form
+        is what PRICE_S/B carries through, so we keep it.
+        """
         lo = max(r1[0], r2[0])
         hi = min(r1[1], r2[1])
-        if lo >= hi:
+        if lo > hi:
             return None
         return (lo, hi)
 
@@ -590,20 +599,32 @@ class Sql2FeatureN(Sql2Feature):
         return out
 
     def _value_to_region_continuous(self, column, value):
-        """Map a single literal value v to a tiny point region (v_norm, v_norm + ε)."""
+        """Map a single literal value v to a tiny point region (v_norm, v_norm + ε/rng).
+
+        PRICE_S/B's EQ-on-continuous adds 1e-5 in VALUE space:
+        `range_high = literal + 1e-5`. Adding 1e-5 to v_norm directly would
+        give a value-space width of `rng × 1e-5` — fine for small ranges but
+        thousands of seconds for timestamp columns. Add ε in value space then
+        re-normalise to keep the recovered selectivity bit-identical to
+        PRICE_S/B's `calculate_hist_selectivity(dist, edges, v, v+1e-5)`.
+
+        For values OUTSIDE the histogram range we CLAMP both bounds to [0, 1]
+        (matching PRICE_S/B's get_filter_norm_range, which clamps and returns
+        a point region at the boundary). Returning None here would cause
+        _compute_regions to treat the predicate as impossible (regions=[])
+        and emit a zero-slot, while PRICE_S/B emits a (1, 1, 0) or (0, 0, 0)
+        boundary point — different encodings for the same semantic (no match).
+        """
         bin_edges = self.columns_bin_edges[column]
         try:
             v = float(value)
         except (TypeError, ValueError):
             return None
         rng = max(1e-9, bin_edges[-1] - bin_edges[0])
-        v_norm = (v - bin_edges[0]) / rng
-        if v_norm < 0.0 or v_norm > 1.0:
-            return None   # outside histogram range; treat as no contribution
-        lo = max(0.0, v_norm)
-        hi = min(1.0, v_norm + 1e-5)
-        if lo >= hi:
-            hi = min(1.0, lo + 1e-9)
+        lo = max(0.0, min(1.0, (v - bin_edges[0]) / rng))
+        hi = max(0.0, min(1.0, (v + 1e-5 - bin_edges[0]) / rng))
+        if lo > hi:
+            return None
         return (lo, hi)
 
     def _value_to_region_discrete(self, column, value, keys):
@@ -615,7 +636,14 @@ class Sql2FeatureN(Sql2Feature):
         return (idx / self.bin_size, (idx + 1) / self.bin_size)
 
     def _range_to_region_continuous(self, column, low_v, high_v):
-        """Map [low_v, high_v] (with None = unbounded) to a normalized region."""
+        """Map [low_v, high_v] (with None = unbounded) to a normalized region.
+
+        The strict/non-strict ε is baked into low_v/high_v by the upstream
+        atoms parser (price_data_utils._extract_filter_atoms): `> v` arrives
+        as `low_v = v + 1e-5`, `<= v` as `high_v = v + 1e-5`. So this function
+        just maps the literal directly through bin-edges normalization, with
+        no further ε adjustment — matches PRICE_S/B's get_filter_norm_range.
+        """
         bin_edges = self.columns_bin_edges[column]
         try:
             low_f = float(low_v) if low_v is not None else bin_edges[0]
@@ -668,14 +696,23 @@ class Sql2FeatureN(Sql2Feature):
         return (lo_idx / self.bin_size, hi_idx / self.bin_size)
 
     def _region_selectivity_continuous(self, column, lo_norm, hi_norm):
-        """Compute the histogram selectivity for a normalized [lo, hi] region."""
+        """Compute the histogram selectivity for a normalized [lo, hi] region.
+
+        Match PRICE_S/B's denominator (table_size, includes null rows) rather
+        than distribution.sum() (excludes nulls). On null-heavy columns like
+        st_p.answercount (53% null) the two differ by ≈1/(1-null_frac), which
+        was driving the dim-42 mismatch.
+        """
         bin_edges = self.columns_bin_edges[column]
         rng = bin_edges[-1] - bin_edges[0]
         lo_v = bin_edges[0] + lo_norm * rng
         hi_v = bin_edges[0] + hi_norm * rng
         distribution = self.columns_distributions[column]
         sel = self.calculate_hist_selectivity(distribution, bin_edges, lo_v, hi_v)
-        total = max(1.0, distribution.sum())
+        # PRICE_S divides by self.get_table_size(col_table); column here is
+        # "<table>.<col>", so derive the table from the prefix.
+        table_alias = column.split(".", 1)[0]
+        total = max(1.0, float(self.get_table_size(table_alias)))
         return float(sel) / total
 
     def _region_selectivity_discrete(self, lo_norm, hi_norm, keys, vals, table_size):
@@ -720,7 +757,8 @@ class Sql2FeatureN(Sql2Feature):
             return (pt[0], 1.0)
         return None
 
-    def _compute_regions(self, column, atoms, is_discrete, keys, vals, table_size):
+    def _compute_regions(self, column, atoms, is_discrete, keys, vals, table_size,
+                          force_continuous_range=False):
         """Run interval arithmetic over all atoms on `column` to produce a
         sorted list of disjoint (low_norm, high_norm, sel) regions.
 
@@ -736,6 +774,16 @@ class Sql2FeatureN(Sql2Feature):
           - or_atoms (same-column OR block): intersect with the union of their regions.
           - NEQ / NOT IN values: subtract each value's point region.
           - NULL atoms: orthogonal (handled separately via null_pred_flag).
+
+        `force_continuous_range`: for numeric-discrete columns (`is_discrete=True`
+        but the column has a meaningful numeric ordering), route range bounds
+        through `_range_to_region_continuous` (bin-edges-normalized), while
+        keeping EQ/IN/NEQ on `_value_to_region_discrete` (SpaceSaving bin) so
+        EQ on top-K values still matches PRICE_S's SpaceSaving encoding.
+        Selectivity computation auto-switches based on which atom kinds
+        populated the regions (range-only → continuous selectivity, EQ/IN-only
+        → SpaceSaving frequencies; mixed columns are rare in practice and
+        fall back to the discrete selectivity path).
         """
         # Start with the universal region.
         regions = [(0.0, 1.0)]
@@ -771,17 +819,17 @@ class Sql2FeatureN(Sql2Feature):
                 regions = []   # all IN values out of range
 
         # 2. Range bounds: intersect with [range_low, range_high].
+        # For numeric-discrete columns we want continuous (bin-edges) ranges,
+        # not lex-bisect over str(key) SpaceSaving keys.
         rl = atoms.get("range_low")
         rh = atoms.get("range_high")
         if rl is not None or rh is not None:
-            if is_discrete:
+            if is_discrete and not force_continuous_range:
                 range_r = self._range_to_region_discrete(column, rl, rh, keys)
-                if range_r is not None:
-                    regions = self._intersect_with_region(regions, range_r)
             else:
                 range_r = self._range_to_region_continuous(column, rl, rh)
-                if range_r is not None:
-                    regions = self._intersect_with_region(regions, range_r)
+            if range_r is not None:
+                regions = self._intersect_with_region(regions, range_r)
 
         # 3. or_atoms: intersect with union of their regions (each or_atom is a
         #    same-column predicate, the OR makes their disjunction).
@@ -807,13 +855,30 @@ class Sql2FeatureN(Sql2Feature):
 
         regions = self._normalize_regions(regions)
 
-        # Compute selectivity per region.
+        # Compute selectivity per region. Pick the matching coordinate space:
+        # - regions populated by EQ/IN/NEQ on a discrete column live in
+        #   SpaceSaving-bin space (lo_norm = idx/40) → use frequency table.
+        # - regions populated by range_low/range_high (or by EQ on a continuous
+        #   column) live in value-norm space → use histogram CDF.
+        # For numeric-discrete columns under `force_continuous_range`, pick by
+        # which atom kinds populated the region. (For stats-style workloads,
+        # each column has one kind of atom at a time, so this is unambiguous.)
+        has_pointwise = bool(atoms.get("eq_values") or atoms.get("in_values")
+                              or atoms.get("not_in_values"))
+        has_range = (atoms.get("range_low") is not None
+                     or atoms.get("range_high") is not None
+                     or bool(atoms.get("or_atoms")))
+        if force_continuous_range and is_discrete:
+            use_continuous_sel = has_range and not has_pointwise
+        else:
+            use_continuous_sel = not is_discrete
+
         out = []
         for lo, hi in regions:
-            if is_discrete:
-                sel = self._region_selectivity_discrete(lo, hi, keys, vals, table_size)
-            else:
+            if use_continuous_sel:
                 sel = self._region_selectivity_continuous(column, lo, hi)
+            else:
+                sel = self._region_selectivity_discrete(lo, hi, keys, vals, table_size)
             out.append((lo, hi, max(0.0, min(1.0, sel))))
         return out
 
@@ -871,8 +936,17 @@ class Sql2FeatureN(Sql2Feature):
                 dtype=torch.float32)
 
         # Run interval arithmetic over all atoms.
-        regions = self._compute_regions(filter_column, atoms, is_discrete,
-                                        keys, vals, table_size)
+        #
+        # For NUMERIC-discrete columns (is_discrete=True, is_string_discrete=False)
+        # we pass `force_continuous_range=True`. _compute_regions then keeps EQ/IN
+        # on SpaceSaving-bin encoding (matches PRICE_S's top-K branch) while
+        # routing range_low/range_high through bin-edges-based normalization
+        # (matches PRICE_S's range-fallback branch). Selectivity is computed in
+        # whichever coordinate space the atoms produced.
+        regions = self._compute_regions(filter_column, atoms,
+                                        is_discrete,
+                                        keys, vals, table_size,
+                                        force_continuous_range=(is_discrete and not is_string_discrete))
 
         # Sort by selectivity descending; top K populate slots, rest fold to tail.
         regions.sort(key=lambda t: t[2], reverse=True)

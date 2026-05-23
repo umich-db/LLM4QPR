@@ -43,7 +43,11 @@ build_shared () {
     # ft_batch_size=24. Drop the micro-batch to 4 and accumulate over 6 steps
     # so the effective per-step gradient is still computed over 24 plans.
     local ft_bs="$FT_BATCH_SIZE"
-    local grad_accum="${GRAD_ACCUM_STEPS:-1}"
+    # Default to 1 each call — do NOT inherit a previous workload's value via
+    # ${GRAD_ACCUM_STEPS:-1} (the export below makes the variable sticky across
+    # iterations, which would silently leave stats/imdb running at 6 after a
+    # tpcds iteration in the same shell).
+    local grad_accum="1"
     case "$wl" in
         tpch|tpcds)
             ft_bs="4"

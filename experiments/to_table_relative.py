@@ -14,10 +14,20 @@ parser.add_argument("--sentbert_only", action="store_true",
                     help="Only show sentBert-all_quant variants (plus non-LLM baselines) in .png")
 parser.add_argument("--exclude_retrain_mlp", action="store_true",
                     help="Drop _retrainMLP (inference-phase pretrained-lora) variants from the .png heatmap.")
+parser.add_argument("--retrain_mlp_only", action="store_true",
+                    help="For modes 7 / 7b / 12 / 12w, keep only the _retrainMLP variants — i.e. drop the "
+                         "_jointMLP columns from the heatmap. Modes 1 (LLM inference) and 2 (LoRA retrainMLP) "
+                         "remain since they don't have a jointMLP variant. Mutually exclusive with "
+                         "--exclude_retrain_mlp.")
 parser.add_argument("--special_set1", action="store_true",
                     help="Special set 1: only the 4 setups from master_cross_engine_comparison.sh spark section "
                          "(Mode 1 pretrained, Mode 2 LoRA, Mode 7 JointPrice priceS, Mode 12 inflatePRICE cx4) "
                          "plus non-LLM baselines.")
+parser.add_argument("--anchor", choices=["50", "90", "95", "max"], default="50",
+                    help="Per-dataset normalization anchor: divide every value in a dataset by the minimum "
+                         "Q-error across methods at this quantile. Default: 50 (matches the original behaviour). "
+                         "Picking a higher quantile (e.g. 'max') anchors the divisor to the best tail performer "
+                         "in each dataset, which makes the averaged table more sensitive to tail differences.")
 args = parser.parse_args()
 
 
@@ -292,20 +302,25 @@ def build_quantile_table(csv_folder, task, quantiles=[50, 90, 95]):
     return table
 
 
-def compute_relative_qerror(tables_by_dataset):
+def compute_relative_qerror(tables_by_dataset, anchor=50):
     """
     Given {dataset_name: quantile_table}, compute relative Q-error:
     For each dataset, divide ALL values by a single scalar — the minimum
-    value in the median (p50) row. Using one divisor per dataset preserves
-    monotonicity across percentiles (p50 <= p90 <= p95 <= max).
+    value in the `anchor` row (one of 50, 90, 95, or 'max'). Using one
+    divisor per dataset preserves monotonicity across percentiles
+    (p50 <= p90 <= p95 <= max).
+
+    `anchor` accepts the int values 50/90/95 or the string 'max', matching
+    the table's index labels.
 
     Returns {dataset_name: relative_table} with same structure.
     """
     relative_tables = {}
     for ds_name, table in tables_by_dataset.items():
-        # Use the best method's median Q-error as the single reference scalar
-        median_row = table.index[0]  # first row is the lowest quantile (p50)
-        ref_scalar = table.loc[median_row].min()
+        if anchor not in table.index:
+            raise KeyError(f"anchor {anchor!r} not in quantile table index "
+                           f"{list(table.index)} for dataset {ds_name}")
+        ref_scalar = table.loc[anchor].min()
         if ref_scalar > 0:
             rel = table / ref_scalar
         else:
@@ -397,7 +412,11 @@ for ds_name in tables_by_dataset:
     tables_by_dataset[ds_name] = tables_by_dataset[ds_name][common_methods]
 
 # 4. Compute relative Q-error per dataset
-relative_tables = compute_relative_qerror(tables_by_dataset)
+#    `--anchor` arrives as a string from argparse; coerce 50/90/95 back to int
+#    so it matches the quantile-table index (the 'max' label stays a string).
+anchor_key = int(args.anchor) if args.anchor != "max" else "max"
+relative_tables = compute_relative_qerror(tables_by_dataset, anchor=anchor_key)
+print(f"\n[anchor] dividing each dataset's Q-errors by the best method's {anchor_key} value")
 
 # 5. Average relative Q-error across datasets
 avg_relative = pd.DataFrame(0.0, index=percentile_idx, columns=common_methods)
@@ -426,7 +445,11 @@ print(avg_relative.round(3).to_markdown())
 
 # 7. Save to CSV
 out_dir = os.path.dirname(args.dirs[0].rstrip('/')) or '.'
-out_path = os.path.join(out_dir, f'relative_qerror_{args.task}.csv')
+# Include the anchor in the filename so different --anchor runs don't overwrite each other
+# (omit "_anchor50" since 50 was the original implicit anchor and we want to preserve
+#  backwards-compatible filenames for the default case).
+anchor_tag = "" if args.anchor == "50" else f"_anchor{args.anchor}"
+out_path = os.path.join(out_dir, f'relative_qerror_{args.task}{anchor_tag}.csv')
 avg_relative.to_csv(out_path)
 print(f"\nSaved averaged relative Q-error to: {out_path}")
 
@@ -586,10 +609,24 @@ else:
 # Drop retrainMLP variants from the heatmap if requested (CSV table keeps them).
 # Columns here are display names, so match on the _retrainMLP tag.
 if args.exclude_retrain_mlp:
+    if args.retrain_mlp_only:
+        parser.error("--exclude_retrain_mlp and --retrain_mlp_only are mutually exclusive")
     keep_cols = [col for col in heatmap_table.columns if '_retrainMLP' not in col]
     heatmap_table = heatmap_table[keep_cols]
     heatmap_llm = {m for m in heatmap_llm if '_retrainMLP' not in m}
     suffix += '_noRetrainMLP'
 
-heatmap_path = os.path.join(out_dir, f'relative_qerror_{args.task}{suffix}_heatmap.png')
+# Drop _jointMLP variants from the heatmap if requested. Modes 7/7b/12/12w
+# produce both a jointMLP (MLP head trained during joint LLM+PRICE finetune)
+# and a retrainMLP (MLP retrained on cached embeddings post-finetune). The
+# retrainMLP is usually the apples-to-apples comparison since modes 1/2 only
+# have a retrainMLP-style variant. Mode 1 (no MLP at all) and mode 2
+# (retrainMLP) keep all their columns.
+if args.retrain_mlp_only:
+    keep_cols = [col for col in heatmap_table.columns if '_jointMLP' not in col]
+    heatmap_table = heatmap_table[keep_cols]
+    heatmap_llm = {m for m in heatmap_llm if '_jointMLP' not in m}
+    suffix += '_retrainMLPonly'
+
+heatmap_path = os.path.join(out_dir, f'relative_qerror_{args.task}{anchor_tag}{suffix}_heatmap.png')
 create_relative_heatmap(heatmap_table, heatmap_path, args.task, heatmap_llm)

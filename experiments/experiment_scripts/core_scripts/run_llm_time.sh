@@ -652,36 +652,45 @@ if [ "$finetune" == "True" ]; then
   if [[ "$RUN_LORA" == "true" ]]; then
     llm_mode=lora
     echo "finetune: lora"
-    
-    # Check if model already exists
+
+    # ALWAYS invoke train.py for mode 2 so the jointMLP test eval CSV gets
+    # emitted on every (db, workload) cell. When the canonical-prefix LLM
+    # weights already exist (e.g. {syn, job, job_full} all canonicalise to
+    # 'imdb', so the second and third runs in the imdb family hit a cached
+    # weight file), pass --skip_train_load_finetuned_weights — train.py's
+    # mode-2 branch then loads the saved LLM+MLP and runs the test eval
+    # without retraining.
+    SKIP_TRAIN_ARG_FT=""
     if check_model_exists "lora"; then
-      echo "    Continuing to inference step..."
+      echo "    Loading cached weights + emitting jointMLP test-eval CSV..."
+      SKIP_TRAIN_ARG_FT="--skip_train_load_finetuned_weights"
     else
       echo "    Model not found, starting finetuning..."
-      setup_args_and_suffixes
-      
-      python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                          --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_lora_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}.log \
-                                          --db $DB_ENGINE \
-                                          --workloads_train "${TRAIN_WLS[@]}" \
-                                          --workload_test ${WORKLOAD_TEST} \
-                                          --algo ${algo} \
-                                          --learning_rate $lr \
-                                          --batch_size $batch_size \
-                                          --hid_units $hid_units \
-                                          --model_name $model_name \
-                                          --train_ratio $train_ratio \
-                                          --llm_mode $llm_mode \
-                                          --num_epoch $FT_NUM_EPOCH \
-                                          --seed $SEED \
-                                          $BUCKETIZE_ARG \
-                                          $QUANTIFICATION_ARG \
-                                          $REMOVED_FIELDS_ARG \
-                                          $CONCAT_TRUE_ARG \
-                                          $STATS_ARGS \
-                                          $PRICE_M_ARG $PRICE_S_ARG $PRICE_B_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
-                                          $MAX_QUERIES_ARG
     fi
+    setup_args_and_suffixes
+
+    python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
+                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_lora_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}_seed${SEED}.log \
+                                        --db $DB_ENGINE \
+                                        --workloads_train "${TRAIN_WLS[@]}" \
+                                        --workload_test ${WORKLOAD_TEST} \
+                                        --algo ${algo} \
+                                        --learning_rate $lr \
+                                        --batch_size $batch_size \
+                                        --hid_units $hid_units \
+                                        --model_name $model_name \
+                                        --train_ratio $train_ratio \
+                                        --llm_mode $llm_mode \
+                                        --num_epoch $FT_NUM_EPOCH \
+                                        --seed $SEED \
+                                        $BUCKETIZE_ARG \
+                                        $QUANTIFICATION_ARG \
+                                        $REMOVED_FIELDS_ARG \
+                                        $CONCAT_TRUE_ARG \
+                                        $STATS_ARGS \
+                                        $PRICE_M_ARG $PRICE_S_ARG $PRICE_B_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
+                                        $MAX_QUERIES_ARG \
+                                        $SKIP_TRAIN_ARG_FT
   fi
 
   #########################inference: pre-trained#########################

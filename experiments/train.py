@@ -1352,11 +1352,15 @@ if argsP.algo == "llm_finetune":
                                os.path.dirname(_lf), count=1)
             _csv_dir = _csv_dir.replace('logs_Train_', 'results_Train_', 1)
             _stem = os.path.basename(_lf).rsplit('.log', 1)[0]
-            _csv_name = _re.sub(r'_seed(\d+)$', r'_cdf_seed\1', _stem)
-            # Tag with _cdf if no _seed (mode 2 logs are often seedless).
-            if _csv_name == _stem:
-                _csv_name = _stem + '_cdf'
-            _csv_name = _csv_name + '.csv'
+            # Strip any trailing _seed{N} from the log stem so we can re-append
+            # one in the canonical _cdf_seed{N}.csv position. The downstream
+            # aggregator (to_table_relative.py) globs for "*cdf*seed*.csv", so
+            # the _seed suffix MUST be present — even on mode-2 logs whose
+            # filenames don't carry a seed by default.
+            _stem_no_seed = _re.sub(r'_seed\d+$', '', _stem)
+            _seed_for_csv = getattr(argsP, 'seed', None)
+            _seed_suf = f'_seed{int(_seed_for_csv)}' if _seed_for_csv is not None else ''
+            _csv_name = f'{_stem_no_seed}_cdf{_seed_suf}.csv'
             _ft_csv_path = os.path.join(_csv_dir, _csv_name)
             os.makedirs(_csv_dir, exist_ok=True)
         print("\n[Trained-MLP-head] Running test evaluation on trained joint LLM+MLP...")

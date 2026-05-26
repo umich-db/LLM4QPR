@@ -31,6 +31,8 @@ MODES_ARR=(12)
 # The lib's run_mode for case 12 invokes:
 #   "${PRICE_N_FLAGS[@]}" "${CX4_FLAGS[@]}" "${MODE12_SCHED[@]}"
 # Appending the flag to MODE12_SCHED is the cleanest insertion point.
-MODE12_SCHED=(--price_warmup_epochs "5" --freeze_llm_until_epoch "5" --price_warmup_lr "1e-4")
+# Use --price_lr (alias for --price_warmup_lr; the shell layer
+# run_different_llms.sh only forwards --price_lr to train.py).
+MODE12_SCHED=(--price_warmup_epochs "5" --freeze_llm_until_epoch "5" --price_lr "1e-4")
 
 run_ablation

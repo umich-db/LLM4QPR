@@ -433,7 +433,7 @@ class QueryPlanPredictor(nn.Module):
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_use_double_quant=False,     # Default: False
-                bnb_4bit_quant_type="fp4",          # Default: fp4
+                bnb_4bit_quant_type="nf4",          # nf4: works on GPU + CPU bnb backends (CPU backend rejects fp4)
                 bnb_4bit_compute_dtype=torch.float16  # Default: float32
             )
             model = AutoModelForCausalLM.from_pretrained(
@@ -531,7 +531,7 @@ class QueryPlanPredictor(nn.Module):
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_use_double_quant=False,     # Match Llama: Default False
-                bnb_4bit_quant_type="fp4",          # Match Llama: Default fp4
+                bnb_4bit_quant_type="nf4",          # nf4: works on GPU + CPU bnb backends (CPU backend rejects fp4)
                 bnb_4bit_compute_dtype=torch.float16  # Match Llama: Default float32
             )
             model = AutoModel.from_pretrained(
@@ -627,7 +627,7 @@ class QueryPlanPredictor(nn.Module):
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_use_double_quant=False,     # Match Llama: Default False
-                bnb_4bit_quant_type="fp4",          # Match Llama: Default fp4
+                bnb_4bit_quant_type="nf4",          # nf4: works on GPU + CPU bnb backends (CPU backend rejects fp4)
                 bnb_4bit_compute_dtype=dtype
             )
             model = AutoModel.from_pretrained(
@@ -737,7 +737,7 @@ class QueryPlanPredictor(nn.Module):
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_use_double_quant=False,     # Match Llama: Default False
-                bnb_4bit_quant_type="fp4",          # Match Llama: Default fp4
+                bnb_4bit_quant_type="nf4",          # nf4: works on GPU + CPU bnb backends (CPU backend rejects fp4)
                 bnb_4bit_compute_dtype=torch.float16  # Match Llama: Default float32
             )
             model = GPT2Model.from_pretrained(
@@ -859,7 +859,7 @@ class QueryPlanPredictor(nn.Module):
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_use_double_quant=False,     # Match Llama: Default False
-                bnb_4bit_quant_type="fp4",          # Match Llama: Default fp4
+                bnb_4bit_quant_type="nf4",          # nf4: works on GPU + CPU bnb backends (CPU backend rejects fp4)
                 bnb_4bit_compute_dtype=torch.float16  # Match Llama: Default float32
             )
             model = AutoModel.from_pretrained(
@@ -944,7 +944,7 @@ class QueryPlanPredictor(nn.Module):
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_use_double_quant=False,     # Match Llama: Default False
-                bnb_4bit_quant_type="fp4",          # Match Llama: Default fp4
+                bnb_4bit_quant_type="nf4",          # nf4: works on GPU + CPU bnb backends (CPU backend rejects fp4)
                 bnb_4bit_compute_dtype=torch.float16  # Match Llama: Default float32
             )
             self.model = AutoModel.from_pretrained(
@@ -1060,7 +1060,7 @@ class QueryPlanPredictor(nn.Module):
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_use_double_quant=False,
-                bnb_4bit_quant_type="fp4",
+                bnb_4bit_quant_type="nf4",  # nf4: works on GPU + CPU bnb backends
                 bnb_4bit_compute_dtype=torch.float16
             )
             model = AutoModel.from_pretrained(
@@ -1240,7 +1240,7 @@ class QueryPlanPredictor(nn.Module):
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_use_double_quant=False,     # Match Llama: Default False
-                bnb_4bit_quant_type="fp4",          # Match Llama: Default fp4
+                bnb_4bit_quant_type="nf4",          # nf4: works on GPU + CPU bnb backends (CPU backend rejects fp4)
                 bnb_4bit_compute_dtype=torch.float16  # Match Llama: Default float32
             )
             model = AutoModelForCausalLM.from_pretrained(

@@ -20,7 +20,10 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUN_SCRIPT="$SCRIPT_DIR/run_different_llms.sh"
 source ~/venvs/tmpenv/bin/activate 2>/dev/null || true
-export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-1}
+# Default to GPU 0 (every CUDA host has it; the old default of 1 hid the GPU
+# on single-GPU machines like dbresearch3 → silent CPU fallback). Override
+# with `CUDA_VISIBLE_DEVICES=N bash …` to target a different device.
+export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 : "${MODEL:=sentence-transformers/all-MiniLM-L12-v2}"

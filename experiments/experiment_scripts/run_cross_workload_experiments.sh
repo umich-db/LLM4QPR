@@ -48,7 +48,7 @@ while [[ $# -gt 0 ]]; do
         --ft_batch_size)    CLI_FT_BATCH_SIZE="$2";    shift 2 ;;
         --ft_num_epoch)     CLI_FT_NUM_EPOCH="$2";     shift 2 ;;
         --checkpoint_interval) CLI_CHECKPOINT_INTERVAL="$2"; shift 2 ;;
-        --price_lr)         CLI_PRICE_LR="$2";         shift 2 ;;
+        --price_warmup_lr|--price_lr) CLI_PRICE_LR="$2";         shift 2 ;;
         --grad_accum_steps) CLI_GRAD_ACCUM_STEPS="$2"; shift 2 ;;
         --removed_fields)   CLI_REMOVED_FIELDS="$2";   shift 2 ;;
         --price_m)          CLI_PRICE_M="true";        shift 1 ;;

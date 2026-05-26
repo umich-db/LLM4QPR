@@ -14,6 +14,9 @@ parser.add_argument("--dir", type=str)
 parser.add_argument("--task", type=str)
 parser.add_argument("--sentbert_only", action="store_true",
                     help="Only show sentBert-all_quant variants (plus non-LLM baselines) in .png")
+parser.add_argument("--bert_only", action="store_true",
+                    help="Only show google/bert_uncased_L-4_H-768_A-12 variants (plus non-LLM baselines) "
+                         "in .png. Mutually exclusive with --sentbert_only.")
 parser.add_argument("--exclude_retrain_mlp", action="store_true",
                     help="Drop _retrainMLP (inference-phase pretrained-lora) variants from the .png heatmap. "
                          "Useful when comparing against jointMLP (finetune-phase) results only.")
@@ -240,6 +243,11 @@ def extract_display_name(col_name):
                 display_name += '_jointMLP'
             elif '_pretrained-lora_' in col_name:
                 display_name += '_retrainMLP'
+
+            # Best-val variant — synthesised 4-row CDF from training log's
+            # epoch with min val p90. Distinct column from the final-epoch CSV.
+            if '_bestval_cdf' in col_name:
+                display_name += '_bestval'
 
             return display_name
         return 'LLM'
@@ -496,6 +504,9 @@ quant_table = quant_table.reindex(sorted(quant_table.columns), axis=1)
 csv_path = csv_folder + f'/quantile_table_{args.dir.replace("/", "_")}_{args.task}.csv'
 quant_table.to_csv(csv_path)
 
+if args.sentbert_only and args.bert_only:
+    parser.error("--sentbert_only and --bert_only are mutually exclusive")
+
 # Filter to sentBert-all variants only (plus non-LLM baselines) for heatmap
 if args.sentbert_only:
     display_map = {col: extract_display_name(col) for col in quant_table.columns}
@@ -503,6 +514,14 @@ if args.sentbert_only:
                  if not is_llm_method(col) or 'sentBert-all' in display_map[col]]
     heatmap_table = quant_table[keep_cols]
     suffix = '_sentbert'
+elif args.bert_only:
+    # Match the bert_uncased_L-4_H-768 family (only on-disk variant is
+    # google-bert_uncased_L-4_H-768_A-12 — L-4_H-768 is the unique substring).
+    display_map = {col: extract_display_name(col) for col in quant_table.columns}
+    keep_cols = [col for col in quant_table.columns
+                 if not is_llm_method(col) or 'L-4_H-768' in display_map[col]]
+    heatmap_table = quant_table[keep_cols]
+    suffix = '_bert'
 else:
     heatmap_table = quant_table
     suffix = ''

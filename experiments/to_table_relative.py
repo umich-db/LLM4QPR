@@ -12,6 +12,9 @@ parser.add_argument("--dirs", type=str, nargs="+", required=True,
 parser.add_argument("--task", type=str, default="time")
 parser.add_argument("--sentbert_only", action="store_true",
                     help="Only show sentBert-all_quant variants (plus non-LLM baselines) in .png")
+parser.add_argument("--bert_only", action="store_true",
+                    help="Only show google/bert_uncased_L-4_H-768_A-12 variants (plus non-LLM baselines) "
+                         "in .png. Mutually exclusive with --sentbert_only.")
 parser.add_argument("--exclude_retrain_mlp", action="store_true",
                     help="Drop _retrainMLP (inference-phase pretrained-lora) variants from the .png heatmap.")
 parser.add_argument("--retrain_mlp_only", action="store_true",
@@ -238,6 +241,14 @@ def extract_display_name(col_name):
                 display_name += '_jointMLP'
             elif '_pretrained-lora_' in col_name:
                 display_name += '_retrainMLP'
+
+            # Best-val variant: synthesised 4-row CDF CSV emitted by
+            # /tmp/synthesize_bestval_csv.py, which scrapes the test-eval
+            # block at the epoch with min val p90 from the training log.
+            # Tag distinct from the final-epoch CSV so the heatmap shows
+            # them side-by-side.
+            if '_bestval_cdf' in col_name:
+                display_name += '_bestval'
 
             return display_name
         return 'LLM'
@@ -594,6 +605,9 @@ def create_relative_heatmap(table, output_path, task, llm_methods):
     print("="*80)
 
 
+if args.sentbert_only and args.bert_only:
+    parser.error("--sentbert_only and --bert_only are mutually exclusive")
+
 # Filter to sentBert-all variants only (plus non-LLM baselines) for heatmap
 if args.sentbert_only:
     keep_cols = [col for col in avg_relative.columns
@@ -601,6 +615,15 @@ if args.sentbert_only:
     heatmap_table = avg_relative[keep_cols]
     heatmap_llm = {m for m in llm_display_names if 'sentBert-all' in m}
     suffix = '_sentbert'
+elif args.bert_only:
+    # Match the bert_uncased_L-4_H-768 family (the only on-disk token is
+    # google-bert_uncased_L-4_H-768_A-12 — keep the L-4_H-768 substring as
+    # the identifier so future BERT variants don't accidentally match).
+    keep_cols = [col for col in avg_relative.columns
+                 if col not in llm_display_names or 'L-4_H-768' in col]
+    heatmap_table = avg_relative[keep_cols]
+    heatmap_llm = {m for m in llm_display_names if 'L-4_H-768' in m}
+    suffix = '_bert'
 else:
     heatmap_table = avg_relative
     heatmap_llm = llm_display_names

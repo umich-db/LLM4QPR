@@ -460,11 +460,17 @@ print(avg_relative.round(3).to_markdown())
 
 # 7. Save to CSV
 out_dir = os.path.dirname(args.dirs[0].rstrip('/')) or '.'
+# Tag the output filename with the db (parent-dir basename) so postgres / duckdb /
+# spark outputs are distinguishable even when copied out of their results/<db>/
+# directory. If the dirs span multiple dbs (typically a misuse), the tag falls
+# back to dirs[0]'s db.
+db_name = os.path.basename(out_dir) or 'mixed'
+db_tag = f'_{db_name}' if db_name not in ('results', '', '.', 'mixed') else ''
 # Include the anchor in the filename so different --anchor runs don't overwrite each other
 # (omit "_anchor50" since 50 was the original implicit anchor and we want to preserve
 #  backwards-compatible filenames for the default case).
 anchor_tag = "" if args.anchor == "50" else f"_anchor{args.anchor}"
-out_path = os.path.join(out_dir, f'relative_qerror_{args.task}{anchor_tag}.csv')
+out_path = os.path.join(out_dir, f'relative_qerror{db_tag}_{args.task}{anchor_tag}.csv')
 avg_relative.to_csv(out_path)
 print(f"\nSaved averaged relative Q-error to: {out_path}")
 
@@ -656,5 +662,5 @@ if args.retrain_mlp_only:
     heatmap_llm = {m for m in heatmap_llm if '_jointMLP' not in m}
     suffix += '_retrainMLPonly'
 
-heatmap_path = os.path.join(out_dir, f'relative_qerror_{args.task}{anchor_tag}{suffix}_heatmap.png')
+heatmap_path = os.path.join(out_dir, f'relative_qerror{db_tag}_{args.task}{anchor_tag}{suffix}_heatmap.png')
 create_relative_heatmap(heatmap_table, heatmap_path, args.task, heatmap_llm)

@@ -483,6 +483,7 @@ setup_args_and_suffixes() {
         cardinality) SUFFIX_PARTS+=("card") ;;
         conditions_and_filters) SUFFIX_PARTS+=("cond") ;;
         metadata_and_config) SUFFIX_PARTS+=("meta") ;;
+        statsOutput) SUFFIX_PARTS+=("stOut") ;;  # spark-only: strips the planner row/byte estimates block
         *) echo "Warning: Unknown category '$cat_trimmed' ignored" ;;
       esac
     done

@@ -2556,11 +2556,16 @@ def read_json_and_clean(predictor, ds_info, dat_path, argsP, all=False):
 
     # Parse removed_fields for ablation studies
     fields_to_remove = set()
+    removed_categories = []
     if hasattr(argsP, 'removed_fields') and argsP.removed_fields:
         removed_categories = [cat.strip() for cat in argsP.removed_fields.split(',')]
         fields_to_remove = _get_fields_fn(removed_categories)
         if fields_to_remove:
             print(f"  Removing {len(fields_to_remove)} fields from categories: {removed_categories}")
+    # Spark-only pseudo-category: strip the "statsOutput:" block (the planner's
+    # row/byte-count estimates) from each plan's text before it reaches the LLM.
+    # Handled below in the _is_spark branch; we just record the flag here.
+    _strip_spark_stats_output = 'statsOutput' in removed_categories
 
     # Check if template column exists (only for tpch and tpcds)
     has_template = 'template' in df.columns
@@ -2627,6 +2632,15 @@ def read_json_and_clean(predictor, ds_info, dat_path, argsP, all=False):
             # Also drop a bare "query plan:" header if present — it adds no signal.
             if remaining and remaining[0].strip().lower().rstrip(':') == 'query plan':
                 remaining = remaining[1:]
+            # Optional: strip the trailing "statsOutput:" block (planner row/byte
+            # estimates) when --removed_fields statsOutput is set. statsOutput is
+            # always the last block in spark plans, so trimming everything from
+            # that header onward is sufficient.
+            if _strip_spark_stats_output:
+                for _i, _ln in enumerate(remaining):
+                    if _ln.strip().lower().rstrip(':') == 'statsoutput':
+                        remaining = remaining[:_i]
+                        break
             txt = '\n'.join(remaining).strip()
         else:
             root = _extract_root(plan_json)
@@ -3213,7 +3227,8 @@ def get_embeddings(predictor, ds_info, dat_path, argsP, batch_size=1, normalize_
             'cost': 'cost',
             'cardinality': 'card',
             'conditions_and_filters': 'cond',
-            'metadata_and_config': 'meta'
+            'metadata_and_config': 'meta',
+            'statsOutput': 'stOut',          # spark-only: strips the planner's row/byte-count block
         }
         categories = [cat.strip() for cat in argsP.removed_fields.split(',')]
         abbrevs = [category_abbrev.get(cat, cat) for cat in categories if cat in category_abbrev]

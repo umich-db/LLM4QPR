@@ -68,7 +68,7 @@ build_shared () {
         --concat_true             "false"
         --ft_batch_size           "$ft_bs"
         --ft_num_epoch            "$FT_NUM_EPOCH"
-        --removed_fields          ""
+        --removed_fields          "${REMOVED_FIELDS:-}"
         --seeds                   "$SEEDS"
         --db                      "$DB_ENGINE"
         --workloads               "$wl"

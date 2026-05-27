@@ -179,11 +179,17 @@ def get_fields_to_remove(removed_categories):
         if category == 'runtime':
             print(f"Warning: 'runtime' category is always removed by default. No need to specify it.")
             continue
+        if category == 'statsOutput':
+            # Spark-only pseudo-category. The actual removal happens in
+            # utilsLLM.get_llm_ds_from_csv's _is_spark branch (strip the
+            # "statsOutput:" block from the plan text). No JSON fields to
+            # remove here, so return nothing for this category.
+            continue
         if category in valid_categories:
             fields_to_remove.update(FIELD_CATEGORIES[category])
         else:
             print(f"Warning: Unknown field category '{category}'. Valid categories: {sorted(valid_categories)}")
-    
+
     return fields_to_remove
 
 

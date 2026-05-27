@@ -826,16 +826,22 @@ def train(model, train_loader, val_loader, \
         _dir = "PRICE→LLM only (warmup)" if model.price.warmup_mode else "bidirectional (normal)"
         print(f"[CrossAttn] Initial direction: {_dir}")
 
-    # Freeze odd cross-attn layers during warmup (InflatedBiCrossAttn)
+    # Freeze odd cross-attn layers (LLM←PRICE direction). Gated on the
+    # SEPARATE --freeze_odd_blocks_until_epoch flag (was previously tied to
+    # _freeze_llm_until, which conflated two distinct design choices). With
+    # this decoupled flag, users can experiment with the inverse warmup:
+    # LLM trains during warmup while the LLM-side update from PRICE stays
+    # strictly zero.
+    _freeze_odd_until = getattr(args, 'freeze_odd_blocks_until_epoch', 0)
     _odd_layers_frozen = False
     _odd_layer_params = []
-    if _freeze_llm_until > 0 and start_epoch < _freeze_llm_until and hasattr(model, 'price') and hasattr(model.price, 'odd_layer_parameters'):
+    if _freeze_odd_until > 0 and start_epoch < _freeze_odd_until and hasattr(model, 'price') and hasattr(model.price, 'odd_layer_parameters'):
         for p in model.price.odd_layer_parameters():
             if p.requires_grad:
                 _odd_layer_params.append(p)
                 p.requires_grad = False
         _odd_layers_frozen = True
-        print(f"[StagedUnfreeze] Froze {len(_odd_layer_params)} odd-layer (LLM→PRICE) cross-attn params for epochs 0-{_freeze_llm_until-1}")
+        print(f"[StagedUnfreeze] Froze {len(_odd_layer_params)} odd-block (LLM←PRICE) cross-attn params for epochs 0-{_freeze_odd_until-1}")
 
     for epoch in range(start_epoch, epochs):
         # Unfreeze LLM at the designated epoch
@@ -845,12 +851,13 @@ def train(model, train_loader, val_loader, \
             _llm_frozen = False
             print(f"[StagedUnfreeze] Unfroze {len(_llm_params)} LLM params at epoch {epoch}")
 
-        # Unfreeze odd cross-attn layers at the same epoch
-        if _odd_layers_frozen and epoch >= _freeze_llm_until:
+        # Unfreeze odd cross-attn layers at their own designated epoch
+        # (decoupled from LLM unfreeze).
+        if _odd_layers_frozen and epoch >= _freeze_odd_until:
             for p in _odd_layer_params:
                 p.requires_grad = True
             _odd_layers_frozen = False
-            print(f"[StagedUnfreeze] Unfroze {len(_odd_layer_params)} odd-layer (LLM→PRICE) cross-attn params at epoch {epoch}")
+            print(f"[StagedUnfreeze] Unfroze {len(_odd_layer_params)} odd-block (LLM←PRICE) cross-attn params at epoch {epoch}")
 
         # Toggle warmup_mode for dual-direction cross-attn (Mode 13 / Mode 12+inflate)
         if hasattr(model, 'price') and hasattr(model.price, 'warmup_mode'):

@@ -59,6 +59,7 @@ CLI_INFLATE_PRICE=""
 CLI_EARLY_STOP_PATIENCE=""
 CLI_EARLY_STOP_AFTER_EPOCH=""
 CLI_FREEZE_LLM_UNTIL_EPOCH=""
+CLI_FREEZE_ODD_BLOCKS_UNTIL_EPOCH=""
 CLI_PRICE_WARMUP_EPOCHS=""
 CLI_SUBDIR_TAG=""
 
@@ -121,6 +122,7 @@ while [[ $# -gt 0 ]]; do
         --early_stop_patience) CLI_EARLY_STOP_PATIENCE="$2"; shift 2 ;;
         --early_stop_after_epoch) CLI_EARLY_STOP_AFTER_EPOCH="$2"; shift 2 ;;
         --freeze_llm_until_epoch) CLI_FREEZE_LLM_UNTIL_EPOCH="$2"; shift 2 ;;
+        --freeze_odd_blocks_until_epoch) CLI_FREEZE_ODD_BLOCKS_UNTIL_EPOCH="$2"; shift 2 ;;
         --price_warmup_epochs) CLI_PRICE_WARMUP_EPOCHS="$2"; shift 2 ;;
         --subdir_tag)       CLI_SUBDIR_TAG="$2";         shift 2 ;;
         *)
@@ -859,6 +861,9 @@ for SEED in "${seeds[@]}"; do
             fi
             if [[ -n "$CLI_FREEZE_LLM_UNTIL_EPOCH" ]]; then
                 export FREEZE_LLM_UNTIL_EPOCH="$CLI_FREEZE_LLM_UNTIL_EPOCH"
+            fi
+            if [[ -n "$CLI_FREEZE_ODD_BLOCKS_UNTIL_EPOCH" ]]; then
+                export FREEZE_ODD_BLOCKS_UNTIL_EPOCH="$CLI_FREEZE_ODD_BLOCKS_UNTIL_EPOCH"
             fi
             if [[ -n "$CLI_PRICE_WARMUP_EPOCHS" ]]; then
                 export PRICE_WARMUP_EPOCHS="$CLI_PRICE_WARMUP_EPOCHS"

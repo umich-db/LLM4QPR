@@ -217,6 +217,11 @@ def parse_args():
                         help="Only start early stopping check after this epoch (e.g., 10 to skip warmup)")
     parser.add_argument("--freeze_llm_until_epoch", type=int, default=0,
                         help="Freeze LLM LoRA params for the first N epochs, only train PRICE/cross-attn (0=disabled)")
+    parser.add_argument("--freeze_odd_blocks_until_epoch", type=int, default=0,
+                        help="Freeze odd-indexed cross-attn blocks (the LLM←PRICE direction in biCrossAttn) "
+                             "for the first N epochs, so the LLM token stream is strictly untouched by PRICE "
+                             "during warmup (vs the default soft-zero-init warmup where the residual learns "
+                             "to grow from 0). Independent of --freeze_llm_until_epoch. 0 = disabled.")
     parser.add_argument("--checkpoint_interval", type=int, default=0,
                         help="Save checkpoint every N epochs during finetuning (0=no checkpoints)")
     parser.add_argument("--subdir_tag", type=str, default="",

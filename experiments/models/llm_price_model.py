@@ -258,6 +258,18 @@ class PRICEEmbedder(nn.Module):
             yield from self.inflate.parameters()
         yield from self.cross_attn_blocks.parameters()
 
+    def odd_layer_parameters(self):
+        """Parameters of odd-indexed cross-attn blocks (i.e. the LLM←PRICE
+        direction). These have their output projection + last FF zero-initialised
+        on construction (lines 152-157); freezing them keeps the LLM tokens
+        strictly unchanged through every odd block during the freeze window,
+        as opposed to the default "soft warmup via zero-init" where the residual
+        injection learns to grow from 0. Used by trainer.py's staged-unfreeze
+        path when --freeze_odd_blocks_until_epoch > 0."""
+        for i, block in enumerate(self.cross_attn_blocks):
+            if i % 2 == 1:
+                yield from block.parameters()
+
     def price_core_parameters(self):
         cross_attn_ids = {id(p) for p in self.cross_attn_parameters()}
         for p in self.parameters():

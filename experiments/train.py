@@ -110,6 +110,8 @@ def _arch_path_suffix(argsP):
     # Hyperparameter overrides only when non-default
     if getattr(argsP, 'freeze_llm_until_epoch', 0) > 0:
         parts.append(f"frzLLM{argsP.freeze_llm_until_epoch}")
+    if getattr(argsP, 'freeze_odd_blocks_until_epoch', 0) > 0:
+        parts.append(f"frzOdd{argsP.freeze_odd_blocks_until_epoch}")
     n_cross = getattr(argsP, 'n_cross_layers', 2)
     if n_cross != 2 and (
         getattr(argsP, 'use_cross_attention', False) or

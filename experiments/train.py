@@ -112,6 +112,8 @@ def _arch_path_suffix(argsP):
         parts.append(f"frzLLM{argsP.freeze_llm_until_epoch}")
     if getattr(argsP, 'freeze_odd_blocks_until_epoch', 0) > 0:
         parts.append(f"frzOdd{argsP.freeze_odd_blocks_until_epoch}")
+    if getattr(argsP, 'freeze_all_blocks_until_epoch', 0) > 0:
+        parts.append(f"frzAll{argsP.freeze_all_blocks_until_epoch}")
     n_cross = getattr(argsP, 'n_cross_layers', 2)
     if n_cross != 2 and (
         getattr(argsP, 'use_cross_attention', False) or
@@ -869,6 +871,9 @@ elif argsP.algo == "llm_price_finetune":
           cross_attn_noop=getattr(argsP, 'cross_attn_noop', False),
           force_inflate=getattr(argsP, 'force_inflate', False),
           price_output_dim_override=getattr(argsP, 'price_output_dim', 0),
+          # Pair with --freeze_all_blocks_until_epoch to get mode-7-like warmup
+          # (cross-attn frozen + contributes 0 in both directions).
+          zero_init_all_blocks=(getattr(argsP, 'freeze_all_blocks_until_epoch', 0) > 0),
       )
       if not getattr(argsP, 'price_random_init', False):
         shared_sd = {k: v for k, v in price_embedder.state_dict().items()

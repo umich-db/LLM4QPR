@@ -843,6 +843,21 @@ def train(model, train_loader, val_loader, \
         _odd_layers_frozen = True
         print(f"[StagedUnfreeze] Froze {len(_odd_layer_params)} odd-block (LLM←PRICE) cross-attn params for epochs 0-{_freeze_odd_until-1}")
 
+    # Freeze ALL cross-attn blocks (both directions). Pairs with
+    # zero_init_all_blocks=True at PRICEEmbedder construction → cross-attn
+    # contributes 0 in both directions during warmup. After warmup, both
+    # directions unfreeze and grow from 0.
+    _freeze_all_until = getattr(args, 'freeze_all_blocks_until_epoch', 0)
+    _all_blocks_frozen = False
+    _all_block_params = []
+    if _freeze_all_until > 0 and start_epoch < _freeze_all_until and hasattr(model, 'price') and hasattr(model.price, 'cross_attn_parameters'):
+        for p in model.price.cross_attn_parameters():
+            if p.requires_grad:
+                _all_block_params.append(p)
+                p.requires_grad = False
+        _all_blocks_frozen = True
+        print(f"[StagedUnfreeze] Froze {len(_all_block_params)} cross-attn (all blocks, both directions) params for epochs 0-{_freeze_all_until-1}")
+
     for epoch in range(start_epoch, epochs):
         # Unfreeze LLM at the designated epoch
         if _llm_frozen and epoch >= _freeze_llm_until:
@@ -858,6 +873,13 @@ def train(model, train_loader, val_loader, \
                 p.requires_grad = True
             _odd_layers_frozen = False
             print(f"[StagedUnfreeze] Unfroze {len(_odd_layer_params)} odd-block (LLM←PRICE) cross-attn params at epoch {epoch}")
+
+        # Unfreeze ALL cross-attn blocks at their own designated epoch.
+        if _all_blocks_frozen and epoch >= _freeze_all_until:
+            for p in _all_block_params:
+                p.requires_grad = True
+            _all_blocks_frozen = False
+            print(f"[StagedUnfreeze] Unfroze {len(_all_block_params)} cross-attn (all blocks) params at epoch {epoch}")
 
         # Toggle warmup_mode for dual-direction cross-attn (Mode 13 / Mode 12+inflate)
         if hasattr(model, 'price') and hasattr(model.price, 'warmup_mode'):

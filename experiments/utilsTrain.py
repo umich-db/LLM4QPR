@@ -222,6 +222,14 @@ def parse_args():
                              "for the first N epochs, so the LLM token stream is strictly untouched by PRICE "
                              "during warmup (vs the default soft-zero-init warmup where the residual learns "
                              "to grow from 0). Independent of --freeze_llm_until_epoch. 0 = disabled.")
+    parser.add_argument("--freeze_all_blocks_until_epoch", type=int, default=0,
+                        help="Freeze ALL cross-attn blocks (both PRICE←LLM and LLM←PRICE) for the first N "
+                             "epochs AND zero-initialise the even-block output projection. Warmup phase then "
+                             "reduces to mode-7-like training mechanics (cross-attn contributes 0 in both "
+                             "directions); after epoch N, both directions unfreeze and grow from exactly 0. "
+                             "Note: the PRICE→embed_size projection (from RegressionModel.linear) is still "
+                             "active during warmup, so the model is NOT byte-identical to mode 7 (which has "
+                             "PRICE→512). 0 = disabled.")
     parser.add_argument("--checkpoint_interval", type=int, default=0,
                         help="Save checkpoint every N epochs during finetuning (0=no checkpoints)")
     parser.add_argument("--subdir_tag", type=str, default="",

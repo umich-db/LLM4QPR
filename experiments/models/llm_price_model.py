@@ -98,7 +98,7 @@ class PRICEEmbedder(nn.Module):
 
     def __init__(self, regression_model, n_cross_layers=0, llm_hidden_dim=None,
                  n_heads=8, dropout_rate=0.1, cross_attn_noop=False, force_inflate=False,
-                 price_output_dim_override=0):
+                 price_output_dim_override=0, zero_init_all_blocks=False):
         super().__init__()
         self.cross_attn_noop = bool(cross_attn_noop)
         self.force_inflate = bool(force_inflate)
@@ -150,7 +150,16 @@ class PRICEEmbedder(nn.Module):
                 for _ in range(self.n_cross_layers)
             ])
             for i, block in enumerate(self.cross_attn_blocks):
-                if i % 2 == 1:
+                # Default: only odd blocks (LLM←PRICE) are zero-initialised; even
+                # blocks (PRICE←LLM) start normally so PRICE immediately reads LLM.
+                # zero_init_all_blocks=True: also zero-init the even-block
+                # residual injection. Paired with --freeze_all_blocks_until_epoch,
+                # this gives a warmup where *neither* direction perturbs anything —
+                # PRICE goes through its core pipeline → length-1 token → through
+                # all blocks as a pure identity → concat with LLM. Mode-7-like
+                # training mechanics during warmup, but the PRICE→embed_size
+                # projection (from RegressionModel.linear) is still active.
+                if i % 2 == 1 or zero_init_all_blocks:
                     nn.init.zeros_(block.cross_attn.projection.weight)
                     nn.init.zeros_(block.cross_attn.projection.bias)
                     nn.init.zeros_(block.feed_forward[-1].weight)

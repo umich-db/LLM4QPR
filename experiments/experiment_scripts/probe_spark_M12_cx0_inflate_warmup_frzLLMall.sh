@@ -24,7 +24,7 @@
 # Tests whether keeping the LLM frozen lets cross-attn settle without competing
 # against simultaneously-updating LLM tokens.
 #
-# Output CSV will carry `_frzLLM999_frzAll5_pwm5` token — distinct from
+# Output CSV will carry `_frzLLM999_frzAll1_pwm1` token — distinct from
 # `_frzLLM5_frzAll5_pwm5` (the warmup-only-freeze variant).
 
 set -uo pipefail
@@ -38,6 +38,8 @@ WORKLOADS_ARR=(job_full)
 MODES_ARR=(12)
 
 # 999 > FT_NUM_EPOCH=30, so the LLM unfreeze condition never fires.
-MODE12_SCHED=(--price_warmup_epochs "5" --freeze_llm_until_epoch "999" --freeze_all_blocks_until_epoch "5")
+# Warmup phase shortened to 1 epoch: cross-attn frozen+zero for epoch 0, then
+# unfreezes at epoch 1; PRICE_core drops from 1e-3 to 2e-5 at epoch 1.
+MODE12_SCHED=(--price_warmup_epochs "1" --freeze_llm_until_epoch "999" --freeze_all_blocks_until_epoch "1")
 
 run_ablation

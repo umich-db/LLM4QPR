@@ -11,10 +11,14 @@ parser.add_argument("--dirs", type=str, nargs="+", required=True,
                     help="Result directories (datasets), e.g. results/duckdb/results_Train_job_Test_job_ours results/duckdb/results_Train_stats_Test_stats_ours")
 parser.add_argument("--task", type=str, default="time")
 parser.add_argument("--sentbert_only", action="store_true",
-                    help="Only show sentBert-all_quant variants (plus non-LLM baselines) in .png")
-parser.add_argument("--bert_only", action="store_true",
+                    help="Only show sentence-transformers/all-MiniLM-L12-v2 (sentBert) variants "
+                         "(plus non-LLM baselines) in .png")
+parser.add_argument("--bert_only", "--bert4_only", dest="bert_only", action="store_true",
                     help="Only show google/bert_uncased_L-4_H-768_A-12 variants (plus non-LLM baselines) "
-                         "in .png. Mutually exclusive with --sentbert_only.")
+                         "in .png. --bert4_only is an alias.")
+parser.add_argument("--bert2_only", action="store_true",
+                    help="Only show google/bert_uncased_L-2_H-256_A-4 variants (plus non-LLM baselines) "
+                         "in .png.")
 parser.add_argument("--exclude_retrain_mlp", action="store_true",
                     help="Drop _retrainMLP (inference-phase pretrained-lora) variants from the .png heatmap.")
 parser.add_argument("--retrain_mlp_only", action="store_true",
@@ -605,29 +609,30 @@ def create_relative_heatmap(table, output_path, task, llm_methods):
     print("="*80)
 
 
-if args.sentbert_only and args.bert_only:
-    parser.error("--sentbert_only and --bert_only are mutually exclusive")
+if sum([args.sentbert_only, args.bert_only, args.bert2_only]) > 1:
+    parser.error("--sentbert_only, --bert_only/--bert4_only, and --bert2_only are mutually exclusive")
 
-# Filter to sentBert-all variants only (plus non-LLM baselines) for heatmap
+# Filter LLM columns to one model family (plus non-LLM baselines) for heatmap.
+# The unique on-disk substring for each model is used as the identifier:
+#   sentBert-all  → sentence-transformers/all-MiniLM-L12-v2 (12-layer 384-dim)
+#   L-4_H-768     → google/bert_uncased_L-4_H-768_A-12 (4-layer 768-dim)
+#   L-2_H-256     → google/bert_uncased_L-2_H-256_A-4 (2-layer 256-dim)
 if args.sentbert_only:
-    keep_cols = [col for col in avg_relative.columns
-                 if col not in llm_display_names or 'sentBert-all' in col]
-    heatmap_table = avg_relative[keep_cols]
-    heatmap_llm = {m for m in llm_display_names if 'sentBert-all' in m}
-    suffix = '_sentbert'
+    _tag, suffix = 'sentBert-all', '_sentbert'
 elif args.bert_only:
-    # Match the bert_uncased_L-4_H-768 family (the only on-disk token is
-    # google-bert_uncased_L-4_H-768_A-12 — keep the L-4_H-768 substring as
-    # the identifier so future BERT variants don't accidentally match).
+    _tag, suffix = 'L-4_H-768', '_bert4'
+elif args.bert2_only:
+    _tag, suffix = 'L-2_H-256', '_bert2'
+else:
+    _tag, suffix = None, ''
+if _tag is not None:
     keep_cols = [col for col in avg_relative.columns
-                 if col not in llm_display_names or 'L-4_H-768' in col]
+                 if col not in llm_display_names or _tag in col]
     heatmap_table = avg_relative[keep_cols]
-    heatmap_llm = {m for m in llm_display_names if 'L-4_H-768' in m}
-    suffix = '_bert'
+    heatmap_llm = {m for m in llm_display_names if _tag in m}
 else:
     heatmap_table = avg_relative
     heatmap_llm = llm_display_names
-    suffix = ''
 
 # Drop retrainMLP variants from the heatmap if requested (CSV table keeps them).
 # Columns here are display names, so match on the _retrainMLP tag.

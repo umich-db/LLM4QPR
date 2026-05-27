@@ -13,10 +13,14 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--dir", type=str)
 parser.add_argument("--task", type=str)
 parser.add_argument("--sentbert_only", action="store_true",
-                    help="Only show sentBert-all_quant variants (plus non-LLM baselines) in .png")
-parser.add_argument("--bert_only", action="store_true",
+                    help="Only show sentence-transformers/all-MiniLM-L12-v2 (sentBert) variants "
+                         "(plus non-LLM baselines) in .png")
+parser.add_argument("--bert_only", "--bert4_only", dest="bert_only", action="store_true",
                     help="Only show google/bert_uncased_L-4_H-768_A-12 variants (plus non-LLM baselines) "
-                         "in .png. Mutually exclusive with --sentbert_only.")
+                         "in .png. --bert4_only is an alias.")
+parser.add_argument("--bert2_only", action="store_true",
+                    help="Only show google/bert_uncased_L-2_H-256_A-4 variants (plus non-LLM baselines) "
+                         "in .png.")
 parser.add_argument("--exclude_retrain_mlp", action="store_true",
                     help="Drop _retrainMLP (inference-phase pretrained-lora) variants from the .png heatmap. "
                          "Useful when comparing against jointMLP (finetune-phase) results only.")
@@ -504,27 +508,26 @@ quant_table = quant_table.reindex(sorted(quant_table.columns), axis=1)
 csv_path = csv_folder + f'/quantile_table_{args.dir.replace("/", "_")}_{args.task}.csv'
 quant_table.to_csv(csv_path)
 
-if args.sentbert_only and args.bert_only:
-    parser.error("--sentbert_only and --bert_only are mutually exclusive")
+if sum([args.sentbert_only, args.bert_only, args.bert2_only]) > 1:
+    parser.error("--sentbert_only, --bert_only/--bert4_only, and --bert2_only are mutually exclusive")
 
-# Filter to sentBert-all variants only (plus non-LLM baselines) for heatmap
+# Filter LLM columns to one model family (plus non-LLM baselines) for heatmap.
+# See to_table_relative.py for the substring-identifier convention.
 if args.sentbert_only:
-    display_map = {col: extract_display_name(col) for col in quant_table.columns}
-    keep_cols = [col for col in quant_table.columns
-                 if not is_llm_method(col) or 'sentBert-all' in display_map[col]]
-    heatmap_table = quant_table[keep_cols]
-    suffix = '_sentbert'
+    _tag, suffix = 'sentBert-all', '_sentbert'
 elif args.bert_only:
-    # Match the bert_uncased_L-4_H-768 family (only on-disk variant is
-    # google-bert_uncased_L-4_H-768_A-12 — L-4_H-768 is the unique substring).
+    _tag, suffix = 'L-4_H-768', '_bert4'
+elif args.bert2_only:
+    _tag, suffix = 'L-2_H-256', '_bert2'
+else:
+    _tag, suffix = None, ''
+if _tag is not None:
     display_map = {col: extract_display_name(col) for col in quant_table.columns}
     keep_cols = [col for col in quant_table.columns
-                 if not is_llm_method(col) or 'L-4_H-768' in display_map[col]]
+                 if not is_llm_method(col) or _tag in display_map[col]]
     heatmap_table = quant_table[keep_cols]
-    suffix = '_bert'
 else:
     heatmap_table = quant_table
-    suffix = ''
 
 # Drop retrainMLP variants from the heatmap if requested (CSV table keeps them).
 if args.exclude_retrain_mlp:

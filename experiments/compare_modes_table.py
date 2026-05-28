@@ -10,11 +10,13 @@ Workloads: stats, tpch, tpcds, syn, job, job_full (train workload auto-mapped:
 syn/job/job_full → train=job; others → train=self).
 
 Scoring (per cell = db × model × comparison):
-  For each (workload, quantile in {50, 90, 95, max}):
-    +1 if A_q < B_q  (A is the "should-beat" side)
-    -1 if A_q > B_q
-     0 if equal or one side missing
-  Then sum across all 6 workloads × 4 quantiles ∈ [-24, +24].
+  For each quantile in {50, 90, 95, max}:
+    1. Average A's Q-error across the 6 workloads → A_q_avg
+    2. Average B's Q-error across the 6 workloads → B_q_avg
+    3. +1 if A_q_avg < B_q_avg  (A is the "should-beat" side)
+       -1 if A_q_avg > B_q_avg
+        0 if equal
+  Sum across 4 quantiles → cell ∈ [-4, +4].
 
 Outputs the 3×9 table + per-column total + grand total.
 """
@@ -66,38 +68,43 @@ def read_quants(path):
     out['max'] = max(v for _, v in rows)
     return out
 
-def score(a, b):
-    """Per-quantile compare: +1 if a<b, -1 if a>b, 0 if ==. Returns sum over 4 quants
-    plus a (wins, losses, ties) tuple."""
-    if a is None or b is None: return 0, (0, 0, 4)
-    s = 0; w = l = t = 0
-    for q in QUANTS:
-        if a[q] < b[q]:   s += 1; w += 1
-        elif a[q] > b[q]: s -= 1; l += 1
-        else:             t += 1
-    return s, (w, l, t)
-
 COMPARISONS = [
     ('M7  beats M7b',  'M7',  'M7b'),
     ('M12 beats M7',   'M12', 'M7'),
     ('M12 beats M12w', 'M12', 'M12w'),
 ]
 
-# Build 3×9 table
-table = {}  # (row_label, db, model_label) → cell score
-detail = {} # same key → (wins, losses, ties, n_workloads_with_data)
+# Build 3×9 table.  Score = sum over 4 quantiles of sign(B_avg − A_avg),
+# where A_avg / B_avg are averages of Q-error across the 6 workloads.
+table = {}
+detail = {}  # (W, L, T, n_workloads_with_pair)
 for rlbl, a_mode, b_mode in COMPARISONS:
     for db in DBS:
         for mlbl, mvar in MODELS.items():
-            cell = 0; W = L = T = 0; n = 0
+            # Collect per-quantile lists across workloads where BOTH modes have data
+            a_vals = {q: [] for q in QUANTS}
+            b_vals = {q: [] for q in QUANTS}
+            n_pairs = 0
             for tr, ts in WORKLOADS:
                 a = read_quants(fpath(db, mvar, tr, ts, a_mode))
                 b = read_quants(fpath(db, mvar, tr, ts, b_mode))
-                if a is None or b is None: continue
-                s, (w, l, t) = score(a, b)
-                cell += s; W += w; L += l; T += t; n += 1
+                if a is None or b is None:
+                    continue
+                for q in QUANTS:
+                    a_vals[q].append(a[q])
+                    b_vals[q].append(b[q])
+                n_pairs += 1
+            cell = 0; W = L = T = 0
+            for q in QUANTS:
+                if not a_vals[q]:
+                    T += 1; continue
+                am = sum(a_vals[q]) / len(a_vals[q])
+                bm = sum(b_vals[q]) / len(b_vals[q])
+                if am < bm:   cell += 1; W += 1
+                elif am > bm: cell -= 1; L += 1
+                else:         T += 1
             table[(rlbl, db, mlbl)] = cell
-            detail[(rlbl, db, mlbl)] = (W, L, T, n)
+            detail[(rlbl, db, mlbl)] = (W, L, T, n_pairs)
 
 # Render
 col_labels = [f'{db}/{m}' for db in DBS for m in MODELS.keys()]
@@ -118,12 +125,12 @@ for col_idx, (db, m) in enumerate([(d, m) for d in DBS for m in MODELS]):
 print('-' * (18 + 13 * 9 + 12))
 print(f"{'COL SUM':<18} | " + " | ".join(f'{s:+12d}' for s in col_sums) + f" | {sum(row_sums):+d}")
 print()
-print("Detail (per cell W / L / T over 24 = 4 quantiles × 6 workloads):")
+print("Detail (per cell W / L / T over 4 quantiles, averaged across workloads):")
 for rlbl, _, _ in COMPARISONS:
     print(f"\n  {rlbl}:")
     for db in DBS:
         line = f"    {db:<9}"
         for mlbl in MODELS:
             W,L,T,n = detail[(rlbl, db, mlbl)]
-            line += f"  {mlbl:<8} W={W:>2}/L={L:>2}/T={T:>2} (n={n}wl)"
+            line += f"  {mlbl:<8} W={W}/L={L}/T={T} (n={n}wl)"
         print(line)

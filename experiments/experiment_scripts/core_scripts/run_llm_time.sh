@@ -658,7 +658,8 @@ if [ "$finetune" == "True" ]; then
                                           $CONCAT_TRUE_ARG \
                                           $STATS_ARGS \
                                           $PRICE_M_ARG $PRICE_S_ARG $PRICE_B_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
-                                          $MAX_QUERIES_ARG
+                                          $MAX_QUERIES_ARG \
+                                          $EARLY_STOP_ARG
     fi
   fi
 
@@ -703,6 +704,7 @@ if [ "$finetune" == "True" ]; then
                                         $STATS_ARGS \
                                         $PRICE_M_ARG $PRICE_S_ARG $PRICE_B_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
                                         $MAX_QUERIES_ARG \
+                                        $EARLY_STOP_ARG \
                                         $SKIP_TRAIN_ARG_FT
   fi
 
@@ -747,7 +749,8 @@ if [ "$finetune" == "True" ]; then
                                         $REMOVED_FIELDS_ARG \
                                         $CONCAT_TRUE_ARG \
                                         $STATS_ARGS \
-                                        $PRICE_M_ARG $PRICE_S_ARG $PRICE_B_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG
+                                        $PRICE_M_ARG $PRICE_S_ARG $PRICE_B_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
+                                        $EARLY_STOP_ARG
   fi
 
   if [[ "$RUN_LORA" == "true" ]]; then
@@ -784,7 +787,8 @@ if [ "$finetune" == "True" ]; then
                                         $REMOVED_FIELDS_ARG \
                                         $CONCAT_TRUE_ARG \
                                         $STATS_ARGS \
-                                        $PRICE_M_ARG $PRICE_S_ARG $PRICE_B_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG
+                                        $PRICE_M_ARG $PRICE_S_ARG $PRICE_B_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
+                                        $EARLY_STOP_ARG
   fi
 fi
 

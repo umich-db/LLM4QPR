@@ -1961,12 +1961,23 @@ def _extract_root(plan_json):
         # raise ValueError("no 'Plan' key at top level")
         return plan_obj
 
-def _find_actual_total_time(root_node, db='postgres'):
+def _find_actual_total_time(root_node, db='postgres', workload=None):
     if db == 'duckdb':
         # DuckDB: latency in seconds at root level
         if "latency" not in root_node:
             raise KeyError("'latency' not found in root (DuckDB)")
-        return float(root_node["latency"])
+        lat = float(root_node["latency"])
+        # DuckDB serves tpch and tpcds from memory in sub-microsecond time
+        # (medians ~250 ns, all 100% sub-millisecond). The Normalizer in
+        # evaluation/utils.py does log(val + 0.001) — the 0.001 epsilon
+        # drowns out the entire dynamic range when values are 1e-7..1e-5,
+        # collapsing all targets to ~the same number and making the model
+        # untrainable (M7b/M12/M12w see Q-error medians > 10^4 on duckdb tpch).
+        # Scale these workloads' latencies to nanoseconds so the normalizer
+        # has the natural ~6-nat dynamic range to work with.
+        if workload in ('tpch', 'tpcds'):
+            lat *= 1e9
+        return lat
     if db == 'spark':
         # Spark: already extracted as float during text parsing
         return float(root_node)
@@ -2646,7 +2657,8 @@ def read_json_and_clean(predictor, ds_info, dat_path, argsP, all=False):
             root = _extract_root(plan_json)
             # Use pre-bucketized root for costs/cards
             orig_root = original_roots[idx]
-            costs.append(_find_actual_total_time(orig_root, db))
+            costs.append(_find_actual_total_time(orig_root, db,
+                                                  workload=getattr(argsP, 'workload_test', None)))
             cards.append(_find_actual_rows(orig_root, db))
             cleaned_root = _clean_node(root, fields_to_remove, field_cats)
             if getattr(argsP, "stats_token_inject", False) and stats_mem is not None:

@@ -194,6 +194,16 @@ def extract_display_name(col_name):
             frz_match = re.search(r'_frzLLM(\d+)', col_name)
             if frz_match:
                 display_name += f"_frzLLM{frz_match.group(1)}"
+            # Cross-attn block freezes (added by --freeze_odd_blocks_until_epoch and
+            # --freeze_all_blocks_until_epoch). frzAll means "both directions";
+            # frzOdd means "LLM←PRICE direction only". Filenames include them only
+            # when value > 0.
+            frz_all_match = re.search(r'_frzAll(\d+)', col_name)
+            if frz_all_match:
+                display_name += f"_frzAll{frz_all_match.group(1)}"
+            frz_odd_match = re.search(r'_frzOdd(\d+)', col_name)
+            if frz_odd_match:
+                display_name += f"_frzOdd{frz_odd_match.group(1)}"
             pwm_match = re.search(r'_pwm(\d+)', col_name)
             if pwm_match:
                 display_name += f"_pwm{pwm_match.group(1)}"

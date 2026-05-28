@@ -14,11 +14,11 @@ method columns per comparison and sign-compare their values at each of the
 4 quantile rows {50, 90, 95, max}.
 
 Scoring (per cell = db × model × comparison):
-  For each quantile in {50, 90, 95, max}:
-    +1 if A_q < B_q  (A is the "should-beat" side)
-    -1 if A_q > B_q
-     0 if equal
-  Sum across 4 quantiles → cell ∈ [-4, +4].
+  Count how many of the 4 quantiles {50, 90, 95, max} A wins on (A_q < B_q)
+  and how many B wins on. Cell ∈ {-1, 0, +1}:
+    +1 if A wins more quantiles
+    -1 if B wins more
+     0 if tied (equal win count)
 
 Override the source anchor with ANCHOR=50|90|95|max (env var).
 """
@@ -96,20 +96,25 @@ for rlbl, a_mode, b_mode in COMPARISONS:
     for db in DBS:
         for mlbl, mtok in MODELS.items():
             ac = col_name(mtok, a_mode); bc = col_name(mtok, b_mode)
-            cell = 0; W = L = T = 0
+            W = L = T = 0
             missing = False
             for q in QUANTS:
                 row = tables[db].get(q)
                 if row is None or ac not in row or bc not in row:
                     missing = True; break
                 av, bv = row[ac], row[bc]
-                if av < bv:   cell += 1; W += 1
-                elif av > bv: cell -= 1; L += 1
+                if av < bv:   W += 1
+                elif av > bv: L += 1
                 else:         T += 1
             if missing:
                 table[(rlbl, db, mlbl)] = None
                 detail[(rlbl, db, mlbl)] = (ac, bc)
             else:
+                # New scoring: just one of {-1, 0, +1} based on which side
+                # wins MORE quantiles. Ties (W==L) → 0.
+                if   W >  L: cell = 1
+                elif W <  L: cell = -1
+                else:        cell = 0
                 table[(rlbl, db, mlbl)] = cell
                 detail[(rlbl, db, mlbl)] = (W, L, T)
 

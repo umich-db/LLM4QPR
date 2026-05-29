@@ -33,8 +33,10 @@ cd "$SCRIPT_DIR/.."
 source "$SCRIPT_DIR/_compare_modes_lib.sh"
 
 export MODEL="${MODEL:-sentence-transformers/all-MiniLM-L12-v2}"
+# WORKLOADS env var lets the caller pick a different target cell without editing.
+# Example: WORKLOADS=stats MODEL=google/bert_uncased_L-4_H-768_A-12 SEEDS=43 bash …
 DB_ENGINES=(spark)
-WORKLOADS_ARR=(job_full)
+WORKLOADS_ARR=(${WORKLOADS:-job_full})
 MODES_ARR=(12)
 
 # 999 > FT_NUM_EPOCH=30, so the LLM unfreeze condition never fires.

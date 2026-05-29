@@ -20,7 +20,7 @@ from pareto_frontier_search import (
     ParetoFrontierSearch, SearchConfig,
     CONTINUOUS_COLS, CATEGORICAL_COLS,
 )
-from model_selection_v2 import (
+from model_selection_utils import (
     load_candidates, find_cdf_file, parse_qerror,
 )
 

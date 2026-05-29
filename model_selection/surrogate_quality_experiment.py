@@ -54,7 +54,7 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.svm import SVR
 
 from pareto_frontier_search import CONTINUOUS_COLS, CATEGORICAL_COLS
-from model_selection_v2 import load_candidates
+from model_selection_utils import load_candidates
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_PATH = os.path.join(SCRIPT_DIR, '..', 'experiments', 'experiment_scripts',

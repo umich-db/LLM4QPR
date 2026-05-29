@@ -20,7 +20,7 @@ from pareto_frontier_search import (
     ParetoFrontierSearch, SearchConfig,
     CONTINUOUS_COLS, CATEGORICAL_COLS,
 )
-from model_selection_v2 import load_candidates, find_cdf_file, parse_qerror
+from model_selection_utils import load_candidates, find_cdf_file, parse_qerror
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_PATH = os.path.join(SCRIPT_DIR, '..', 'experiments', 'experiment_scripts', 'model_profile_with_nonemb.csv')

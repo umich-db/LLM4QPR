@@ -11,7 +11,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
 from argparse import Namespace
-from model_selection_v2 import load_candidates, find_cdf_file, parse_qerror
+from model_selection_utils import load_candidates, find_cdf_file, parse_qerror
 
 CSV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                         '..', 'experiments', 'experiment_scripts', 'model_profile_with_nonemb.csv')

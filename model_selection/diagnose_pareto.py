@@ -10,7 +10,7 @@ from pareto_frontier_search import (
     ParetoFrontierSearch, SearchConfig,
     CONTINUOUS_COLS, CATEGORICAL_COLS,
 )
-from model_selection_v2 import load_candidates, parse_qerror
+from model_selection_utils import load_candidates, parse_qerror
 from plot_pareto_comparison import (
     find_cdf_file_maxq, compute_hypervolume,
     CSV_PATH, EXPERIMENTS_DIR,

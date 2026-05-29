@@ -153,7 +153,16 @@ Inputs: `logs/postgres/logs_Train_stats_Test_stats_ours/all_models/all_models_fu
 
 Despite their names, **not** part of the archived prototype: `random_model_selection.py` (random baseline used by `master_random_inflatePRICE_e16_group_{A,B,C,D}.sh`) and `experiments/model_selection.png` (a live `plot_hv_vs_hours.py` output).
 
-> A separate top-level package `model_selection/` (`pareto_frontier_search.py`, `multi_fidelity/`) implements a related surrogate/Pareto search; it is distinct from the `analyze_overall.sh` experiment framework above.
+### Separate `model_selection/` package (top-level, live parallel track)
+
+`model_selection/` (repo root, **not** `experiment_scripts/`) is a distinct, still-live research codebase implementing **surrogate-guided Pareto-frontier recovery** — a different algorithm from the `compare_round_pareto.py` round-based filtering above (the two do **not** import each other; `compare_round_pareto.py` uses its own `pareto_levels()`).
+
+- **`pareto_frontier_search.py`** — `ParetoFrontierSearch` (Python API). Latency is offline-known; accuracy is fit by a bootstrap ensemble of random forests (`BootstrapEnsembleRegressor`); batch acquisition is latency-specific frontier Expected Improvement (`expected_improvement_maximization`). `SearchConfig` knobs: `init_budget`, `batch_size`, `max_evals`, `exploration_weight`, `coverage_weight`, `diversity_weight`, `family_weight`, `ensemble_size`, `enable_feature_filtering`, `patience_rounds`, `anchor_init`. Recovers the full frontier, not a single best.
+- **`multi_fidelity/multifidelity_pareto_search.py`** — `MultiFidelityParetoSearch` / `MFSearchConfig` / `MFSearchResult`: successive-halving over staged training epochs. **Wired into the main pipeline** via `experiment_scripts/compare_mf_pareto.py` (which `sys.path.insert`s `model_selection/multi_fidelity/` and imports it), run over the same `all_models_full_e16.csv` 43-model pool as `compare_round_pareto.py`. Drivers: `run_mf_experiment.py`, `run_mf_sweep.py`.
+- **Analysis/diagnostic scripts** (`ablation_pareto.py`, `sweep_strategies.py`, `diagnose_pareto.py`, `test_pareto.py`, `plot_pareto.py`, `plot_pareto_comparison.py`, `rank_stability_analysis.py`, `robustness_experiment.py`, `size_vs_accuracy_analysis.py`, `surrogate_quality_experiment.py`) — run directly with `python model_selection/<script>.py`; outputs land in `model_selection/` (`pareto_results/`, `*.png`, `*.csv`).
+- **`model_ground_truth.csv`** — oracle latency/accuracy table; read externally by `experiments/run_price_bicross_experiment.sh` and `run_joint_full_10models.sh`.
+
+Shared helpers: many of these scripts import `load_candidates`, `find_cdf_file`, `parse_qerror` from **`experiment_scripts/model_selection_utils.py`** (via their existing `sys.path.insert('../experiments/experiment_scripts')`). Those helpers were extracted there from the archived `model_selection_v2.py`, so the live package no longer depends on archived code.
 
 ## Gotchas
 

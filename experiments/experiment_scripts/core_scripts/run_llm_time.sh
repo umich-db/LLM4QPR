@@ -1566,8 +1566,16 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
   PRICE_MODEL_PATH=${PRICE_MODEL_PATH:-"$SCRIPT_DIR_LLM/experiments/price_statistics/model/model_params.pth"}
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
-  # Check if finetuned BiCrossAttentionJoint weights already exist
-  BI_CROSS_ATTN_JOINT_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}_llm_price${NO_LLM_RESIDUAL_SUFFIX}${BI_CROSS_ATTN_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${CROSS_ATTN_DROPOUT_SUFFIX}${CROSS_ATTN_GATE_SUFFIX}${RESIDUAL_PRED_SUFFIX}${DELTA_BOUND_SUFFIX}${PRICE_EMB_DROPOUT_SUFFIX}${INIT_LLM_FROM_SUFFIX}${DETERMINISTIC_SUFFIX}${CROSS_ATTN_NOOP_SUFFIX}${FORCE_INFLATE_SUFFIX}${PRICE_OUTPUT_DIM_SUFFIX}${FREEZE_LLM_SUFFIX}${FREEZE_ODD_SUFFIX}${FREEZE_ALL_SUFFIX}${PRICE_WARMUP_SUFFIX}${PRICE_LR_SUFFIX}${EPOCH_SUFFIX}"
+  # Check if finetuned BiCrossAttentionJoint weights already exist.
+  # IMPORTANT: this MUST reproduce train.py's saved name (train.py:1286 ->
+  # _arch_path_suffix order, then _randInit, _e{epoch}, _seed{seed}). The old
+  # version scattered randInit/cx/frzLLM in the wrong order and omitted _seed,
+  # so it never matched the saved weights and biCrossAttn runs ALWAYS retrained
+  # instead of loading existing weights. Order below mirrors _arch_path_suffix:
+  #   ...biCrossAttn, refinedPool, tripleConcat, inflatePRICE, frzLLM, frzOdd,
+  #   frzAll, cx, drop, gate, resPred, db, peDrop, noop, finfl, pod, nl, fr,
+  #   pwm, pLR  -> then randInit, epoch, seed.
+  BI_CROSS_ATTN_JOINT_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}_llm_price${NO_LLM_RESIDUAL_SUFFIX}${BI_CROSS_ATTN_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${FREEZE_LLM_SUFFIX}${FREEZE_ODD_SUFFIX}${FREEZE_ALL_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${CROSS_ATTN_DROPOUT_SUFFIX}${CROSS_ATTN_GATE_SUFFIX}${RESIDUAL_PRED_SUFFIX}${DELTA_BOUND_SUFFIX}${PRICE_EMB_DROPOUT_SUFFIX}${CROSS_ATTN_NOOP_SUFFIX}${FORCE_INFLATE_SUFFIX}${PRICE_OUTPUT_DIM_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${PRICE_WARMUP_SUFFIX}${PRICE_LR_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}_seed${SEED}"
   if [ -f "${BI_CROSS_ATTN_JOINT_PREFIX}_llm.pt" ] && [ -f "${BI_CROSS_ATTN_JOINT_PREFIX}_price.pt" ]; then
     echo "Finetuned BiCrossAttentionJoint weights already exist, skipping finetune:"
     echo "  LLM:   ${BI_CROSS_ATTN_JOINT_PREFIX}_llm.pt"

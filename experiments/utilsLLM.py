@@ -1967,21 +1967,21 @@ def _find_actual_total_time(root_node, db='postgres', workload=None):
         if "latency" not in root_node:
             raise KeyError("'latency' not found in root (DuckDB)")
         lat = float(root_node["latency"])
-        # DuckDB serves queries from memory, so latencies (seconds) sit near or
-        # below the Normalizer's +0.001 epsilon (evaluation/utils.py: log(val+0.001)).
+        # DuckDB serves queries from memory; some workloads have sub-millisecond
+        # latencies near/below the Normalizer's +0.001 epsilon
+        # (evaluation/utils.py: log(val+0.001)).
         #   - tpch/tpcds: the ENTIRE distribution is sub-microsecond (medians
-        #     ~250 ns, 100% sub-ms). The epsilon collapses the whole log dynamic
-        #     range -> targets all map to ~the same value -> model untrainable
-        #     (M7b/M12/M12w Q-error medians > 10^4). Scaling to nanoseconds (x1e9)
-        #     restores the natural ~6-nat range. This is a genuine fix.
-        #   - imdb family (job/syn/job_full/jobm): the body is healthy (p50 ~250 ms)
-        #     but a few test queries have sub-microsecond OOD latencies (e.g.
-        #     job_full has 8 in 190 ns..2.4 us). We apply the same x1e9 scaling
-        #     here for a uniform nanosecond representation across duckdb workloads.
-        #     CAVEAT: Q-error is scale-invariant, so x1e9 does NOT change those
-        #     OOD outliers' Q-error (job_full/jobm p95/max stay ~4e3); only
-        #     filtering the physically-impossible (<~1 us) labels fixes the tail.
-        if workload in ('tpch', 'tpcds', 'job', 'syn', 'job_full', 'jobm'):
+        #     ~250 ns, 100% sub-ms) -> the epsilon collapses the log dynamic range
+        #     -> model untrainable. Scaling to nanoseconds (x1e9) restores it.
+        #     These models are TRAINED with this scaling, so it stays ON for both
+        #     their training AND inference.
+        #   - imdb family (job/syn/job_full/jobm): NOT scaled. imdb models were
+        #     trained WITHOUT x1e9, so inference must match (scaling would shift
+        #     the Normalizer range and break the loaded weights). The job_full
+        #     sub-us OOD latencies were a DATA bug fixed at source via corrected
+        #     query plans, not by scaling (x1e9 is scale-invariant on Q-error, so
+        #     it was a no-op there anyway).
+        if workload in ('tpch', 'tpcds'):
             lat *= 1e9
         return lat
     if db == 'spark':

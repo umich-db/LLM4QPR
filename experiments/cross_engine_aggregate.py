@@ -180,9 +180,11 @@ def main():
     parser.add_argument("--out_dir", default=None,
                         help="Output dir (default: <results_dir>/cross_engine).")
     parser.add_argument("--jointmlp_only", action="store_true",
-                        help="Restrict the heatmap to columns containing '_jointMLP' "
-                             "(mirrors --retrain_mlp_only / --exclude_retrain_mlp in "
-                             "to_table_relative.py). CSVs still contain every column.")
+                        help="Drop the _retrainMLP variants from the heatmap, keeping the "
+                             "_jointMLP price modes AND the baselines that have no MLP suffix "
+                             "(mode 1 = pretrained-None inference, non-LLM baselines). Mirrors "
+                             "to_table_relative.py --exclude_retrain_mlp. CSVs still contain "
+                             "every column.")
     args = parser.parse_args()
 
     anchor_tag = "" if args.anchor == "50" else f"_anchor{args.anchor}"
@@ -250,15 +252,18 @@ def main():
         # the cross-engine inputs); the function still works — every cell
         # gets green coloring and the non-LLM legend entries are unused.
         if args.jointmlp_only:
-            heatmap_cols = [c for c in common if '_jointMLP' in c]
+            # Keep jointMLP price modes + baselines (mode 1 has no MLP suffix);
+            # drop only the _retrainMLP duplicates. Matches to_table_relative.py
+            # --exclude_retrain_mlp, so mode 1 stays in the heatmap.
+            heatmap_cols = [c for c in common if '_retrainMLP' not in c]
             png_suffix = "_jointMLPonly_heatmap.png"
         else:
             heatmap_cols = list(common)
             png_suffix = "_heatmap.png"
 
         if not heatmap_cols:
-            print(f"[{model_label}] no columns left after --jointmlp_only filter; "
-                  f"skipping heatmap")
+            print(f"[{model_label}] no non-retrainMLP columns left after --jointmlp_only "
+                  f"filter; skipping heatmap")
             simple_png = norm_png = None
         else:
             llm_methods = {c for c in heatmap_cols if col_is_llm(c)}

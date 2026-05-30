@@ -1576,29 +1576,35 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
   #   frzAll, cx, drop, gate, resPred, db, peDrop, noop, finfl, pod, nl, fr,
   #   pwm, pLR  -> then randInit, epoch, seed.
   BI_CROSS_ATTN_JOINT_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}_llm_price${NO_LLM_RESIDUAL_SUFFIX}${BI_CROSS_ATTN_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${FREEZE_LLM_SUFFIX}${FREEZE_ODD_SUFFIX}${FREEZE_ALL_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${CROSS_ATTN_DROPOUT_SUFFIX}${CROSS_ATTN_GATE_SUFFIX}${RESIDUAL_PRED_SUFFIX}${DELTA_BOUND_SUFFIX}${PRICE_EMB_DROPOUT_SUFFIX}${CROSS_ATTN_NOOP_SUFFIX}${FORCE_INFLATE_SUFFIX}${PRICE_OUTPUT_DIM_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${PRICE_WARMUP_SUFFIX}${PRICE_LR_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}_seed${SEED}"
+  algo=llm_price_finetune
+  hid_units=2048
+  lr=${LLM_LR:-0.0001}
+  price_lr=${PRICE_LR:-$PRICE_LR_DEFAULT}
+  batch_size=$FT_BATCH_SIZE
+  grad_accum_steps=${GRAD_ACCUM_STEPS:-1}
+
   if [ -f "${BI_CROSS_ATTN_JOINT_PREFIX}_llm.pt" ] && [ -f "${BI_CROSS_ATTN_JOINT_PREFIX}_price.pt" ]; then
-    echo "Finetuned BiCrossAttentionJoint weights already exist, skipping finetune:"
+    # Weights exist: skip-train-LOAD them and re-emit the finetune-phase
+    # (jointMLP) eval CSV via the live joint forward — do NOT skip the finetune
+    # step entirely (that left the jointMLP CDF stale on inference-only refreshes).
+    echo "Finetuned BiCrossAttentionJoint weights already exist; loading + emitting finetune-phase eval CSV (jointMLP):"
     echo "  LLM:   ${BI_CROSS_ATTN_JOINT_PREFIX}_llm.pt"
     echo "  PRICE: ${BI_CROSS_ATTN_JOINT_PREFIX}_price.pt"
+    SKIP_TRAIN_ARG="--skip_train_load_finetuned_weights"
   else
     #########################Bidirectional Cross-Attention Joint LLM+PRICE finetune#########################
-    algo=llm_price_finetune
-    hid_units=2048
-    lr=${LLM_LR:-0.0001}
-    price_lr=${PRICE_LR:-$PRICE_LR_DEFAULT}
-    batch_size=$FT_BATCH_SIZE
-    grad_accum_steps=${GRAD_ACCUM_STEPS:-1}
-
     echo "Bidirectional Cross-Attention Joint LLM+PRICE finetune"
+    SKIP_TRAIN_ARG=""
+  fi
 
-    # Build grad_accum arg
-    GRAD_ACCUM_ARG=""
-    if [[ "$grad_accum_steps" -gt 1 ]]; then
-      GRAD_ACCUM_ARG="--grad_accum_steps $grad_accum_steps"
-      echo "  Gradient accumulation: ${grad_accum_steps} steps (effective batch = ${batch_size} * ${grad_accum_steps})"
-    fi
+  # Build grad_accum arg
+  GRAD_ACCUM_ARG=""
+  if [[ "$grad_accum_steps" -gt 1 ]]; then
+    GRAD_ACCUM_ARG="--grad_accum_steps $grad_accum_steps"
+    echo "  Gradient accumulation: ${grad_accum_steps} steps (effective batch = ${batch_size} * ${grad_accum_steps})"
+  fi
 
-    setup_args_and_suffixes
+  setup_args_and_suffixes
 
     # When --no_llm_residual is set the training step is also the only
     # evaluation step (the LLM-side inference below is skipped).  Pass an
@@ -1659,8 +1665,8 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
                                       $FREEZE_LLM_ARG $FREEZE_ODD_ARG $FREEZE_ALL_ARG \
                                       $PRICE_WARMUP_ARG \
                                       $PRICE_LR_ARG \
-                                      $SUBDIR_ARG
-  fi
+                                      $SUBDIR_ARG \
+                                      $SKIP_TRAIN_ARG
 
   #########################inference: pre-trained BiCrossAttentionJoint#########################
   # Bidirectional cross-attention requires the full model (LLM+PRICE+bi-cross-attn).

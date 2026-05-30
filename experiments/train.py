@@ -1633,3 +1633,41 @@ else:
   print("\nTest Results:")
   print("Q Errors:", q_errors)
   # print("Absolute Errors:", abs_errors)
+
+  # ── jointMLP eval in the inference path (Option A) ───────────────────────
+  # The retrainMLP CDF was just written to argsP.output_dir_qerror. The joint
+  # finetune already trained an LLM+PRICE+MLP head and saved its MLP to
+  # {prefix}_mlp.pt. Because test_loader yields the SAME cached combined
+  # features both heads consume, load the joint MLP head and evaluate it here
+  # at near-zero cost, emitting the canonical jointMLP CDF. Both paths are
+  # supplied by run_llm_time.sh (source of truth) — no reconstruction here.
+  _jm_w = getattr(argsP, 'jointmlp_weights_in', None)
+  _jm_out = getattr(argsP, 'jointmlp_cdf_out', None)
+  if _jm_w and _jm_out:
+      try:
+          if not os.path.exists(_jm_w):
+              print(f"[jointMLP] joint MLP head not found at {_jm_w}; skipping jointMLP eval.")
+          else:
+              _jm_mlp = Prediction(input_dim, argsP.hid_units)
+              _jm_r = _jm_mlp.load_state_dict(torch.load(_jm_w, map_location=device), strict=False)
+              print(f"[jointMLP] Loaded joint MLP head from {_jm_w} "
+                    f"(missing={len(_jm_r.missing_keys)}, unexpected={len(_jm_r.unexpected_keys)})")
+              _jm_mlp.to(device)
+              _jm_norm = ds_info.card_norm if argsP.card else ds_info.cost_norm
+              _jm_test_emb = (test_ds.tensors[0].cpu().numpy()
+                              if argsP.algo in ("llm", "llm_price") and hasattr(test_ds, 'tensors')
+                              else None)
+              print("[jointMLP] Running test eval on joint MLP head (cached combined features)...")
+              _jm_q, _, _jm_dist, _ = evaluate(
+                  _jm_mlp, argsP, test_loader, _jm_norm, device, data_sec="test",
+                  save_embeddings=False, test_embeddings=_jm_test_emb,
+                  test_templates=test_templates, output_dir_qerror=None,
+                  workload_test=argsP.workload_test, verbose_info=False,
+                  train_embeddings=None, test_texts=None)
+              print("[jointMLP] Test Q-errors (joint head):", _jm_q)
+              if _jm_dist is not None:
+                  os.makedirs(os.path.dirname(_jm_out), exist_ok=True)
+                  save_error_cdf(_jm_dist, _jm_out, error_type="Qerror")
+                  print(f"[jointMLP] Saved jointMLP CDF to {_jm_out}")
+      except Exception as _jm_e:
+          print(f"[jointMLP] jointMLP eval failed: {_jm_e}")

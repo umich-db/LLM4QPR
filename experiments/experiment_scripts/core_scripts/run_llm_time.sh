@@ -715,6 +715,9 @@ if [ "$finetune" == "True" ]; then
   lr=${LLM_LR:-0.0001}
   batch_size=64     
 
+  # Option A: jointMLP args default empty (the 'last' inference has no joint MLP
+  # head); the 'lora' inference below sets them to real paths. Empty -> train.py skips.
+  M2_MLP=""; M2_FT_CDF=""
   if [[ "$RUN_LAST" == "true" ]]; then
     llm_pretrained=last
     echo "inference: pre-trained last"
@@ -741,6 +744,8 @@ if [ "$finetune" == "True" ]; then
                                         --llm_pretrained_task $llm_pretrained_task \
                                         --seed $SEED \
                                         --ft_batch_size $FT_BATCH_SIZE \
+                                        --jointmlp_weights_in "$M2_MLP" \
+                                        --jointmlp_cdf_out "$M2_FT_CDF" \
                                         $BUCKETIZE_ARG \
                                         $QUANTIFICATION_ARG \
                                         $EMBEDDINGS_ARG \
@@ -758,6 +763,12 @@ if [ "$finetune" == "True" ]; then
     echo "inference: pre-trained lora"
 
     setup_args_and_suffixes
+
+    # Option A: this inference invocation also emits the jointMLP CDF (mode 2).
+    # _mlp.pt + canonical finetune-phase CDF reconstructed with finetune-phase
+    # literals (algo=llm_finetune, b${FT_BATCH_SIZE}, h2048) — see train.py.
+    M2_MLP="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_lora_${model_name1}_b${FT_BATCH_SIZE}${STATS_SUFFIX}_mlp.pt"
+    M2_FT_CDF="${RESULTS_DIR}/results_Train_${TRAIN_WLS_HYPHEN}_Test_${WORKLOAD_TEST}_ours${SUBDIR_PART}/time_llm_finetune_lora_${DB_ENGINE}_${lr}_b${FT_BATCH_SIZE}_h2048_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}_cdf_seed${SEED}.csv"
 
     python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
                                         --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-${llm_pretrained}_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${DOWNSTREAM_SUFFIX}${REMOVED_FIELDS_SUFFIX}${CONCAT_TRUE_SUFFIX}${STATS_SUFFIX}_ftb${FT_BATCH_SIZE}_seed${SEED}.csv \
@@ -779,6 +790,8 @@ if [ "$finetune" == "True" ]; then
                                         --llm_pretrained_task $llm_pretrained_task \
                                         --seed $SEED \
                                         --ft_batch_size $FT_BATCH_SIZE \
+                                        --jointmlp_weights_in "$M2_MLP" \
+                                        --jointmlp_cdf_out "$M2_FT_CDF" \
                                         $BUCKETIZE_ARG \
                                         $QUANTIFICATION_ARG \
                                         $EMBEDDINGS_ARG \
@@ -872,6 +885,10 @@ if [ "$finetune" == "JointPrice" ]; then
 
   setup_args_and_suffixes
 
+  # Option A: this inference invocation also emits the jointMLP CDF (mode 7).
+  JP_MLP="${JOINT_PRICE_PREFIX}_mlp.pt"
+  JP_FT_CDF="${RESULTS_DIR}/results_Train_${TRAIN_WLS_HYPHEN}_Test_${WORKLOAD_TEST}_ours${SUBDIR_PART}/time_llm_price_finetune_lora_${DB_ENGINE}_${lr}_b${FT_BATCH_SIZE}_h2048_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${EPOCH_SUFFIX}_cdf_seed${SEED}.csv"
+
   python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
                                       --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${FREEZE_LLM_SUFFIX}${FREEZE_ODD_SUFFIX}${FREEZE_ALL_SUFFIX}${PRICE_WARMUP_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.csv \
                                       --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${FREEZE_LLM_SUFFIX}${FREEZE_ODD_SUFFIX}${FREEZE_ALL_SUFFIX}${PRICE_WARMUP_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}_abs.txt \
@@ -896,6 +913,8 @@ if [ "$finetune" == "JointPrice" ]; then
                                       --seed $SEED \
                                       --ft_batch_size $FT_BATCH_SIZE \
                                       --ft_num_epoch $FT_NUM_EPOCH \
+                                      --jointmlp_weights_in "$JP_MLP" \
+                                      --jointmlp_cdf_out "$JP_FT_CDF" \
                                       $BUCKETIZE_ARG \
                                       $QUANTIFICATION_ARG \
                                       $EMBEDDINGS_ARG \
@@ -1680,6 +1699,11 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
 
   setup_args_and_suffixes
 
+  # Option A: this inference invocation also emits the jointMLP CDF (mode 12).
+  # CDF suffix order mirrors the finetune --log_file (suffix chain above).
+  BX_MLP="${BI_CROSS_ATTN_JOINT_PREFIX}_mlp.pt"
+  BX_FT_CDF="${RESULTS_DIR}/results_Train_${TRAIN_WLS_HYPHEN}_Test_${WORKLOAD_TEST}_ours${SUBDIR_PART}/time_llm_price_finetune_lora_biCrossAttn_${DB_ENGINE}_${lr}_b${FT_BATCH_SIZE}_h2048_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}${NO_LLM_RESIDUAL_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${CROSS_ATTN_DROPOUT_SUFFIX}${CROSS_ATTN_GATE_SUFFIX}${RESIDUAL_PRED_SUFFIX}${DELTA_BOUND_SUFFIX}${PRICE_EMB_DROPOUT_SUFFIX}${INIT_LLM_FROM_SUFFIX}${DETERMINISTIC_SUFFIX}${CROSS_ATTN_NOOP_SUFFIX}${FORCE_INFLATE_SUFFIX}${PRICE_OUTPUT_DIM_SUFFIX}${FREEZE_LLM_SUFFIX}${FREEZE_ODD_SUFFIX}${FREEZE_ALL_SUFFIX}${PRICE_WARMUP_SUFFIX}${PRICE_LR_SUFFIX}${EPOCH_SUFFIX}_cdf_seed${SEED}.csv"
+
   python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
                                       --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_priceBiCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${FREEZE_LLM_SUFFIX}${FREEZE_ODD_SUFFIX}${FREEZE_ALL_SUFFIX}${PRICE_WARMUP_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}.csv \
                                       --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-lora_priceBiCrossAttnJoint_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}${REFINED_POOL_SUFFIX}${TRIPLE_CONCAT_SUFFIX}${INFLATE_PRICE_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${N_CROSS_LAYERS_SUFFIX}${FREEZE_LLM_SUFFIX}${FREEZE_ODD_SUFFIX}${FREEZE_ALL_SUFFIX}${PRICE_WARMUP_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}${RETRAIN_MLP_SUFFIX}_seed${SEED}_abs.txt \
@@ -1705,6 +1729,8 @@ if [ "$finetune" == "BiCrossAttentionJoint" ]; then
                                       --seed $SEED \
                                       --ft_batch_size $FT_BATCH_SIZE \
                                       --ft_num_epoch $FT_NUM_EPOCH \
+                                      --jointmlp_weights_in "$BX_MLP" \
+                                      --jointmlp_cdf_out "$BX_FT_CDF" \
                                       $BUCKETIZE_ARG \
                                       $QUANTIFICATION_ARG \
                                       $EMBEDDINGS_ARG \

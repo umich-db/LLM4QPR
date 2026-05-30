@@ -32,13 +32,6 @@ def parse_args():
     parser.add_argument("--file_name", type=str)
     parser.add_argument("--output_dir_qerror", type=str)
     parser.add_argument("--output_dir_abs", type=str)
-    # Option A (jointMLP in the inference path): when both are set on an
-    # inference invocation, train.py loads the joint finetune MLP head
-    # (--jointmlp_weights_in) and evaluates it on the same cached combined
-    # features the retrainMLP head uses, writing the canonical jointMLP CDF
-    # (--jointmlp_cdf_out). Both paths are supplied by run_llm_time.sh.
-    parser.add_argument("--jointmlp_weights_in", type=str, default=None)
-    parser.add_argument("--jointmlp_cdf_out", type=str, default=None)
     parser.add_argument("--LLM_path", type=str,
                             help="Path to the saved LLM model state_dict (QueryPlanPredictor).")
     parser.add_argument("--use_binary", action="store_true", default=False,

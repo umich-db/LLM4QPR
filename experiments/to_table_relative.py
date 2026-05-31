@@ -213,6 +213,17 @@ def extract_display_name(col_name):
             if pl_match:
                 display_name += f"_pL{pl_match.group(1)}"
 
+            # Extract PRICE learning-rate ablation (e.g., _pLR0.0001). Must be
+            # captured: otherwise a `_pLR…` ablation collapses to the SAME
+            # display name as the canonical run, which trips the collision →
+            # raw-prefix rename in step 2 and drops BOTH from the cross-workload
+            # intersection (the raw prefix carries the b24/b4 micro-batch token,
+            # so it isn't even consistent across a db's workloads). `_pL(\d+)`
+            # above does not match `_pLR` (the 'R' isn't a digit), so order is safe.
+            plr_match = re.search(r'_pLR([\d.]+)', col_name)
+            if plr_match:
+                display_name += f"_pLR{plr_match.group(1)}"
+
             # Extract FFN ratio (e.g., _ffn2)
             ffn_match = re.search(r'_ffn([\d.]+)', col_name)
             if ffn_match:

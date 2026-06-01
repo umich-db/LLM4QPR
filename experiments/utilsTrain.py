@@ -230,6 +230,23 @@ def parse_args():
                              "Note: the PRICE→embed_size projection (from RegressionModel.linear) is still "
                              "active during warmup, so the model is NOT byte-identical to mode 7 (which has "
                              "PRICE→512). 0 = disabled.")
+    parser.add_argument("--freeze_even_blocks_until_epoch", type=int, default=0,
+                        help="Freeze even-indexed cross-attn blocks (the PRICE←LLM direction, i.e. PRICE "
+                             "attends to LLM) for the first N epochs AND zero-initialise their output "
+                             "projection, leaving only the LLM←PRICE (odd) direction active during the "
+                             "window. Mirror of --freeze_odd_blocks_until_epoch (which disables the other "
+                             "direction). 0 = disabled.")
+    parser.add_argument("--mlp_before_cross_attn", action="store_true", default=False,
+                        help="Defer cross-attn block construction until AFTER the joint MLP is built, so the "
+                             "MLP's random init is independent of the cross-attn block count. Makes mode-7 "
+                             "(cx0) and mode-12 (cxN) draw the SAME MLP init from the RNG (removes the "
+                             "construction-order init-shift confound). Only affects --finetune_mode 12 paths.")
+    parser.add_argument("--unified_window_pool", action="store_true", default=False,
+                        help="Unified per-window cross-attn pooling: the PRICE token cross-attends each "
+                             "sliding window separately (batched), then llm_emb/price_emb are segment-meaned "
+                             "over each plan's windows. Makes pooled_emb the cx=0 special case of updated_llm "
+                             "and stops the cross-attn path from truncating long (multi-window) plans to their "
+                             "first window. Only affects --finetune_mode 12 paths (BERT backbones).")
     parser.add_argument("--checkpoint_interval", type=int, default=0,
                         help="Save checkpoint every N epochs during finetuning (0=no checkpoints)")
     parser.add_argument("--subdir_tag", type=str, default="",

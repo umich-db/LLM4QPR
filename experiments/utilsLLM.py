@@ -1744,6 +1744,83 @@ class QueryPlanPredictor(nn.Module):
         pooled_emb = torch.stack(pooled_list, dim=0)
         return pooled_emb, batch_hs, batch_mask
 
+    def forward_per_window(self, texts: list[str]):
+        """Per-window variant for the unified cross-attn pooling (--unified_window_pool).
+
+        Unlike forward_with_sequence (which STITCHES windows into one sequence and
+        whose [:,0,:] is window-0's CLS), this returns the UNSTITCHED per-window
+        outputs plus a flat window->text owner map, so the joint model can cross-attend
+        the PRICE token with each window separately and segment-mean the per-window
+        results. At cx=0 that segment-mean equals forward_with_sequence's pooled_emb
+        exactly (both = per-text mean of all_pooled over the text's kept windows).
+        forward_with_sequence is left byte-identical (used by every legacy path).
+
+        Returns:
+            all_pooled  [Nw, D]        per-(kept-)window pooled (e.g. F.normalize(CLS) for BERT)
+            all_hs      [Nw, T_pad, D]  per-(kept-)window hidden states
+            all_masks   [Nw, T_pad]     per-(kept-)window attention mask
+            win_owner   LongTensor [Nw] text index each window belongs to (non-decreasing)
+            B           int             number of texts
+        """
+        B = len(texts)
+        max_length = self.tokenizer.model_max_length
+
+        # PATH A: exactly one window per text (sliding window off, or no over-long text).
+        # Strict no-op vs today: _process_batch_optimized already returns [B,...].
+        if not self.use_sliding_window:
+            all_pooled, all_hs, all_masks = self._process_batch_optimized(
+                texts, max_length, return_hidden_states=True)
+            return all_pooled, all_hs, all_masks, torch.arange(B, device=all_hs.device), B
+        tokenized = [self.tokenizer.encode(t, add_special_tokens=True) for t in texts]
+        if not any(len(t) > max_length for t in tokenized):
+            all_pooled, all_hs, all_masks = self._process_batch_optimized(
+                texts, max_length, return_hidden_states=True)
+            return all_pooled, all_hs, all_masks, torch.arange(B, device=all_hs.device), B
+
+        # PATH B: build sliding windows — mirrors forward_with_sequence's build VERBATIM
+        # so the kept-window set (and hence the cx=0 pooled_emb match) is identical.
+        stride = int(max_length * self.window_stride_ratio)
+        overlap = max_length - stride
+        all_windows = []
+        text_window_info = []
+        for tokens in tokenized:
+            info = []
+            if len(tokens) <= max_length:
+                info.append((len(all_windows), 0, len(tokens)))
+                all_windows.append(tokens)
+            else:
+                start = 0
+                is_first = True
+                while start < len(tokens):
+                    end = min(start + max_length, len(tokens))
+                    win_tokens = tokens[start:end]
+                    win_len = len(win_tokens)
+                    win_idx = len(all_windows)
+                    all_windows.append(win_tokens)
+                    if is_first:
+                        info.append((win_idx, 0, win_len))
+                        is_first = False
+                    else:
+                        ks = min(overlap, win_len)
+                        if ks < win_len:
+                            info.append((win_idx, ks, win_len))
+                    if end >= len(tokens):
+                        break
+                    start += stride
+            text_window_info.append(info)
+
+        all_pooled, all_hs, all_masks = self._process_batch_optimized(
+            all_windows, max_length, return_hidden_states=True)
+
+        # Select only the KEPT windows (those in some text's info — matches the
+        # win_indices used by forward_with_sequence's pooled_emb at line ~1730), and
+        # build the flat window->text owner map aligned to that selection.
+        kept = [wi for info in text_window_info for (wi, _, _) in info]
+        owner = [t for t, info in enumerate(text_window_info) for _ in info]
+        idx = torch.tensor(kept, device=all_hs.device, dtype=torch.long)
+        win_owner = torch.tensor(owner, device=all_hs.device, dtype=torch.long)
+        return all_pooled[idx], all_hs[idx], all_masks[idx], win_owner, B
+
     def to(self, device):
         """
         Move the model to the specified device.

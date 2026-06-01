@@ -114,6 +114,10 @@ def _arch_path_suffix(argsP):
         parts.append(f"frzOdd{argsP.freeze_odd_blocks_until_epoch}")
     if getattr(argsP, 'freeze_all_blocks_until_epoch', 0) > 0:
         parts.append(f"frzAll{argsP.freeze_all_blocks_until_epoch}")
+    if getattr(argsP, 'freeze_even_blocks_until_epoch', 0) > 0:
+        parts.append(f"frzEven{argsP.freeze_even_blocks_until_epoch}")
+    if getattr(argsP, 'mlp_before_cross_attn', False):
+        parts.append("mlpFirst")
     n_cross = getattr(argsP, 'n_cross_layers', 2)
     if n_cross != 2 and (
         getattr(argsP, 'use_cross_attention', False) or
@@ -191,6 +195,15 @@ def _arch_path_suffix(argsP):
 
 
 argsP = utilsTrain.parse_args()
+
+# --price_lr / --price_warmup_lr share argparse dest 'price_warmup_lr', but
+# trainer.py's random-init scheduler (and the optimizer's PRICE base lr) read
+# argsP.price_lr — which argparse never creates. Without this alias the CLI flag
+# is dead in that path (PRICE base lr silently falls back to 1e-3). Alias them so
+# --price_lr actually pins the PRICE warmup base lr (e.g. flat 2e-5 when the
+# warmup lr == the post-warmup _finetune_lr=2e-5). Only affects runs that pass it.
+if getattr(argsP, 'price_warmup_lr', None) is not None:
+    argsP.price_lr = argsP.price_warmup_lr
 
 # --no_llm_residual reroute: must happen BEFORE data-loader construction so
 # the PRICE-only path (PriceOnlyDataset + price_only_collate) is selected
@@ -874,6 +887,17 @@ elif argsP.algo == "llm_price_finetune":
           # Pair with --freeze_all_blocks_until_epoch to get mode-7-like warmup
           # (cross-attn frozen + contributes 0 in both directions).
           zero_init_all_blocks=(getattr(argsP, 'freeze_all_blocks_until_epoch', 0) > 0),
+          # Pair with --freeze_even_blocks_until_epoch: zero-init the even (PRICE←LLM)
+          # blocks so freezing them disables "PRICE attends to LLM", leaving LLM←PRICE.
+          zero_init_even_blocks=(getattr(argsP, 'freeze_even_blocks_until_epoch', 0) > 0),
+          # --mlp_before_cross_attn: defer block construction until after the joint
+          # MLP is built, so the MLP's random init is independent of the cross-attn
+          # block count (mode-7 cx0 and mode-12 cxN get the SAME MLP init).
+          defer_cross_attn=getattr(argsP, 'mlp_before_cross_attn', False),
+          # --unified_window_pool: PRICE token cross-attends each sliding window
+          # separately, then segment-mean over windows (pooled_emb is the cx=0 limit).
+          unified_window_pool=(getattr(argsP, 'unified_window_pool', False)
+                               or os.environ.get('UNIFIED_WINDOW_POOL') == '1'),
       )
       if not getattr(argsP, 'price_random_init', False):
         shared_sd = {k: v for k, v in price_embedder.state_dict().items()

@@ -7,6 +7,7 @@ Architecture:
   SQL + Stats ------> PRICE (full) --> 512-dim embedding-+
 """
 
+import os
 import sys
 import torch
 import torch.nn as nn
@@ -15,6 +16,19 @@ import torch.nn.functional as F
 PRICE_ROOT = "/root/PRICE"
 if PRICE_ROOT not in sys.path:
     sys.path.insert(0, PRICE_ROOT)
+
+
+def _segment_mean(rows, win_owner, B):
+    """Mean of rows [Nw, D] grouped by win_owner [Nw] (text id per window) → [B, D].
+    Used by the unified per-window pooling: averages each text's window rows. Equals
+    a plain .mean() over each text's windows (index_add_ visits win_owner in its given
+    non-decreasing order)."""
+    D = rows.size(1)
+    sums = torch.zeros(B, D, device=rows.device, dtype=rows.dtype)
+    sums.index_add_(0, win_owner, rows)
+    counts = torch.zeros(B, device=rows.device, dtype=rows.dtype)
+    counts.index_add_(0, win_owner, torch.ones(win_owner.size(0), device=rows.device, dtype=rows.dtype))
+    return sums / counts.clamp(min=1).unsqueeze(1)
 
 
 def _load_price_n_state_dict(model, ckpt_sd):
@@ -98,10 +112,16 @@ class PRICEEmbedder(nn.Module):
 
     def __init__(self, regression_model, n_cross_layers=0, llm_hidden_dim=None,
                  n_heads=8, dropout_rate=0.1, cross_attn_noop=False, force_inflate=False,
-                 price_output_dim_override=0, zero_init_all_blocks=False):
+                 price_output_dim_override=0, zero_init_all_blocks=False,
+                 zero_init_even_blocks=False, defer_cross_attn=False,
+                 unified_window_pool=False):
         super().__init__()
         self.cross_attn_noop = bool(cross_attn_noop)
         self.force_inflate = bool(force_inflate)
+        # Unified per-window cross-attn pooling: PRICE token cross-attends each
+        # sliding window separately, then segment-mean over the text's windows
+        # (pooled_emb is the cx=0 special case). Set from --unified_window_pool.
+        self.unified_window_pool = bool(unified_window_pool)
         self.price_output_dim_override = int(price_output_dim_override)
         self.n_join_col = regression_model.n_join_col
         self.n_fanout = regression_model.n_fanout
@@ -143,33 +163,51 @@ class PRICEEmbedder(nn.Module):
                 f"force_inflate-driven path so RegressionModel is built with matching dim."
             )
 
-        # Cross-attn blocks (built when n_cross_layers > 0)
-        if self.n_cross_layers > 0:
-            self.cross_attn_blocks = nn.ModuleList([
-                ReverseCrossAttentionBlock(llm_hidden_dim, n_heads, dropout_rate, use_gate=False)
-                for _ in range(self.n_cross_layers)
-            ])
-            for i, block in enumerate(self.cross_attn_blocks):
-                # Default: only odd blocks (LLM←PRICE) are zero-initialised; even
-                # blocks (PRICE←LLM) start normally so PRICE immediately reads LLM.
-                # zero_init_all_blocks=True: also zero-init the even-block
-                # residual injection. Paired with --freeze_all_blocks_until_epoch,
-                # this gives a warmup where *neither* direction perturbs anything —
-                # PRICE goes through its core pipeline → length-1 token → through
-                # all blocks as a pure identity → concat with LLM. Mode-7-like
-                # training mechanics during warmup, but the PRICE→embed_size
-                # projection (from RegressionModel.linear) is still active.
-                if i % 2 == 1 or zero_init_all_blocks:
-                    nn.init.zeros_(block.cross_attn.projection.weight)
-                    nn.init.zeros_(block.cross_attn.projection.bias)
-                    nn.init.zeros_(block.feed_forward[-1].weight)
-                    nn.init.zeros_(block.feed_forward[-1].bias)
-        else:
-            self.cross_attn_blocks = nn.ModuleList([])
+        # Cross-attn block config is stashed so construction can be DEFERRED until
+        # after the joint MLP is built (--mlp_before_cross_attn / defer_cross_attn).
+        # Building the N blocks (~28M params) advances the global torch RNG; deferring
+        # keeps the MLP's random init independent of the cross-attn block count, so
+        # mode-7 (cx0) and mode-12 (cxN) get the SAME MLP init for a clean comparison.
+        self._ca_llm_hidden_dim = llm_hidden_dim
+        self._ca_n_heads = n_heads
+        self._ca_dropout = dropout_rate
+        self._ca_zero_all = bool(zero_init_all_blocks)
+        self._ca_zero_even = bool(zero_init_even_blocks)
+        self.cross_attn_blocks = nn.ModuleList([])
+        self._cross_attn_deferred = bool(defer_cross_attn) and self.n_cross_layers > 0
+        if self.n_cross_layers > 0 and not self._cross_attn_deferred:
+            self._build_cross_attn_blocks()
+
+    def _build_cross_attn_blocks(self):
+        """Construct (and zero-init) the N cross-attn blocks. Separated from
+        __init__ so it can be deferred until AFTER the joint MLP is built."""
+        self.cross_attn_blocks = nn.ModuleList([
+            ReverseCrossAttentionBlock(self._ca_llm_hidden_dim, self._ca_n_heads,
+                                       self._ca_dropout, use_gate=False)
+            for _ in range(self.n_cross_layers)
+        ])
+        for i, block in enumerate(self.cross_attn_blocks):
+            # Default: only odd blocks (LLM←PRICE) are zero-initialised; even
+            # blocks (PRICE←LLM) start normally so PRICE immediately reads LLM.
+            # zero_init_all_blocks=True: also zero-init the even-block residual
+            # injection (paired with --freeze_all_blocks_until_epoch → identity blocks).
+            if i % 2 == 1 or self._ca_zero_all or (i % 2 == 0 and self._ca_zero_even):
+                nn.init.zeros_(block.cross_attn.projection.weight)
+                nn.init.zeros_(block.cross_attn.projection.bias)
+                nn.init.zeros_(block.feed_forward[-1].weight)
+                nn.init.zeros_(block.feed_forward[-1].bias)
+        self._cross_attn_deferred = False
+
+    def maybe_build_deferred_cross_attn(self):
+        """Build deferred cross-attn blocks (no-op if not deferred / already built).
+        Called by LLMPriceJointModel.__init__ AFTER the MLP so the MLP's random init
+        is independent of cross-attn block count (init-matched mode-7 vs mode-12)."""
+        if getattr(self, '_cross_attn_deferred', False):
+            self._build_cross_attn_blocks()
 
     def forward(self, x, padding_mask, n_join_col, n_fanout, n_table, n_filter_col,
                 llm_hidden_states=None, llm_attention_mask=None, num_clauses=None,
-                qrt_block=None, r_qry=None, r_mask=None):
+                qrt_block=None, r_qry=None, r_mask=None, per_window=None):
         # Mode 7's pipeline (always). When num_clauses is provided, x has shape
         # (batch * max_clauses, flat_features); we run scale+filter per clause,
         # then OR-Transformer aggregates the per-clause CLS tokens into a single
@@ -238,6 +276,36 @@ class PRICEEmbedder(nn.Module):
         price_tokens = query_output.unsqueeze(1)   # [B, 1, llm_hidden_dim]
         price_mask = torch.ones(price_tokens.size(0), 1, device=price_tokens.device, dtype=torch.long)
 
+        # UNIFIED per-window cross-attn: the PRICE token cross-attends EACH sliding
+        # window separately (batched over windows), then we segment-mean over each
+        # text's windows. pooled_emb is the cx=0 special case (identity blocks →
+        # refined CLS == raw per-window CLS → normalize+mean == today's pooled_emb;
+        # refined PRICE == query_output → mean == today's price_output). The returned
+        # "updated_llm" is the already-pooled [B,D] llm_emb (dim==2) — _select_llm_emb
+        # detects that and uses it directly. per_window = (all_hs, all_masks, win_owner, B).
+        if self.unified_window_pool and per_window is not None:
+            all_hs, all_masks, win_owner, B = per_window
+            price_w = price_tokens[win_owner]                 # [Nw, 1, D]
+            if self.cross_attn_noop:
+                refined_cls_w = all_hs[:, 0, :].float()
+                refined_price_w = price_w[:, 0, :]
+            else:
+                llm_w = all_hs.float()                        # [Nw, T_pad, D]
+                pmask_w = torch.ones(price_w.size(0), 1, device=price_w.device, dtype=torch.long)
+                for i, block in enumerate(self.cross_attn_blocks):
+                    if i % 2 == 0:   # PRICE(Q, this window's copy) attends to its window's LLM K/V
+                        price_w = block(price_w, llm_w, all_masks)
+                    else:            # this window's LLM tokens attend to its PRICE copy
+                        llm_w = block(llm_w, price_w, pmask_w)
+                refined_cls_w = llm_w[:, 0, :]                # [Nw, D]
+                refined_price_w = price_w[:, 0, :]            # [Nw, D]
+            # llm half: F.normalize per window (matches BERT pooled = F.normalize(CLS))
+            # BEFORE the mean, so cx=0 reduces to all_pooled[win].mean == pooled_emb.
+            llm_emb = _segment_mean(F.normalize(refined_cls_w, p=2, dim=1), win_owner, B)
+            # price half: NOT normalized (today's price_output is unnormalized).
+            price_emb = _segment_mean(refined_price_w, win_owner, B)
+            return price_emb, llm_emb, None
+
         updated_llm = None
         any_llm_cross_attn = False
         if llm_hidden_states is not None and not self.cross_attn_noop:
@@ -277,6 +345,17 @@ class PRICEEmbedder(nn.Module):
         path when --freeze_odd_blocks_until_epoch > 0."""
         for i, block in enumerate(self.cross_attn_blocks):
             if i % 2 == 1:
+                yield from block.parameters()
+
+    def even_layer_parameters(self):
+        """Parameters of even-indexed cross-attn blocks (the PRICE←LLM direction,
+        i.e. PRICE attends to LLM). Mirror of odd_layer_parameters(). Paired with
+        zero_init_even_blocks=True at construction, freezing them keeps the PRICE
+        token strictly unchanged by the LLM during the freeze window, so only the
+        LLM←PRICE (odd) direction is active. Used by trainer.py's staged-unfreeze
+        path when --freeze_even_blocks_until_epoch > 0."""
+        for i, block in enumerate(self.cross_attn_blocks):
+            if i % 2 == 0:
                 yield from block.parameters()
 
     def price_core_parameters(self):
@@ -360,6 +439,12 @@ class LLMPriceJointModel(nn.Module):
             nn.init.zeros_(self.mlp.out_mlp2.bias)
         else:
             self.mlp = Prediction(combined_dim, hid_units)
+        # Build deferred cross-attn blocks (when --mlp_before_cross_attn): the MLP
+        # above is now constructed BEFORE the blocks, so its random init is
+        # independent of the cross-attn block count (init-matched mode-7 vs mode-12).
+        # No-op for the default (eager) construction.
+        if hasattr(self.price, 'maybe_build_deferred_cross_attn'):
+            self.price.maybe_build_deferred_cross_attn()
         # Convenience flag: does the embedder do cross-attention (need LLM hidden states)?
         self.uses_cross_attn = getattr(price_embedder, 'n_cross_layers', 0) > 0
 
@@ -385,6 +470,51 @@ class LLMPriceJointModel(nn.Module):
         r_qry = embed_layer(input_ids).float()
         return r_qry, attn_mask.float()
 
+    def _select_llm_emb(self, pooled_emb, updated_llm):
+        """LLM half fed to the joint MLP. Shared by forward() and forward_embeddings()
+        so both stay consistent.
+
+        Legacy cross-attn behaviour (updated_llm is not None) used window-0's CLS only
+        — `F.normalize(updated_llm[:,0,:])` — which TRUNCATES multi-window (long) plans
+        to their first ~512 tokens, whereas the cx=0 path mean-pools ALL windows
+        (utilsLLM._process_with_sliding_window_batch). That systematic truncation made
+        the cross-attn path strictly information-poorer on long-plan workloads.
+
+        With LLM_POOL_ALL_WINDOWS=1 the cross-attn path reuses the already-computed
+        mean-over-windows `pooled_emb` (byte-identical to the cx=0 LLM half), so no plan
+        content is discarded. NOTE: for ACTIVE cross-attn this means the LLM-side
+        (odd-block) refinement no longer reaches llm_emb — a follow-up would mean-pool
+        the *refined* updated_llm across windows; for frozen/identity blocks the two are
+        the same and cx4 becomes exactly cx0.
+
+        --unified_window_pool (the principled version) does that refined-and-meaned
+        aggregation inside PRICEEmbedder.forward and returns the already-pooled [B,D]
+        llm_emb as `updated_llm` (dim==2) — detected here and used directly."""
+        if updated_llm is None:
+            return pooled_emb
+        if updated_llm.dim() == 2:
+            # unified per-window path already returns the segment-mean-pooled [B,D] llm_emb
+            return updated_llm
+        if os.environ.get('LLM_POOL_ALL_WINDOWS') == '1':
+            return pooled_emb
+        return F.normalize(updated_llm[:, 0, :], p=2, dim=1)
+
+    def _llm_forward(self, texts):
+        """Run the LLM. Returns (pooled_emb, hidden_states, attn_mask, per_window).
+        Shared by forward() and forward_embeddings() so they stay consistent.
+        - unified per-window: per_window=(all_hs, all_masks, win_owner, B); pooled_emb =
+          segment-mean of per-window pooled (== legacy pooled_emb, for the residual base).
+        - legacy cross-attn: stitched hidden_states/attn_mask (per_window=None).
+        - cx=0 / mode-7: cheap pooled forward."""
+        if self.uses_cross_attn and getattr(self.price, 'unified_window_pool', False):
+            all_pooled, all_hs, all_masks, win_owner, B = self.llm.forward_per_window(texts)
+            pooled_emb = _segment_mean(all_pooled, win_owner, B)
+            return pooled_emb, None, None, (all_hs, all_masks, win_owner, B)
+        if self.uses_cross_attn:
+            pooled_emb, hidden_states, attn_mask = self.llm.forward_with_sequence(texts)
+            return pooled_emb, hidden_states, attn_mask, None
+        return self.llm(texts), None, None, None
+
     def forward(self, x):
         # Unpack. The collate emits, in order:
         #   base 7-tuple (texts, pf, pm, njc, nfo, ntb, nfc),
@@ -407,12 +537,7 @@ class LLMPriceJointModel(nn.Module):
 
         # When cross-attn is enabled, the embedder needs LLM hidden states.
         # Otherwise (mode 7 / cx=0), use the cheaper LLM forward.
-        if self.uses_cross_attn:
-            pooled_emb, hidden_states, attn_mask = self.llm.forward_with_sequence(texts)
-        else:
-            pooled_emb = self.llm(texts)
-            hidden_states = None
-            attn_mask = None
+        pooled_emb, hidden_states, attn_mask, per_window = self._llm_forward(texts)
         if pooled_emb.dtype != torch.float32:
             pooled_emb = pooled_emb.float()
 
@@ -427,15 +552,10 @@ class LLMPriceJointModel(nn.Module):
             price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col,
             llm_hidden_states=hidden_states, llm_attention_mask=attn_mask,
             num_clauses=num_clauses,
-            qrt_block=self.stat_qrt, r_qry=r_qry, r_mask=r_mask,
+            qrt_block=self.stat_qrt, r_qry=r_qry, r_mask=r_mask, per_window=per_window,
         )
 
-        if updated_llm is not None:
-            # cx>0 odd-layer modified LLM tokens — use CLS+L2norm to match
-            # the LLM's native pooling (utilsLLM.py BERT branch returns CLS+L2 norm).
-            llm_emb = F.normalize(updated_llm[:, 0, :], p=2, dim=1)
-        else:
-            llm_emb = pooled_emb
+        llm_emb = self._select_llm_emb(pooled_emb, updated_llm)
 
         combined = torch.cat([llm_emb, price_emb], dim=1)
         if self.residual_pred:
@@ -478,12 +598,7 @@ class LLMPriceJointModel(nn.Module):
         if len(x) == 8:
             num_clauses = x.pop()
         texts, price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col = x
-        if self.uses_cross_attn:
-            pooled_emb, hidden_states, attn_mask = self.llm.forward_with_sequence(texts)
-        else:
-            pooled_emb = self.llm(texts)
-            hidden_states = None
-            attn_mask = None
+        pooled_emb, hidden_states, attn_mask, per_window = self._llm_forward(texts)
         if pooled_emb.dtype != torch.float32:
             pooled_emb = pooled_emb.float()
         r_qry, r_mask = (None, None)
@@ -493,12 +608,9 @@ class LLMPriceJointModel(nn.Module):
             price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col,
             llm_hidden_states=hidden_states, llm_attention_mask=attn_mask,
             num_clauses=num_clauses,
-            qrt_block=self.stat_qrt, r_qry=r_qry, r_mask=r_mask,
+            qrt_block=self.stat_qrt, r_qry=r_qry, r_mask=r_mask, per_window=per_window,
         )
-        if updated_llm is not None:
-            llm_emb = F.normalize(updated_llm[:, 0, :], p=2, dim=1)
-        else:
-            llm_emb = pooled_emb
+        llm_emb = self._select_llm_emb(pooled_emb, updated_llm)
         return torch.cat([llm_emb, price_emb], dim=1)
 
 

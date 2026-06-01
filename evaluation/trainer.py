@@ -858,6 +858,50 @@ def train(model, train_loader, val_loader, \
         _all_blocks_frozen = True
         print(f"[StagedUnfreeze] Froze {len(_all_block_params)} cross-attn (all blocks, both directions) params for epochs 0-{_freeze_all_until-1}")
 
+    # Freeze even cross-attn blocks (PRICE←LLM direction, i.e. PRICE attends to
+    # LLM). Pairs with zero_init_even_blocks=True → PRICE←LLM contributes 0 during
+    # the window, leaving only the LLM←PRICE (odd) direction active. Mirror of the
+    # freeze_odd path above.
+    _freeze_even_until = getattr(args, 'freeze_even_blocks_until_epoch', 0)
+    _even_blocks_frozen = False
+    _even_block_params = []
+    if _freeze_even_until > 0 and start_epoch < _freeze_even_until and hasattr(model, 'price') and hasattr(model.price, 'even_layer_parameters'):
+        for p in model.price.even_layer_parameters():
+            if p.requires_grad:
+                _even_block_params.append(p)
+                p.requires_grad = False
+        _even_blocks_frozen = True
+        print(f"[StagedUnfreeze] Froze {len(_even_block_params)} even-block (PRICE←LLM) cross-attn params for epochs 0-{_freeze_even_until-1}")
+
+    # VERIFICATION HOOK (env EVAL_FROZEN_BLOCKS=1, only with freeze_all): force the
+    # frozen cross-attn blocks into eval mode so their dropout layers STOP drawing
+    # RNG every forward pass (dropout(0) still samples a mask in train mode, which
+    # desyncs the LLM/MLP dropout stream vs cx0). Override .train() so the per-epoch
+    # model.train() can't flip them back. Tests whether the cx0-vs-cx4-frozen ep0 gap
+    # is driven by this training-time dropout RNG rather than the construction init.
+    if os.environ.get('EVAL_FROZEN_BLOCKS') == '1' and _all_blocks_frozen and hasattr(model.price, 'cross_attn_blocks'):
+        import types as _types
+        _n = 0
+        for _blk in model.price.cross_attn_blocks:
+            _blk.eval()
+            _blk.train = _types.MethodType(lambda self, mode=True: nn.Module.train(self, False), _blk)
+            _n += 1
+        print(f"[EvalFrozenBlocks] Forced {_n} frozen cross-attn blocks to eval mode (dropout off → no RNG draws)")
+
+    # DEFINITIVE-PROOF HOOK (env RESEED_BEFORE_TRAIN=1): reset the global RNG to the
+    # seed right before the training loop, so the training-time RNG stream (data
+    # shuffle + dropout masks) is IDENTICAL regardless of how many params were drawn
+    # during construction (the ~28M cross-attn "construction offset"). Combined with
+    # --mlp_before_cross_attn (init) + EVAL_FROZEN_BLOCKS (per-forward dropout), this
+    # fully syncs cx4 to cx0 → both reseeded runs should give the same ep0, proving
+    # the gap is 100% RNG. Run cx0 with this flag too so they share a training stream.
+    if os.environ.get('RESEED_BEFORE_TRAIN') == '1':
+        _rs = int(getattr(args, 'seed', 42) or 42)
+        torch.manual_seed(_rs)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(_rs)
+        print(f"[ReseedBeforeTrain] Reset global RNG to seed {_rs} right before the training loop")
+
     for epoch in range(start_epoch, epochs):
         # Unfreeze LLM at the designated epoch
         if _llm_frozen and epoch >= _freeze_llm_until:
@@ -880,6 +924,13 @@ def train(model, train_loader, val_loader, \
                 p.requires_grad = True
             _all_blocks_frozen = False
             print(f"[StagedUnfreeze] Unfroze {len(_all_block_params)} cross-attn (all blocks) params at epoch {epoch}")
+
+        # Unfreeze even cross-attn blocks (PRICE←LLM) at their own designated epoch.
+        if _even_blocks_frozen and epoch >= _freeze_even_until:
+            for p in _even_block_params:
+                p.requires_grad = True
+            _even_blocks_frozen = False
+            print(f"[StagedUnfreeze] Unfroze {len(_even_block_params)} even-block (PRICE←LLM) cross-attn params at epoch {epoch}")
 
         # Toggle warmup_mode for dual-direction cross-attn (Mode 13 / Mode 12+inflate)
         if hasattr(model, 'price') and hasattr(model.price, 'warmup_mode'):

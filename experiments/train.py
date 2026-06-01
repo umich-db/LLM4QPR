@@ -116,6 +116,8 @@ def _arch_path_suffix(argsP):
         parts.append(f"frzAll{argsP.freeze_all_blocks_until_epoch}")
     if getattr(argsP, 'freeze_even_blocks_until_epoch', 0) > 0:
         parts.append(f"frzEven{argsP.freeze_even_blocks_until_epoch}")
+    if os.environ.get('ZERO_INIT_EVEN_BLOCKS') == '1' and getattr(argsP, 'freeze_even_blocks_until_epoch', 0) == 0:
+        parts.append("z0Even")
     if getattr(argsP, 'mlp_before_cross_attn', False):
         parts.append("mlpFirst")
     n_cross = getattr(argsP, 'n_cross_layers', 2)
@@ -889,7 +891,11 @@ elif argsP.algo == "llm_price_finetune":
           zero_init_all_blocks=(getattr(argsP, 'freeze_all_blocks_until_epoch', 0) > 0),
           # Pair with --freeze_even_blocks_until_epoch: zero-init the even (PRICE←LLM)
           # blocks so freezing them disables "PRICE attends to LLM", leaving LLM←PRICE.
-          zero_init_even_blocks=(getattr(argsP, 'freeze_even_blocks_until_epoch', 0) > 0),
+          # ZERO_INIT_EVEN_BLOCKS=1 (env) also zero-inits the even blocks but WITHOUT
+          # freezing them — even stays trainable yet starts from 0 contribution, so BOTH
+          # cross-attn directions are zero-initialised (odd is zero-init by default).
+          zero_init_even_blocks=(getattr(argsP, 'freeze_even_blocks_until_epoch', 0) > 0
+                                 or os.environ.get('ZERO_INIT_EVEN_BLOCKS') == '1'),
           # --mlp_before_cross_attn: defer block construction until after the joint
           # MLP is built, so the MLP's random init is independent of the cross-attn
           # block count (mode-7 cx0 and mode-12 cxN get the SAME MLP init).

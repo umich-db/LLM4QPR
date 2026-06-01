@@ -2040,27 +2040,32 @@ def _extract_root(plan_json):
 
 def _find_actual_total_time(root_node, db='postgres', workload=None):
     if db == 'duckdb':
-        # DuckDB: latency in seconds at root level
+        # DuckDB: raw latency is in SECONDS at the root level. We ALWAYS rescale it
+        # to NANOSECONDS (x1e9) for EVERY duckdb workload (previously only tpch/tpcds
+        # were scaled and the imdb family was left in seconds).
+        #
+        # Why uniform ns: DuckDB serves from memory, so latencies are small and a
+        # meaningful fraction sit near the Normalizer's +0.001 epsilon
+        # (evaluation/utils.py: log(val+0.001)). In SECONDS that epsilon is 1 ms,
+        # which compresses the log dynamic range of the fast queries; postgres/spark
+        # labels are already in ms so the same epsilon is ~1 us (negligible). Scaling
+        # duckdb to ns lifts every workload far above the epsilon:
+        #   - tpch/tpcds: sub-microsecond (median ~250 ns) -> WITHOUT scaling the
+        #     epsilon collapses the range entirely and the model is untrainable.
+        #   - imdb family (syn/job/job_full/jobm): ms-range overall, but ~16% of
+        #     queries are sub-10 ms, where the 1 ms epsilon still blurs the label.
+        # x1e9 is a uniform constant, so it is scale-invariant on Q-error EXCEPT for
+        # that epsilon term (the whole point), and it makes duckdb's absolute-error
+        # metrics consistent across workloads.
+        #
+        # CAUTION: the scaling must be IDENTICAL at train and inference. A model
+        # trained on the old seconds labels must NOT be re-evaluated with ns labels
+        # (the per-fast-query normalized target shifts and degrades them) -- retrain
+        # from scratch. The `workload` arg is retained for call-site compatibility
+        # but no longer affects duckdb scaling.
         if "latency" not in root_node:
             raise KeyError("'latency' not found in root (DuckDB)")
-        lat = float(root_node["latency"])
-        # DuckDB serves queries from memory; some workloads have sub-millisecond
-        # latencies near/below the Normalizer's +0.001 epsilon
-        # (evaluation/utils.py: log(val+0.001)).
-        #   - tpch/tpcds: the ENTIRE distribution is sub-microsecond (medians
-        #     ~250 ns, 100% sub-ms) -> the epsilon collapses the log dynamic range
-        #     -> model untrainable. Scaling to nanoseconds (x1e9) restores it.
-        #     These models are TRAINED with this scaling, so it stays ON for both
-        #     their training AND inference.
-        #   - imdb family (job/syn/job_full/jobm): NOT scaled. imdb models were
-        #     trained WITHOUT x1e9, so inference must match (scaling would shift
-        #     the Normalizer range and break the loaded weights). The job_full
-        #     sub-us OOD latencies were a DATA bug fixed at source via corrected
-        #     query plans, not by scaling (x1e9 is scale-invariant on Q-error, so
-        #     it was a no-op there anyway).
-        if workload in ('tpch', 'tpcds'):
-            lat *= 1e9
-        return lat
+        return float(root_node["latency"]) * 1e9
     if db == 'spark':
         # Spark: already extracted as float during text parsing
         return float(root_node)

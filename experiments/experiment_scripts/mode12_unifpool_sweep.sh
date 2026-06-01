@@ -25,13 +25,20 @@ export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 export UNIFIED_WINDOW_POOL=1   # the per-window cross-attn pooling fix
 source "$SCRIPT_DIR/_compare_modes_lib.sh"   # build_shared, RUN_SCRIPT, PRICE_N_FLAGS, CX4_FLAGS, MODE12_SCHED
 
+# Cross-attn depth: default 4 (cx4). Set N_CROSS_LAYERS=0 for the cx0 control
+# (no cross-attn blocks; inflatePRICE kept on so cx0 isolates ONLY the cross-attn
+# contribution vs cx4). run_llm_time tags filenames with the cx value, so cx0 and
+# cx4 outputs never collide.
+N_CROSS_LAYERS="${N_CROSS_LAYERS:-4}"
+CX_FLAGS=(--inflate_price --n_cross_layers "$N_CROSS_LAYERS")
+
 WORKLOADS=(syn job job_full tpch tpcds stats)
-echo "[m12-unifpool] host=$(hostname) MODEL=$MODEL DB_ENGINE=$DB_ENGINE seeds=[$SEEDS] e=$FT_NUM_EPOCH dev=$CUDA_VISIBLE_DEVICES UNIFIED_WINDOW_POOL=1"
+echo "[m12-unifpool] host=$(hostname) MODEL=$MODEL DB_ENGINE=$DB_ENGINE seeds=[$SEEDS] e=$FT_NUM_EPOCH dev=$CUDA_VISIBLE_DEVICES UNIFIED_WINDOW_POOL=1 cx=$N_CROSS_LAYERS"
 for WL in "${WORKLOADS[@]}"; do
   echo "================ [m12-unifpool] $DB_ENGINE / $WL ($MODEL) ================"
   build_shared "$WL"
   bash "$RUN_SCRIPT" "${SHARED[@]}" --finetune_mode 12 \
-      "${PRICE_N_FLAGS[@]}" "${CX4_FLAGS[@]}" "${MODE12_SCHED[@]}" \
+      "${PRICE_N_FLAGS[@]}" "${CX_FLAGS[@]}" "${MODE12_SCHED[@]}" \
     || echo "[m12-unifpool] WARN: $DB_ENGINE/$WL exited non-zero (missing data for this engine?) — continuing"
 done
 echo "[m12-unifpool] DONE host=$(hostname) MODEL=$MODEL DB_ENGINE=$DB_ENGINE"

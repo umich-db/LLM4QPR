@@ -3807,6 +3807,12 @@ def _load_price_embedder(argsP, max_njc, max_nfo, max_ntb, max_nfc, device):
             parts.append(f"frzOdd{ap.freeze_odd_blocks_until_epoch}")
         if getattr(ap, 'freeze_all_blocks_until_epoch', 0) > 0:
             parts.append(f"frzAll{ap.freeze_all_blocks_until_epoch}")
+        if getattr(ap, 'freeze_even_blocks_until_epoch', 0) > 0:
+            parts.append(f"frzEven{ap.freeze_even_blocks_until_epoch}")
+        if os.environ.get('ZERO_INIT_EVEN_BLOCKS') == '1' and getattr(ap, 'freeze_even_blocks_until_epoch', 0) == 0:
+            parts.append("z0Even")
+        if getattr(ap, 'mlp_before_cross_attn', False):
+            parts.append("mlpFirst")
         n_cross = getattr(ap, 'n_cross_layers', 2)
         if n_cross != 2 and (
             getattr(ap, 'use_cross_attention', False) or

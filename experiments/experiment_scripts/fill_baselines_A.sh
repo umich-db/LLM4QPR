@@ -11,6 +11,12 @@ set -uo pipefail
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # -> experiments/
 RB="experiment_scripts/core_scripts/run_baseline.sh"
 
+# Epoch budget + early stop for every baseline run here (honored by
+# qf/aimai/e2e_cost/bao; postgres has no training and ignores them).
+export NUM_EPOCH=30
+export EARLY_STOP_PATIENCE=5
+export EARLY_STOP_AFTER_EPOCH=20
+
 run() {  # <db> <train_wls> <test_wl> <algo>
     echo ">>> db=$1 train=[$2] test=$3 algo=$4"
     [[ -n "${DRY_RUN:-}" ]] && return 0

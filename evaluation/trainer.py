@@ -1160,7 +1160,8 @@ def check_batch_for_nans(batch):
 
 def train_and_test_bao(train_roots, train_costs, test_roots, test_costs, args, device,
                        total_roots=None, total_costs=None, train_ids=None, test_ids=None,
-                       plan_file_path=None, output_dir_qerror=None, dat_paths_train_list=None):
+                       plan_file_path=None, output_dir_qerror=None, dat_paths_train_list=None,
+                       val_roots=None, val_costs=None):
     """
     Train and test the BaoRegression model. Returns metrics and predictions.
     Optionally generates embeddings and verbose output if verbose_info is enabled.
@@ -1189,7 +1190,7 @@ def train_and_test_bao(train_roots, train_costs, test_roots, test_costs, args, d
         args.main_logger.info(f"[Train] Skipped training (loaded from cache)")
     else:
         training_start = time.time()
-        bao.fit(train_roots, train_costs, args)
+        bao.fit(train_roots, train_costs, args, val_X=val_roots, val_y=val_costs)
         training_time = time.time() - training_start
         args.main_logger.info(f"[Train] Training took {training_time*1000:.2f} ms")
         os.makedirs(cache_dir, exist_ok=True)

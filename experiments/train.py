@@ -620,7 +620,8 @@ if argsP.algo == "bao":
       train_ids=train_ids, test_ids=test_ids,
       plan_file_path=dat_path_test,
       output_dir_qerror=argsP.output_dir_qerror,
-      dat_paths_train_list=dat_paths_train_list
+      dat_paths_train_list=dat_paths_train_list,
+      val_roots=val_roots, val_costs=val_costs
   )
   save_error_cdf(results['qerr_dist'], argsP.output_dir_qerror, error_type="Qerror")
   # save_error_cdf(results['abserr_dist'], argsP.output_dir_abs,   error_type="abs_error")

@@ -102,7 +102,7 @@ if [[ "$TASK" == "card" ]]; then
                                     --workloads_train "${TRAIN_WLS[@]}" \
                                     --workload_test ${WORKLOAD_TEST} \
                                     --algo ${ALGO} \
-                                    --num_epoch 100 \
+                                    --num_epoch ${NUM_EPOCH:-100} \
                                     --learning_rate $lr \
                                     --batch_size $batch_size \
                                     --train_ratio $train_ratio \
@@ -119,7 +119,7 @@ else
                                     --workloads_train "${TRAIN_WLS[@]}" \
                                     --workload_test ${WORKLOAD_TEST} \
                                     --algo ${ALGO} \
-                                    --num_epoch 100 \
+                                    --num_epoch ${NUM_EPOCH:-100} \
                                     --learning_rate $lr \
                                     --batch_size $batch_size \
                                     --train_ratio $train_ratio \

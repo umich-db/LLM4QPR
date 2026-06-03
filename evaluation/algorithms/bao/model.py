@@ -103,7 +103,7 @@ class BaoRegression:
         with open(_n_path(path), "wb") as f:
             joblib.dump(self.__n, f)
 
-    def fit(self, X, y, args):
+    def fit(self, X, y, args, val_X=None, val_y=None):
         if isinstance(y, list):
             y = np.array(y)
 
@@ -149,8 +149,18 @@ class BaoRegression:
 
         optimizer = torch.optim.Adam(self.__net.parameters(), lr=args.learning_rate)
         loss_fn = torch.nn.MSELoss()
-        
+
         losses = []
+        # Early stopping on validation p90 Q-error (same criterion as the generic
+        # trainer.train() loop). Enabled only when --early_stop_patience > 0 and a
+        # validation set is provided; first allowed to fire at early_stop_after_epoch.
+        _es_patience = int(getattr(args, 'early_stop_patience', 0) or 0)
+        _es_after = int(getattr(args, 'early_stop_after_epoch', 0) or 0)
+        _do_es = _es_patience > 0 and val_X is not None and val_y is not None and len(val_X) > 0
+        if _do_es:
+            _val_trees = self.__tree_transform.transform(val_X)  # transform once
+            _val_true = np.asarray(val_y, dtype=np.float64).reshape(-1)
+            _es_best = float('inf'); _es_wait = 0; _es_best_epoch = -1
         # for epoch in range(100):
         for epoch in range(args.num_epoch):
             loss_accum = 0
@@ -173,6 +183,28 @@ class BaoRegression:
             losses.append(loss_accum)
             if epoch % 15 == 0:
                 self.__log("Epoch", epoch, "training loss:", loss_accum)
+
+            # Validation-p90 early stopping (kept-current-weights semantics, matching
+            # trainer.train(): we stop, we do not roll back to the best epoch).
+            if _do_es and epoch >= _es_after:
+                self.__net.eval()
+                with torch.no_grad():
+                    _vp = self.__net(_val_trees).cpu().detach().numpy()
+                self.__net.train()
+                _vpred = self.__pipeline.inverse_transform(_vp).reshape(-1)
+                _vpred = np.clip(_vpred, 1e-6, None)
+                _vtrue = np.clip(_val_true, 1e-6, None)
+                _qerr = np.maximum(_vpred / _vtrue, _vtrue / _vpred)
+                _val_p90 = float(np.percentile(_qerr, 90))
+                if _val_p90 < _es_best:
+                    _es_best = _val_p90; _es_wait = 0; _es_best_epoch = epoch
+                else:
+                    _es_wait += 1
+                if _es_wait >= _es_patience:
+                    self.__log(f"[EarlyStop] bao: no val-p90 improvement for "
+                               f"{_es_patience} epochs (best {_es_best:.4f} at epoch "
+                               f"{_es_best_epoch+1}); stopping at epoch {epoch+1}")
+                    break
 
             # # stopping condition
             # if len(losses) > 10 and losses[-1] < 0.1:

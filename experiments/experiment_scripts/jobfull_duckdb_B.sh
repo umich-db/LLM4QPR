@@ -14,10 +14,11 @@ source "$SCRIPT_DIR/_compare_modes_lib.sh"
 DB_ENGINES=(duckdb)
 WORKLOADS_ARR=(job_full)
 
-export MODEL="google/bert_uncased_L-4_H-768_A-12"
-MODES_ARR=(12w)
-run_ablation
+# export MODEL="google/bert_uncased_L-4_H-768_A-12"
+# MODES_ARR=(12w)
+# run_ablation
 
 export MODEL="google/bert_uncased_L-2_H-256_A-4"
-MODES_ARR=(7 7b)
+MODES_ARR=(7b)
+# MODES_ARR=(7 7b)
 run_ablation

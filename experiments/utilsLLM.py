@@ -2712,7 +2712,8 @@ def read_json_and_clean(predictor, ds_info, dat_path, argsP, all=False):
             continue
         elif isinstance(plan_json, dict) and "failed" in plan_json:
             continue
-        print("*", end='', flush=True)
+        if (idx + 1) % max(1, len(plan_jsons) // 10) == 0 or idx + 1 == len(plan_jsons):
+            print(f"  [read] {idx+1}/{len(plan_jsons)} ({100*(idx+1)//len(plan_jsons)}%)", flush=True)
 
         if _is_spark:
             # Spark: parse cost/card from first two lines, then STRIP them from the
@@ -2849,7 +2850,9 @@ def read_json_and_clean_v2(predictor, ds_info, dat_path, argsP, all=False):
     cleaned = _remove_act_fields(original_data, fields_to_remove)
 
     for idx, (raw, cleaned_plan) in enumerate(zip(original_data["parsed_plans"], cleaned["parsed_plans"])):
-        print("*", end='', flush=True)
+        _ntot = len(original_data["parsed_plans"])
+        if (idx + 1) % max(1, _ntot // 10) == 0 or idx + 1 == _ntot:
+            print(f"  [read] {idx+1}/{_ntot} ({100*(idx+1)//_ntot}%)", flush=True)
         # Use pre-bucketized plan for costs/cards
         orig_plan = original_plans[idx]
         plan_param = orig_plan.get("plan_parameters", {})

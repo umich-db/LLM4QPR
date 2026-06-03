@@ -14,12 +14,15 @@ export SEEDS=42
 source "$SCRIPT_DIR/_compare_modes_lib.sh"
 
 DB_ENGINES=(duckdb)
-WORKLOADS_ARR=(job_full)
+WORKLOADS_ARR=(syn)
+# WORKLOADS_ARR=(job_full)
 
 export MODEL="google/bert_uncased_L-2_H-256_A-4"
-MODES_ARR=(1 2 12 12w)
+MODES_ARR=(12)
+# MODES_ARR=(1 2 12 12w)
 run_ablation
 
 export MODEL="sentence-transformers/all-MiniLM-L12-v2"
-MODES_ARR=(1 2 7 7b 12 12w)
+MODES_ARR=(12)
+# MODES_ARR=(1 2 7 7b 12 12w)
 run_ablation

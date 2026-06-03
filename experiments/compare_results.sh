@@ -1,5 +1,10 @@
+MODEL=bert2 ANCHOR=90 MLP=jointMLP bash experiment_scripts/aggregate_tables.sh --no-priceb-equiv 
+MODEL=bert4 ANCHOR=90 MLP=jointMLP bash experiment_scripts/aggregate_tables.sh --no-priceb-equiv
+MODEL=sentbert ANCHOR=90 MLP=jointMLP bash experiment_scripts/aggregate_tables.sh --no-priceb-equiv
+
 python cross_engine_aggregate.py --anchor 90            # also accepts 50 / 95 / max
 python cross_engine_aggregate.py --anchor 90 --jointmlp_only   # heatmaps restricted to _jointMLP cols
+python cross_engine_aggregate.py --anchor 90 --jointmlp_only --frzeven_retrainMLP_cells bert2:duckdb:tpcds sentbert:spark:tpcds
 
 python to_table_seeds.py --dir results/postgres/results_Train_job_Test_syn_ours --task time --sentbert_only
 python to_table_seeds.py --dir results/postgres/results_Train_job_Test_job_ours --task time --sentbert_only

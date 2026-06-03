@@ -1176,7 +1176,29 @@ argsP.checkpoint_prefix = _ckpt_prefix
 resume_ckpt = getattr(argsP, 'resume_checkpoint', '')
 start_epoch = 0
 _resumed_from_weights = False
-if not resume_ckpt and _ckpt_prefix and getattr(argsP, 'checkpoint_interval', 0) > 0:
+# Auto-skip finetuning when the FINAL weights for this exact config already exist (a
+# completed finetune; an early-stopped run still saves its final _llm/_price/_mlp.pt).
+# Without this, a later workload sharing the canonical LoRA (e.g. job/job_full after syn)
+# would auto-resume syn's latest periodic checkpoint and CONTINUE finetuning to num_epoch
+# instead of reusing it as-is. Routes to the skip_train_load_finetuned_weights branch
+# below (load LLM+PRICE+MLP, no training). Delete the weights to force a re-finetune.
+if (not resume_ckpt and argsP.algo == "llm_price_finetune"
+        and not getattr(argsP, '_cross_attn_inference', False)
+        and not getattr(argsP, 'skip_train_load_finetuned_weights', False)):
+    _ts_as = "card" if argsP.card else "time"
+    _pfx_as = (f"{argsP.canonical_wl_prefix}_{_ts_as}_{argsP.llm_mode}_{argsP.model_name.replace('/','-')}"
+               f"_b{argsP.batch_size}{_price_path_suffix(argsP)}_llm_price{_arch_path_suffix(argsP)}"
+               f"{'_randInit' if getattr(argsP, 'price_random_init', False) else ''}_e{argsP.num_epoch}"
+               f"{'_seed' + str(argsP.seed) if getattr(argsP, 'seed', None) is not None else ''}")
+    _dir_as = f"finetuned_models/{argsP.db}{_GSUB}/"
+    _ok_llm_as = getattr(argsP, 'freeze_llm', False) or os.path.exists(os.path.join(_dir_as, f"{_pfx_as}_llm.pt"))
+    if (os.path.exists(os.path.join(_dir_as, f"{_pfx_as}_price.pt"))
+            and os.path.exists(os.path.join(_dir_as, f"{_pfx_as}_mlp.pt")) and _ok_llm_as):
+        argsP.skip_train_load_finetuned_weights = True
+        print(f"[auto-skip-finetune] Final finetune weights already exist -> load + skip training "
+              f"(no resume/continue to e{argsP.num_epoch}): {_pfx_as}_*.pt")
+if (not resume_ckpt and _ckpt_prefix and getattr(argsP, 'checkpoint_interval', 0) > 0
+        and not getattr(argsP, 'skip_train_load_finetuned_weights', False)):
     import glob as _glob
     # Checkpoints live under .../checkpoints/{subdir}/ (subdir AFTER "checkpoints").
     _ckpt_dir = f"finetuned_models/{argsP.db}/checkpoints{_GSUB}"

@@ -30,7 +30,8 @@ CX_FLAGS=(--inflate_price --n_cross_layers "$N_CROSS_LAYERS")
 FRZ_EVEN_FLAGS=(--freeze_even_blocks_until_epoch "${FREEZE_EVEN_EPOCHS:-999}")  # even frozen forever
 source "$SCRIPT_DIR/_compare_modes_lib.sh"   # build_shared, RUN_SCRIPT, PRICE_N_FLAGS
 
-WORKLOADS=(syn job job_full tpch tpcds stats)
+WORKLOADS=(tpcds)
+# WORKLOADS=(syn job job_full tpch tpcds stats)
 echo "[m12-frzEvenAlways] host=$(hostname) MODEL=$MODEL DB_ENGINE=$DB_ENGINE cx=$N_CROSS_LAYERS frzEven=${FREEZE_EVEN_EPOCHS:-999}(always) priceLR=2e-5(const) LLM=always-ft seeds=[$SEEDS] e=$FT_NUM_EPOCH dev=$CUDA_VISIBLE_DEVICES UNIFIED_WINDOW_POOL=1"
 for WL in "${WORKLOADS[@]}"; do
   echo "================ [m12-frzEvenAlways] $DB_ENGINE / $WL ($MODEL) ================"

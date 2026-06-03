@@ -29,9 +29,14 @@
 #                                                  train=imdb-canonical(TS) Test=TS
 #                                                (syn/job/job_full → train=job)
 #   TASK     time | card                        (default: time)
+#   PRICEB_EQUIV_WORKLOADS  workloads where mode-7b priceB reuses priceN's cdf
+#            (default: "syn job job_full stats"). Set to "" (or pass
+#            --no-priceb-equiv) to turn the priceB<-priceN aliasing OFF; or pass
+#            --priceb-equiv-workloads "<list>" to customize the set.
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SELF="$SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")"  # absolute path for --help (cd below)
 cd "$SCRIPT_DIR/.."
 
 # ─── Defaults / env ─────────────────────────────────────────────────────────
@@ -41,6 +46,10 @@ MLP="${MLP:-both}"
 DBS="${DBS:-postgres duckdb spark}"
 WORKLOADS="${WORKLOADS:-stats syn job job_full tpcds tpch}"
 TASK="${TASK:-time}"
+# Workloads where mode-7b priceB borrows the matching mode-7 priceN cdf (the two
+# are feature-equivalent there). `-` (not `:-`) so an explicitly-empty env value
+# disables it; a CLI flag below can override either way.
+PRICEB_EQUIV_WORKLOADS="${PRICEB_EQUIV_WORKLOADS-syn job job_full stats}"
 
 # ─── CLI overrides ──────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -51,8 +60,10 @@ while [[ $# -gt 0 ]]; do
         --dbs)       DBS="$2";       shift 2 ;;
         --workloads) WORKLOADS="$2"; shift 2 ;;
         --task)      TASK="$2";      shift 2 ;;
+        --priceb-equiv-workloads) PRICEB_EQUIV_WORKLOADS="$2"; shift 2 ;;
+        --no-priceb-equiv)        PRICEB_EQUIV_WORKLOADS="";   shift   ;;
         -h|--help)
-            head -36 "$0" | sed 's/^# \?//'
+            head -35 "$SELF" | sed 's/^# \?//'
             exit 0 ;;
         *) echo "Unknown flag: $1" >&2; exit 1 ;;
     esac
@@ -83,6 +94,57 @@ canonical_train_for() {
     esac
 }
 
+# ─── PRICE_B ≡ PRICE_N on imdb-family + stats workloads ──────────────────────
+# On syn / job / job_full / stats the original-PRICE design (priceB, mode 7b) and
+# PRICE_N (priceN, mode 7) feature sets are equivalent, so the separately-trained
+# priceB runs there differ from priceN only by training noise. For those
+# workloads we feed to_table_relative a *staged* copy of the result dir in which
+# each mode-7b priceB cdf is replaced by the matching mode-7 priceN cdf (both
+# jointMLP and retrainMLP, all model families). Real result files are NEVER
+# modified — the staging dir is a temp tree of symlinks under the same
+# results/<db>/ parent (so to_table_relative's output path + db tag stay
+# correct) and is removed on exit. tpch / tpcds keep their own priceB.
+# Disable with --no-priceb-equiv (or PRICEB_EQUIV_WORKLOADS=""); customize with
+# --priceb-equiv-workloads "<list>". PRICEB_EQUIV_WORKLOADS is resolved above
+# (defaults + CLI), so it is intentionally not reassigned here.
+_STAGED_DIRS=()
+_cleanup_staged() { local t; for t in "${_STAGED_DIRS[@]:-}"; do [[ -n "$t" && -d "$t" ]] && rm -rf "$t"; done; }
+trap _cleanup_staged EXIT
+
+_is_priceb_equiv() { case " $PRICEB_EQUIV_WORKLOADS " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+
+# stage_priceb_from_pricen <result_dir> <workload> → sets global STAGED_DIR.
+# For an equiv workload, STAGED_DIR is a temp dir with priceB cdfs aliased to
+# priceN; otherwise it is <result_dir> unchanged.
+stage_priceb_from_pricen() {
+    local d="$1" wl="$2"
+    STAGED_DIR="$d"
+    _is_priceb_equiv "$wl" || return 0
+    local tmp
+    tmp="$(mktemp -d "$(dirname "$d")/.aggtmp_priceb_${wl}_XXXXXX")" || return 0
+    _STAGED_DIRS+=("$tmp")
+    local f bn pb swapped=0
+    # read-only mirror of the real dir's cdfs
+    for f in "$d"/*cdf*seed*.csv; do
+        [[ -e "$f" ]] && ln -s "$(readlink -f "$f")" "$tmp/$(basename "$f")"
+    done
+    # replace each plain mode-7 priceN cdf's priceB twin with a copy of priceN
+    # (skip mode-12 / 12w cross-attn variants, which also carry priceN tokens)
+    for f in "$d"/*cdf*seed*.csv; do
+        [[ -e "$f" ]] || continue
+        bn="$(basename "$f")"
+        case "$bn" in *priceN_priceNor*) ;; *) continue ;; esac
+        case "$bn" in *biCrossAttn*|*priceBiCrossAttnJoint*|*inflatePRICE*|*_cx[0-9]*) continue ;; esac
+        pb="${bn/priceN_priceNor/priceB}"
+        [[ "$pb" == "$bn" ]] && continue
+        rm -f "$tmp/$pb"
+        cp "$f" "$tmp/$pb"
+        swapped=$((swapped + 1))
+    done
+    echo "    [priceB<-priceN] $wl: aliased $swapped priceN cdf(s) as priceB (real files untouched)"
+    STAGED_DIR="$tmp"
+}
+
 echo "============================================================"
 echo "  MODEL=$MODEL  ANCHOR=$ANCHOR  MLP=$MLP  TASK=$TASK"
 echo "  DBS:       $DBS"
@@ -103,7 +165,8 @@ for db in $DBS; do
         fi
         echo "  ─ seeds: $d"
         python to_table_seeds.py --dir "$d" --task "$TASK" "$MODEL_FLAG" $MLP_FLAG
-        rel_dirs+=("$d")
+        stage_priceb_from_pricen "$d" "$wl"   # priceB ← priceN for equiv workloads (sets STAGED_DIR)
+        rel_dirs+=("$STAGED_DIR")
     done
     if [[ ${#rel_dirs[@]} -gt 0 ]]; then
         echo "  ─ relative ($db): ${#rel_dirs[@]} dirs"

@@ -202,6 +202,11 @@ def extract_display_name(col_name):
             frz_odd_match = re.search(r'_frzOdd(\d+)', col_name)
             if frz_odd_match:
                 display_name += f"_frzOdd{frz_odd_match.group(1)}"
+            # frzEven freezes the even-indexed cross-attn blocks (PRICE←LLM
+            # direction). Filenames include it only when value > 0.
+            frz_even_match = re.search(r'_frzEven(\d+)', col_name)
+            if frz_even_match:
+                display_name += f"_frzEven{frz_even_match.group(1)}"
             pwm_match = re.search(r'_pwm(\d+)', col_name)
             if pwm_match:
                 display_name += f"_pwm{pwm_match.group(1)}"

@@ -96,14 +96,20 @@ for model in $MODELS; do
       DAT_PATH="../queryPlans/${dir}/${db}/"
       case "$wl" in tpch|tpcds) bs="$TPCX_BATCH" ;; *) bs="$BIG_BATCH" ;; esac
       LOG_DIR="logs/${db}/logs_Train_${tr}_Test_${wl}_ours/${SUBDIR}"
+      RES_DIR="results/${db}/results_Train_${tr}_Test_${wl}_ours/${SUBDIR}"
       for m in $MODES; do
         mf="$(mode_flags "$m")"
         [ "$mf" = "__BADMODE__" ] && { echo "  [bad mode] $m"; continue; }
         i=$((i+1))
-        log_file="${LOG_DIR}/time_ablation_mode${m}_${db}_${LR}_b${bs}_h${HID_UNITS}_${model_dashed}_quant-${QUANT}_e${NUM_EPOCH}_tr${TRAIN_RATIO}_seed${SEED}.log"
+        stem="time_ablation_mode${m}_${db}_${LR}_b${bs}_h${HID_UNITS}_${model_dashed}_quant-${QUANT}_e${NUM_EPOCH}_tr${TRAIN_RATIO}_seed${SEED}"
+        log_file="${LOG_DIR}/${stem}.log"
+        res_file="${RES_DIR}/${stem}.csv"   # required by train.py for --algo llm (mode 1);
+                                            # harmless for the finetune modes. Isolated subdir.
         cmd=(python train.py
              --dat_paths_train "$DAT_PATH" --dat_path_test "$DAT_PATH"
              --log_file "$log_file"
+             --output_dir_qerror "$res_file"
+             --output_dir_abs "${RES_DIR}/${stem}_abs.txt"
              --db "$db" --workloads_train "$tr" --workload_test "$wl"
              --learning_rate "$LR" --batch_size "$bs" --hid_units "$HID_UNITS"
              --model_name "$model" --quantification "$QUANT"
@@ -112,7 +118,7 @@ for model in $MODELS; do
              $mf)
         echo "[$i] ${model_dashed} ${db}/${wl} mode${m} (b${bs})"
         if [ "${DRY_RUN:-0}" = "1" ]; then printf '      %s\n' "${cmd[*]}"; continue; fi
-        mkdir -p "$LOG_DIR"
+        mkdir -p "$LOG_DIR" "$RES_DIR"
         "${cmd[@]}" 2>&1 | tee "${log_file}.stdout"
         rc=${PIPESTATUS[0]}
         train_epoch_ms=$(grep -oE "\[Train\] Epoch 0 total — [0-9.]+ ms" "$log_file" 2>/dev/null | head -1 | grep -oE "[0-9.]+" | head -1)

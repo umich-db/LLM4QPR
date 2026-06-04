@@ -160,6 +160,11 @@ class BaoRegression:
         if _do_es:
             _val_trees = self.__tree_transform.transform(val_X)  # transform once
             _val_true = np.asarray(val_y, dtype=np.float64).reshape(-1)
+            # BaoNet.forward needs a COLLATED Batch (.trees/.idxes), like the
+            # training loop — feed it through a DataLoader with collate_fn=collate.
+            _val_loader = DataLoader(list(zip(_val_trees, [0.0] * len(_val_trees))),
+                                     batch_size=args.batch_size, shuffle=False,
+                                     collate_fn=collate)
             _es_best = float('inf'); _es_wait = 0; _es_best_epoch = -1
         # for epoch in range(100):
         for epoch in range(args.num_epoch):
@@ -188,10 +193,18 @@ class BaoRegression:
             # trainer.train(): we stop, we do not roll back to the best epoch).
             if _do_es and epoch >= _es_after:
                 self.__net.eval()
+                _vchunks = []
                 with torch.no_grad():
-                    _vp = self.__net(_val_trees).cpu().detach().numpy()
+                    for _vx, _ in _val_loader:
+                        if CUDA:
+                            if hasattr(_vx, 'trees'): _vx.trees = _vx.trees.cuda()
+                            if hasattr(_vx, 'idxes'): _vx.idxes = _vx.idxes.cuda()
+                        _vchunks.append(self.__net(_vx).cpu().detach().numpy())
                 self.__net.train()
-                _vpred = self.__pipeline.inverse_transform(_vp).reshape(-1)
+                _vp = np.concatenate(_vchunks, axis=0)   # (N, C); BaoNet's final
+                # Linear is commented out so output is C-dim. The prediction is
+                # column 0 (matches the test loop's inverse_transform(...)[0,0]).
+                _vpred = np.asarray(self.__pipeline.inverse_transform(_vp))[:, 0].reshape(-1)
                 _vpred = np.clip(_vpred, 1e-6, None)
                 _vtrue = np.clip(_val_true, 1e-6, None)
                 _qerr = np.maximum(_vpred / _vtrue, _vtrue / _vpred)

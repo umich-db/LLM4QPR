@@ -74,7 +74,7 @@ def _setting_letter(label: str) -> str:
 
 
 def run_and_load(label, args, rounds_override, seeds, init_Ks,
-                  decision_epochs, keep_ratio, out_csv):
+                  decision_epochs, keep_ratio, out_csv, all_models_csv=None):
     """Run compare_round_pareto.py, return DataFrame aggregated per init_K."""
     cmd = [
         sys.executable, str(SCRIPT),
@@ -82,6 +82,7 @@ def run_and_load(label, args, rounds_override, seeds, init_Ks,
         "--seeds", *map(str, seeds),
         "--init_Ks", *map(str, init_Ks),
         "--per_seed_output", str(out_csv),
+        *(["--all_models_csv", all_models_csv] if all_models_csv else []),
         *args,
     ]
     if rounds_override is not None:
@@ -121,6 +122,13 @@ def main():
                      metavar="LETTER",
                      help="Subset of CONFIGS to plot, by leading letter "
                           "(e.g. --settings C D F G H). Default: all.")
+    ap.add_argument("--all_models_csv", type=str, default=None,
+                     help="Pool CSV to run the selection on (forwarded to "
+                          "compare_round_pareto.py). Default: its built-in H100 CSV. "
+                          "Pass all_models_full_e16_tpu.csv for the TPU pool; the x-axis "
+                          "auto-labels 'TPU-v4 hours' for a *tpu* CSV.")
+    ap.add_argument("--xlabel", type=str, default=None,
+                     help="Override the x-axis label (default: auto from the CSV).")
     args = ap.parse_args()
 
     configs = CONFIGS
@@ -144,7 +152,8 @@ def main():
         print(f"\n=== {label} ===")
         out_csv = tmpdir / f"per_seed_{label.split(':')[0].strip()}.csv"
         agg = run_and_load(label, extra, rounds_override, args.seeds, args.init_Ks,
-                            args.decision_epochs, args.keep_ratio, out_csv)
+                            args.decision_epochs, args.keep_ratio, out_csv,
+                            all_models_csv=args.all_models_csv)
         agg["label"] = label
         agg["color"] = color
         agg["marker"] = marker
@@ -189,7 +198,15 @@ def main():
                  alpha=0.85)
         fits[_setting_letter(label)] = (x_fit_grid, y_fit)
 
-    ax.set_xlabel("Training time (H100-equivalent hours)", fontsize=12)
+    # x-axis hardware label: TPU CSVs carry TPU training time in their *_h100_ms
+    # columns; everything else is H100-equivalent. Overridable via --xlabel.
+    if args.xlabel is not None:
+        _xlabel = args.xlabel
+    elif args.all_models_csv and "tpu" in str(args.all_models_csv).lower():
+        _xlabel = "Training time (TPU-v4 hours)"
+    else:
+        _xlabel = "Training time (H100-equivalent hours)"
+    ax.set_xlabel(_xlabel, fontsize=12)
     ax.set_ylabel("Hypervolume (hv_ours)", fontsize=12)
     if args.title is None:
         title = ("Model-selection HV vs training time   "

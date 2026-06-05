@@ -11,7 +11,7 @@ Time derivation mirrors /root/h100_profile_runs_2026-05-18 + add_jax_snapshot_to
   (H100-native profiling -> raw == h100, pieces = e0:H100|e4:H100|e8:H100|e12:H100)
 Inference (per user choice): MEAN PER-BATCH ms = mean of the first [Test] pass's
   "[Test] Batch N — X ms" lines, EXCLUDING batch 1 (cold start). Stored in BOTH
-  test_total_eval_ms and test_testing_took_ms. (NB: batched at the profiling batch
+  test_per_query_ms and test_testing_took_ms. (NB: batched at the profiling batch
   size, not the single-query latency the stats per-query profiler produced.)
 Accuracy columns (val_*, test_{median,p90,p95,max,mean}_e16) are left BLANK.
 
@@ -101,7 +101,7 @@ def main():
         for c in TIME_COLS_RAW + TIME_COLS_H100:
             nr[c] = f"{(w if c.startswith('time_e1_4') else aw) * CHUNK_FACTOR:.2f}"
         if mpb is not None:
-            nr["test_total_eval_ms"] = f"{mpb:.4f}"
+            nr["test_per_query_ms"] = f"{mpb:.4f}"
             nr["test_testing_took_ms"] = f"{mpb:.4f}"
         nr["pieces_gpu_e1_e5_e9_e13"] = PIECES_H100
         out_rows.append(nr); ok += 1
@@ -112,7 +112,7 @@ def main():
     # sample
     for nr in out_rows[:2] + out_rows[-1:]:
         print(f"    e.g. {model_of_key(nr['key']):28} e1_4={nr['time_e1_4_ms']:>12} "
-              f"e5_8={nr['time_e5_8_ms']:>12} infer={nr['test_total_eval_ms']:>10}")
+              f"e5_8={nr['time_e5_8_ms']:>12} infer={nr['test_per_query_ms']:>10}")
     if a.write:
         os.makedirs(os.path.dirname(a.out), exist_ok=True)
         with open(a.out, "w", newline="") as f:

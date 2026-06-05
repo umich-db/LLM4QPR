@@ -18,7 +18,7 @@ Column derivation (verified to the cent against existing pool rows):
   time_e1_4_{ms,h100_ms}                 = warmup_ms       * 40   (x10 for 0.1->full data, x4 epochs/chunk)
   time_{e5_8,e9_12,e13_16}_{ms,h100_ms}  = after_warmup_ms * 40   (3 identical post-warmup chunks)
   pieces_gpu_e1_e5_e9_e13                = e0:H100|e4:H100|e8:H100|e12:H100   (raw == h100, ratio 1)
-  test_total_eval_ms = test_testing_took_ms = mean_per_query_ms (H100 per-query)
+  test_per_query_ms = test_testing_took_ms = mean_per_query_ms (H100 per-query)
 
   FALLBACK when the H100 warmup_e2 profiling FAILED (exit!=0 / NA), exactly like the
   existing albert-large-v1/v2 rows: TPU v4 wall split equally x 0.3 (H100-equiv estimate):
@@ -42,7 +42,7 @@ HEADER = ["subdir","key","time_e1_4_ms","time_e5_8_ms","time_e9_12_ms","time_e13
           "val_median_e4","val_median_e8","val_median_e12","val_median_e16",
           "val_p90_e4","val_p90_e8","val_p90_e12","val_p90_e16",
           "test_median_e16","test_p90_e16","test_p95_e16","test_max_e16","test_mean_e16",
-          "test_total_eval_ms","test_testing_took_ms","pieces_gpu_e1_e5_e9_e13"]
+          "test_per_query_ms","test_testing_took_ms","pieces_gpu_e1_e5_e9_e13"]
 
 
 def _g(text, pat, cast=str, default=None):

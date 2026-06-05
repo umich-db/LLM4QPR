@@ -79,15 +79,15 @@ def join_pool_with_profile(all_df: pd.DataFrame, prof: pd.DataFrame) -> pd.DataF
         raise RuntimeError(f"missing avg_ms after merge: {bad}")
     # Latency source override: PROFILE_CSV's avg_ms is the LLM-only forward
     # measurement; the deployed-inference latency is the full LLM+PRICE+MLP+
-    # cross-attn forward in all_models_full_e16.csv:test_total_eval_ms (now
+    # cross-attn forward in all_models_full_e16.csv:test_per_query_ms (now
     # populated with per-query H100 ms from the 2026-05-18 profile run).
     # Preserve the original avg_ms in `avg_ms_llm_only` for reference.
-    if "test_total_eval_ms" in out.columns:
-        deployed = pd.to_numeric(out["test_total_eval_ms"], errors="coerce")
+    if "test_per_query_ms" in out.columns:
+        deployed = pd.to_numeric(out["test_per_query_ms"], errors="coerce")
         if deployed.isna().any():
             bad = out.loc[deployed.isna(), "model"].astype(str).tolist()
             raise RuntimeError(
-                f"test_total_eval_ms missing/non-numeric for: {bad}")
+                f"test_per_query_ms missing/non-numeric for: {bad}")
         out["avg_ms_llm_only"] = out["avg_ms"]
         out["avg_ms"] = deployed
     return out

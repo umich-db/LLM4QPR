@@ -3,7 +3,7 @@ emit (a) a PNG showing all models with the frontier highlighted and (b) a
 terminal table listing the frontier models in ascending latency.
 
 Pool source:  all_models/all_models_full_e16.csv (test_p90_e16, key→model).
-Latency src:  all_models_full_e16.csv:test_total_eval_ms — H100 per-query
+Latency src:  all_models_full_e16.csv:test_per_query_ms — H100 per-query
               LLM+PRICE+MLP+cross-attn forward (the deployed-inference latency,
               not the LLM-only avg_ms from model_profile_with_nonemb.csv).
               The override happens inside join_pool_with_profile.
@@ -46,9 +46,12 @@ def main():
                           "the full pool).")
     ap.add_argument("--max_latency", type=float, default=float("inf"),
                      help="Hide models with avg_ms > this from the FIGURE only.")
+    ap.add_argument("--all_models_csv", type=str, default=str(ALL_MODELS_CSV),
+                     help="Pool CSV to plot (default: the H100 all_models_full_e16.csv). "
+                          "Pass all_models_full_e16_tpu.csv for the TPU-runtime frontier.")
     args = ap.parse_args()
 
-    all_df = pd.read_csv(ALL_MODELS_CSV)
+    all_df = pd.read_csv(args.all_models_csv)
     prof = pd.read_csv(PROFILE_CSV)
     pool = join_pool_with_profile(all_df, prof).reset_index(drop=True)
 

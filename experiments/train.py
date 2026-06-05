@@ -1287,11 +1287,20 @@ if argsP.algo in ("aimai", "qf", "e2e_cost"):
     _cache_name = f"{_data_str}_{_task_str}_{argsP.algo}_d{input_dim}_{argsP.train_ratio}_b{argsP.batch_size}_h{argsP.hid_units}_seed{argsP.seed}_model.pt"
     _cache_path = os.path.join(_cache_dir, _cache_name)
     if os.path.exists(_cache_path):
-        model_comb.load_state_dict(torch.load(_cache_path, map_location=argsP.device))
-        model_comb.to(argsP.device)
-        print(f"Loaded cached {argsP.algo} model from {_cache_path}")
-        trained_model = model_comb
-        _baseline_cached = True
+        # The cache key uses the MLP input_dim, which does NOT capture model-internal
+        # dims that depend on the dataset encoding (e.g. e2e_cost's LSTM input size
+        # differs between test=job (186) and test=job_full (187)). On any state_dict
+        # mismatch, fall back to training from scratch instead of crashing.
+        try:
+            model_comb.load_state_dict(torch.load(_cache_path, map_location=argsP.device))
+            model_comb.to(argsP.device)
+            print(f"Loaded cached {argsP.algo} model from {_cache_path}")
+            trained_model = model_comb
+            _baseline_cached = True
+        except RuntimeError as _e:
+            print(f"[cache] {argsP.algo} cache {_cache_path} is incompatible with the "
+                  f"current model architecture; retraining. ({_e})")
+            _baseline_cached = False
 
 if getattr(argsP, '_cross_attn_inference', False):
     # Cross-attention inference: model already has loaded weights, skip training

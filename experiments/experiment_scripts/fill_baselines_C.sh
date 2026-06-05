@@ -19,6 +19,17 @@ run() {  # <db> <train_wls> <test_wl> <algo>
         || echo "FAILED: db=$1 train=$2 test=$3 algo=$4"
 }
 
+# Targeted fill: GAP_ONLY=1 runs ONLY the lone outstanding cell
+# (e2e_cost on duckdb/job_full) and exits — avoids re-running all of C just to
+# fill one cell. This same cell is also covered by C2's `ml_duckdb e2e_cost`
+# below (train=job/imdb reuses the cached duckdb e2e_cost model, test=job_full).
+if [[ -n "${GAP_ONLY:-}" ]]; then
+    echo "=== GAP_ONLY: e2e_cost @ duckdb/job_full ==="
+    run duckdb "job" job_full e2e_cost
+    echo "Done (gap)."
+    exit 0
+fi
+
 ml_postgres() { run postgres "job" syn "$1"; run postgres "job" job "$1"; run postgres "job" job_full "$1"; run postgres "stats" stats "$1"; run postgres "tpch" tpch "$1"; }
 ml_duckdb()   { run duckdb   "job" syn "$1"; run duckdb   "job" job_full "$1"; run duckdb "tpcds" tpcds "$1"; run duckdb "tpch" tpch "$1"; }
 ml_spark()    { run spark    "job" syn "$1"; run spark    "job" job_full "$1"; run spark "tpcds" tpcds "$1"; run spark "tpch" tpch "$1"; }

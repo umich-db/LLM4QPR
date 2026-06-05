@@ -54,7 +54,7 @@ def get_col_min_max(minmax_df):
             col_min_max[name] = [mi, ma]
     return col_min_max
 
-def get_costs(js_nodes, card=False, db='postgres'):
+def get_costs(js_nodes, card=False, db='postgres', workload=None):
     costs = []
     if db == 'spark':
         for js_node in js_nodes:
@@ -65,11 +65,19 @@ def get_costs(js_nodes, card=False, db='postgres'):
                 costs.append(float(js_node.get('actual_rows', 0.0)))
         return costs
     if db == 'duckdb':
+        # DuckDB latency is in seconds. tpch/tpcds latencies are sub-µs, so the
+        # default ms-scaling collapses them onto the Normalizer epsilon (≈1 ms),
+        # making the log range degenerate → catastrophic baseline Q-errors. Scale
+        # those two workloads to NANOSECONDS (×1e9, matching the LLM path), which
+        # lifts every query well above the epsilon. imdb/stats stay in ms (already
+        # epsilon-safe there; changing them would shift their baseline numbers).
+        # NOTE: a model trained under one scaling must be RETRAINED, not
+        # re-evaluated, under the other (the label units differ).
+        _dscale = 1e9 if workload in ('tpch', 'tpcds') else 1000.0
         for js_node in js_nodes:
             if not card:
-                # DuckDB latency is in seconds → convert to ms
                 if "latency" in js_node:
-                    costs.append(js_node['latency'] * 1000.0)
+                    costs.append(js_node['latency'] * _dscale)
                 else:
                     print(f"DuckDB node without 'latency': {list(js_node.keys())[:10]}")
                     exit(1)
@@ -236,7 +244,7 @@ def get_new(args1, dat_path, dat_path_train_list, dat_path_test):
     ########################################################################
 
     index_list = get_index(df)
-    costs = get_costs(js_nodes, args1.card, db=db)
+    costs = get_costs(js_nodes, args1.card, db=db, workload=getattr(args1, 'workload_test', None))
 
     # Metadata lives one level above the engine directory
     # e.g. ../queryPlans/imdb/col_min_max.csv (shared by postgres/ and duckdb/)

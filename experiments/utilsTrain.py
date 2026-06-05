@@ -620,7 +620,7 @@ def prepare_non_llm_verbose_embeddings(argsP, trained_model, device, ds_info, da
             # Get roots and costs for this training file
             from evaluation.dataset_utils import df2nodes, get_costs
             train_roots, train_js_nodes, train_idxs = df2nodes(df_train, db=argsP.db)
-            train_costs = get_costs(train_js_nodes, argsP.card, db=argsP.db)
+            train_costs = get_costs(train_js_nodes, argsP.card, db=argsP.db, workload=getattr(argsP, 'workload_test', None))
             
             # Generate embedding file path for this training file
             removed_fields = getattr(argsP, 'removed_fields', None)
@@ -658,7 +658,7 @@ def prepare_non_llm_verbose_embeddings(argsP, trained_model, device, ds_info, da
         
         from evaluation.dataset_utils import df2nodes, get_costs
         test_roots, test_js_nodes, test_idxs = df2nodes(df_test, db=argsP.db)
-        test_costs = get_costs(test_js_nodes, argsP.card, db=argsP.db)
+        test_costs = get_costs(test_js_nodes, argsP.card, db=argsP.db, workload=getattr(argsP, 'workload_test', None))
         
         # Generate embedding file path for test file
         removed_fields = getattr(argsP, 'removed_fields', None)

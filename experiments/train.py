@@ -761,89 +761,13 @@ elif argsP.algo == "llm_price_finetune":
   if argsP.algo == "llm_price_finetune":
     # Full LLM+PRICE model construction (--no_llm_residual was NOT set)
 
-    # Load pretrained PRICE model (skip if random init)
-    price_state_dict = None
-    if not getattr(argsP, 'price_random_init', False):
-      price_state_dict = torch.load(argsP.price_model_path, map_location=device)
-      # Strip DataParallel 'module.' prefix
-      price_state_dict = {k.replace('module.', ''): v for k, v in price_state_dict.items()}
-
-    # Build PRICE RegressionModel with correct dimensions
-    max_njc = argsP.price_max_n_join_col
-    max_nfo = argsP.price_max_n_fanout
-    max_ntb = argsP.price_max_n_table
-    max_nfc = argsP.price_max_n_filter_col
-    bin_size = getattr(argsP, 'price_bin_size', 40)
-    table_dim = 4
-    filter_dim, fanout_dim, pairwise_intra_dim = _price_dims(argsP, bin_size)
-
-    _price_n_embd = getattr(argsP, 'price_n_embd', 256)
-    _price_n_heads = getattr(argsP, 'price_n_heads', 8)
-    _price_ffn_ratio = getattr(argsP, 'price_ffn_ratio', 4.0)
-    _use_or_transformer = any([
-        getattr(argsP, "price_n_pairwise", False),
-        getattr(argsP, "price_n_filter", False),
-        getattr(argsP, "price_n_fanout", False),
-        getattr(argsP, "price_n_parsing", False),
-    ]) and not getattr(argsP, "no_or_transformer", False)
-    # Pick query_hidden_dim so PRICEEmbedder can always reuse regression_model.linear
-    # (no spurious nn.Linear in PRICEEmbedder.__init__, which would shift RNG state).
-    _pod = int(getattr(argsP, 'price_output_dim', 0) or 0)
-    if _pod > 0:
-        _query_hidden_dim = _pod
-    elif (getattr(argsP, 'use_bi_cross_attention', False)
-          and getattr(argsP, 'inflate_price', False)
-          and (getattr(argsP, 'n_cross_layers', 0) > 0 or getattr(argsP, 'force_inflate', False))):
-        _query_hidden_dim = argsP.embed_size
-    else:
-        _query_hidden_dim = 512
-    price_model = RegressionModel(
-        n_join_col=max_njc, n_fanout=max_nfo, n_table=max_ntb, n_filter_col=max_nfc,
-        n_pairwise_intra=getattr(argsP, "price_max_n_pairwise_intra", 8)
-                          if getattr(argsP, "price_n_pairwise", False) else 0,
-        hist_dim=bin_size, table_dim=table_dim, filter_dim=filter_dim,
-        fanout_dim=fanout_dim, pairwise_intra_dim=pairwise_intra_dim,
-        query_hidden_dim=_query_hidden_dim, final_hidden_dim=1024, output_dim=1,
-        n_embd=_price_n_embd, n_layers=getattr(argsP, 'price_n_layers', 6), n_heads=_price_n_heads,
-        dropout_rate=0.1, ffn_ratio=_price_ffn_ratio,
-        use_or_transformer=_use_or_transformer,
-        or_n_layers=getattr(argsP, "or_n_layers", 1),
-        or_n_heads=getattr(argsP, "or_n_heads", 4),
-        or_ffn_ratio=getattr(argsP, "or_ffn_ratio", 1.0),
-    )
-    # Load weights with partial init for PRICE_M (histogram bins shared, operator dims differ)
-    def _load_price_sd(model, ckpt_sd, label=""):
-        """Load checkpoint into PRICE model with partial init for size-mismatched weights.
-        For filter_embeddings.weight [n_embd,43]->[n_embd,61], copies the first min(43,61)
-        columns (histogram bins) and leaves the rest randomly initialized."""
-        model_sd = model.state_dict()
-        for k, v in ckpt_sd.items():
-            if k not in model_sd:
-                continue
-            if model_sd[k].shape == v.shape:
-                model_sd[k] = v
-            elif model_sd[k].dim() == v.dim():
-                slices = tuple(slice(0, min(ms, vs)) for ms, vs in zip(model_sd[k].shape, v.shape))
-                model_sd[k][slices] = v[slices]
-                print(f"  Partial init {k}: copied {[s.stop for s in slices]} of {list(model_sd[k].shape)} from checkpoint {list(v.shape)}")
-        model.load_state_dict(model_sd)
-        if label:
-            print(label)
-
-    if getattr(argsP, 'price_random_init', False):
-      print("[PRICE] Random initialization (skipping pretrained weights)")
-    elif getattr(argsP, 'price_init_frozen_joint', False):
-      # Load frozen-joint PRICE weights instead of pretrained
-      task_str = "card" if argsP.card else "time"
-      _price_suffix = _price_path_suffix(argsP)
-      frozen_price_path = f"finetuned_models/{argsP.db}{_GSUB}/{argsP.canonical_wl_prefix}_{task_str}_inference_{argsP.model_name.replace('/','-')}_b{argsP.batch_size}{_price_suffix}_llm_price_price.pt"
-      frozen_sd = torch.load(frozen_price_path, map_location=device)
-      _load_price_sd(price_model, frozen_sd, f"Loaded frozen-joint PRICE weights from {frozen_price_path}")
-    else:
-      _load_price_sd(price_model, price_state_dict, f"Loaded PRICE weights from {argsP.price_model_path}")
-
-    price_embedder = PRICEEmbedder(price_model,
-                                   price_output_dim_override=getattr(argsP, 'price_output_dim', 0))
+    # Build the cx=0 / mode-7 PRICEEmbedder. Extracted into build_price_embedder
+    # so the non-LLM baselines (--baseline_price_concat) construct the identical
+    # embedder. The cross-attn branches below build their own embedders from the
+    # SAME price_model (seeded from price_embedder's shared weights), exactly as
+    # before — so build_price_embedder also hands back that RegressionModel.
+    from price_embedder_factory import build_price_embedder
+    price_embedder, _, price_model = build_price_embedder(argsP, device, return_price_model=True)
 
     if getattr(argsP, 'freeze_llm', False):
       # Frozen LLM path: model has no LLM, uses pre-computed embeddings

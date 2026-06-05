@@ -150,18 +150,35 @@ def load_price_feats(workload, sql_list, db_name, bin_size, price_n_or):
     # Single-clause path: data_features is list of 5-tuples (Sql2FeatureN always
     # emits 5-tuples). pad_and_cache_features auto-detects the 5-tuple shape and
     # returns one flat (flat_size,) tensor + (mask_size,) mask per query.
+    #
+    # Because ``--price_n`` sets price_n_pairwise=True (utilsTrain.py ~386-390),
+    # generate_price_features returns a 6-tuple here — an EXTRA trailing
+    # ``n_pairwise_intras`` (per-query pairwise-token counts) beyond the usual
+    # five (price_data_utils.py return ~4774-4775). We MUST thread that count
+    # into pad_and_cache_features exactly as mode 7 does
+    # (get_price_only_ds_from_csv, utilsLLM.py ~4449-4453 + the single-clause
+    # call ~4486-4491): without ``price_n_pairwise=True`` /
+    # ``pairwise_intra_dim=70`` / ``n_pairwise_intras=...`` the pairwise token
+    # axis is silently dropped, so when a workload has column-vs-column
+    # predicates (pairwise>0) our flat width would be (B,525) while mode 7
+    # yields (B, 525 + 70*max_pi) — a wrong-width tensor fed to the shared
+    # PRICEEmbedder. (Coincides only because standard benchmarks have pairwise=0.)
     data_features = gpf_out[0]
     n_join_cols = gpf_out[1]
     n_fanouts = gpf_out[2]
     n_tables = gpf_out[3]
     n_filter_cols = gpf_out[4]
+    n_pairwise_intras = gpf_out[5]  # 6-tuple under price_n_pairwise=True
 
-    padded_features, padding_masks, _max_njc, _max_nfo, _max_ntb, _max_nfc = \
+    padded_features, padding_masks, _max_njc, _max_nfo, _max_ntb, _max_nfc, _max_npi = \
         pdu.pad_and_cache_features(
             data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols,
             bin_size=bin_size,
             filter_dim=75,
+            price_n_pairwise=pn_pairwise,
             fanout_dim=42,
+            pairwise_intra_dim=70,
+            n_pairwise_intras=n_pairwise_intras,
         )
 
     feats = []
@@ -309,44 +326,76 @@ if __name__ == "__main__":
         for nm, t in zip(names, price_batch):
             print(f"    {nm:12s} shape={tuple(t.shape)} dtype={t.dtype}")
 
-        # Cross-check against the actual mode-7 collate (price_only_collate /
-        # price_or_collate) on the same per-query data, building each collate's
-        # per-item tuple (with a dummy pg_est_card + label it ignores for the
-        # embedder slots) and confirming the embedder-relevant tensor shapes match.
-        if price_n_or:
+        if not price_n_or:
+            # Strengthened single-clause cross-check: instead of re-stacking the
+            # SAME `feats` (which can't catch a pairwise-arg divergence — it just
+            # re-collates what load_price_feats already produced), independently
+            # re-run generate_price_features + pad_and_cache_features with mode
+            # 7's EXACT single-clause kwargs (get_price_only_ds_from_csv,
+            # utilsLLM.py ~4449-4453 + the call ~4486-4491: price_n_pairwise=True,
+            # filter_dim=75, fanout_dim=42, pairwise_intra_dim=70,
+            # n_pairwise_intras=<from the 6-tuple return>). The per-query flat
+            # tensor + mask WIDTHS from that mode-7 reproduction must equal what
+            # load_price_feats produces; if the single-clause path ever dropped
+            # the pairwise args, the widths would diverge whenever pairwise>0.
+            _gpf = generate_price_features(
+                workload, sql_list, db_name, bin_size,
+                price_n_parsing=True, price_n_filter=True,
+                price_n_fanout=True, price_n_pairwise=True,
+                price_n_or=False,
+            )
+            assert len(_gpf) == 6, (
+                f"generate_price_features(price_n_pairwise=True) arity "
+                f"{len(_gpf)} != 6 (expected the extra n_pairwise_intras)")
+            _df, _njc, _nfo, _ntb, _nfc, _npi = _gpf
+            ref_pf_list, ref_pm_list, *_ = pdu.pad_and_cache_features(
+                _df, _njc, _nfo, _ntb, _nfc,
+                bin_size=bin_size,
+                filter_dim=75,
+                price_n_pairwise=True,
+                fanout_dim=42,
+                pairwise_intra_dim=70,
+                n_pairwise_intras=_npi,
+            )
+            ref_flat_w = ref_pf_list[0].shape[-1]
+            ref_mask_w = ref_pm_list[0].shape[-1]
+            got_flat_w = price_batch[0].shape[-1]
+            got_mask_w = price_batch[1].shape[-1]
+            max_npi = max(_npi) if _npi else 0
+            print(f"[verify] mode-7 single-clause widths: flat={ref_flat_w} "
+                  f"mask={ref_mask_w} (max pairwise-intra tokens={max_npi})")
+            ok = (got_flat_w == ref_flat_w and got_mask_w == ref_mask_w and
+                  price_batch[2].shape == (4, 1) and price_batch[5].shape == (4, 1))
+            print(f"[verify] single-clause widths match mode-7 "
+                  f"pad_and_cache_features: {ok} "
+                  f"(load_price_feats flat={got_flat_w} mask={got_mask_w})")
+            assert ok, (
+                "single-clause price_batch widths diverge from mode-7 "
+                "pad_and_cache_features — pairwise token axis mismatch!")
+        else:
+            # OR (multi-clause) path already threads multi_clause_data (whose
+            # padding includes the pairwise axis); re-stack the per-query `feats`
+            # and confirm the embedder-relevant shapes survive _stack_price's
+            # 3D->2D reshape (mirrors llm_price_or_collate).
             collate_items = [(pf, 1.0, pm, njc, nfo, ntb, nfc, nc, 0.0)
                              for (pf, pm, njc, nfo, ntb, nfc, nc) in feats[:4]]
-        else:
-            collate_items = [(pf, 1.0, pm, njc, nfo, ntb, nfc, 0.0)
-                             for (pf, pm, njc, nfo, ntb, nfc) in feats[:4]]
-
-        # Reproduce price_only_collate / price_or_collate inline on CPU (the
-        # train.py versions push to `device`; here we just compare shapes).
-        if price_n_or:
             pf_, pgc_, pm_, njc_, nfo_, ntb_, nfc_, nc_, _lab = zip(*collate_items)
-        else:
-            pf_, pgc_, pm_, njc_, nfo_, ntb_, nfc_, _lab = zip(*collate_items)
-        ref_pf = torch.stack([f for f in pf_]).float()
-        ref_pm = torch.stack([m for m in pm_]).float()
-        ref_njc = torch.tensor(njc_, dtype=torch.float32).unsqueeze(1)
-        ref_nfc = torch.tensor(nfc_, dtype=torch.float32).unsqueeze(1)
-
-        # In the OR reference, price_only/or_collate leave price_feats 3D
-        # (batch, max_clauses, flat); the embedder is fed the reshaped 2D form by
-        # llm_price_or_collate. Our _stack_price already reshapes, so compare the
-        # reshaped reference.
-        if price_n_or and ref_pf.dim() == 3:
-            b_, c_, f_ = ref_pf.shape
-            ref_pf_cmp = ref_pf.view(b_ * c_, f_)
-            ref_pm_cmp = ref_pm.view(b_ * c_, ref_pm.shape[-1])
-        else:
-            ref_pf_cmp, ref_pm_cmp = ref_pf, ref_pm
-
-        ok = (price_batch[0].shape == ref_pf_cmp.shape and
-              price_batch[1].shape == ref_pm_cmp.shape and
-              price_batch[2].shape == ref_njc.shape and
-              price_batch[5].shape == ref_nfc.shape)
-        print(f"[verify] shapes match mode-7 collate (price_feats/pad_masks/njc/nfc): {ok}")
-        assert ok, "price_batch shapes diverge from mode-7 collate!"
+            ref_pf = torch.stack([f for f in pf_]).float()
+            ref_pm = torch.stack([m for m in pm_]).float()
+            ref_njc = torch.tensor(njc_, dtype=torch.float32).unsqueeze(1)
+            ref_nfc = torch.tensor(nfc_, dtype=torch.float32).unsqueeze(1)
+            if ref_pf.dim() == 3:
+                b_, c_, f_ = ref_pf.shape
+                ref_pf_cmp = ref_pf.view(b_ * c_, f_)
+                ref_pm_cmp = ref_pm.view(b_ * c_, ref_pm.shape[-1])
+            else:
+                ref_pf_cmp, ref_pm_cmp = ref_pf, ref_pm
+            ok = (price_batch[0].shape == ref_pf_cmp.shape and
+                  price_batch[1].shape == ref_pm_cmp.shape and
+                  price_batch[2].shape == ref_njc.shape and
+                  price_batch[5].shape == ref_nfc.shape)
+            print(f"[verify] shapes match mode-7 collate "
+                  f"(price_feats/pad_masks/njc/nfc): {ok}")
+            assert ok, "price_batch shapes diverge from mode-7 collate!"
 
     print("\n[verify] OK — price_batch is interchangeable with mode-7's PRICEEmbedder input.")

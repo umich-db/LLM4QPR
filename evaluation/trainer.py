@@ -1190,16 +1190,28 @@ def check_batch_for_nans(batch):
 def train_and_test_bao(train_roots, train_costs, test_roots, test_costs, args, device,
                        total_roots=None, total_costs=None, train_ids=None, test_ids=None,
                        plan_file_path=None, output_dir_qerror=None, dat_paths_train_list=None,
-                       val_roots=None, val_costs=None):
+                       val_roots=None, val_costs=None,
+                       price_embedder=None, train_price_feats=None,
+                       val_price_feats=None, test_price_feats=None):
     """
     Train and test the BaoRegression model. Returns metrics and predictions.
     Optionally generates embeddings and verbose output if verbose_info is enabled.
+
+    --baseline_price_concat joint path: when ``price_embedder`` is provided, bao
+    becomes BaoNet (tree-conv -> 64) concat the mode-7 cx=0 PRICE embedding
+    (512) -> Prediction head, trained jointly. ``*_price_feats`` are the per-query
+    PRICE tuples aligned 1:1 to train/val/test roots (built in train.py via
+    build_aligned_price_feats_for_splits, same split ids as the roots). When
+    ``price_embedder`` is None this path is byte-for-byte the original plain-bao.
     """
     from algorithms.bao.model import BaoRegression
     from algorithms.bao.featurize import collate as bao_collate
     import time
 
-    bao = BaoRegression(have_cache_data=True, verbose=True)
+    _joint_price = price_embedder is not None
+    bao = BaoRegression(have_cache_data=True, verbose=True,
+                        price_embedder=price_embedder,
+                        hid_units=getattr(args, 'hid_units', 256))
     # Check for cached BAO model
     task_str = "card" if args.card else "time"
     _prefix = f"long_raw_{args.db}_"
@@ -1209,7 +1221,11 @@ def train_and_test_bao(train_roots, train_costs, test_roots, test_costs, args, d
         _data_names.append(_stem[len(_prefix):] if _stem.startswith(_prefix) else _stem)
     data_str = '-'.join(_data_names)
     cache_dir = f"finetuned_models/{args.db}/"
-    cache_name = f"{data_str}_{task_str}_bao_{args.train_ratio}_b{args.batch_size}_h{args.hid_units}_seed{args.seed}_model"
+    # Joint (--baseline_price_concat) bao has a different architecture (extra head
+    # + finetuned PRICE embedder), so tag its cache key so it never loads/overwrites
+    # a plain-bao cache.
+    _pc_tag = "_priceConcat" if _joint_price else ""
+    cache_name = f"{data_str}_{task_str}_bao{_pc_tag}_{args.train_ratio}_b{args.batch_size}_h{args.hid_units}_seed{args.seed}_model"
     cache_path = os.path.join(cache_dir, cache_name)
     # Training
     if os.path.exists(cache_path):
@@ -1219,7 +1235,8 @@ def train_and_test_bao(train_roots, train_costs, test_roots, test_costs, args, d
         args.main_logger.info(f"[Train] Skipped training (loaded from cache)")
     else:
         training_start = time.time()
-        bao.fit(train_roots, train_costs, args, val_X=val_roots, val_y=val_costs)
+        bao.fit(train_roots, train_costs, args, val_X=val_roots, val_y=val_costs,
+                price_feats=train_price_feats, val_price_feats=val_price_feats)
         training_time = time.time() - training_start
         args.main_logger.info(f"[Train] Training took {training_time*1000:.2f} ms")
         os.makedirs(cache_dir, exist_ok=True)
@@ -1347,7 +1364,29 @@ def train_and_test_bao(train_roots, train_costs, test_roots, test_costs, args, d
     preds_test = []
     test_embeddings_list = []
     max_embedding_len = 5000  # Must match training embedding size
-    
+
+    if _joint_price:
+        # Joint forward: head(cat(BaoNet(trees), PRICEEmbedder(price))). predict()
+        # returns the same (N,1) inverse-transformed shape/units as the plain path.
+        _jp = bao.predict(test_roots, price_feats=test_price_feats)
+        preds_test = [float(_jp[i, 0]) for i in range(len(test_roots))]
+        test_time = time.time() - test_start
+        args.main_logger.info(f"[Test] Testing took {test_time*1000:.2f} ms")
+
+        qerr = print_qerror(preds_test, test_costs)
+        abserr = get_abs_errors(preds_test, test_costs)
+        qerr_dist = get_qerror_distribution(preds_test, test_costs)
+        abserr_dist = get_abs_error_distribution(preds_test, test_costs)
+        return {
+            'qerr': qerr,
+            'abserr': abserr,
+            'qerr_dist': qerr_dist,
+            'abserr_dist': abserr_dist,
+            'preds_test': preds_test,
+            'training_time': training_time,
+            'test_time': test_time,
+        }
+
     for root in test_roots:
         featurized = bao._BaoRegression__tree_transform.transform([root])
         batch, _ = bao_collate(list(zip(featurized, [0.0])))

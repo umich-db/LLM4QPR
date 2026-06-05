@@ -674,7 +674,30 @@ if argsP.algo == "bao":
   
   # Set metadata for verbose output
   argsP.test_plan_file_path = dat_path_test
-  
+
+  # --baseline_price_concat: build the mode-7 cx=0 PRICE embedder + per-query
+  # PRICE features aligned 1:1 to the bao train/val/test roots, and thread them
+  # into train_and_test_bao for joint training. train_and_test_bao has no
+  # dat_dict, so we build everything here (where dat_dict / split ids are in
+  # scope), exactly as the qf/aimai/e2e_cost block does.
+  _bao_price_embedder = None
+  _bao_train_feats = _bao_val_feats = _bao_test_feats = None
+  if getattr(argsP, 'baseline_price_concat', False):
+    from baseline_price_data import build_aligned_price_feats_for_splits
+    from price_embedder_factory import build_price_embedder
+    print("[baseline_price_concat] Building aligned PRICE features for bao "
+          "(train/val/test)...", flush=True)
+    _bao_train_feats, _bao_val_feats, _bao_test_feats = \
+        build_aligned_price_feats_for_splits(
+            argsP, dat_paths_train_list, dat_path_test, dat_dict)
+    print(f"[baseline_price_concat] PRICE feats: train={len(_bao_train_feats)} "
+          f"val={len(_bao_val_feats)} test={len(_bao_test_feats)}", flush=True)
+    # build_aligned_price_feats_for_splits publishes the unified price_max_n_*
+    # dims onto argsP, so build_price_embedder sizes the PRICE model to match.
+    _bao_price_embedder, _bao_price_dim = build_price_embedder(argsP, device)
+    print(f"[baseline_price_concat] bao: PRICE emb dim = {_bao_price_dim}",
+          flush=True)
+
   results = train_and_test_bao(
       train_roots, train_costs, test_roots, test_costs, argsP, device,
       total_roots=total_roots, total_costs=total_costs,
@@ -682,7 +705,11 @@ if argsP.algo == "bao":
       plan_file_path=dat_path_test,
       output_dir_qerror=argsP.output_dir_qerror,
       dat_paths_train_list=dat_paths_train_list,
-      val_roots=val_roots, val_costs=val_costs
+      val_roots=val_roots, val_costs=val_costs,
+      price_embedder=_bao_price_embedder,
+      train_price_feats=_bao_train_feats,
+      val_price_feats=_bao_val_feats,
+      test_price_feats=_bao_test_feats,
   )
   save_error_cdf(results['qerr_dist'], argsP.output_dir_qerror, error_type="Qerror")
   # save_error_cdf(results['abserr_dist'], argsP.output_dir_abs,   error_type="abs_error")

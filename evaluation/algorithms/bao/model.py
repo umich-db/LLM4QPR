@@ -47,10 +47,71 @@ class BaoData:
 # Import the proper collate function from featurize.py
 from .featurize import collate
 
+
+def _embed_price(price_embedder, price_batch, device):
+    """Run the mode-7 cx=0 PRICEEmbedder on a batched PRICE tuple and return the
+    512-dim query embedding.
+
+    REUSES the exact num_clauses-keyword call pattern from
+    experiments/models/baseline_price_model.py::BaselinePriceJointModel.forward:
+    under --price_n_or the batched tuple carries a 7th element (num_clauses) that
+    is the 9th *positional* param of PRICEEmbedder.forward (after the two llm_*
+    slots), so it MUST be passed by keyword. Passing it positionally leaks it into
+    llm_hidden_states and silently skips the OR aggregation -> a
+    (batch*max_clauses) vs batch shape crash.
+    """
+    price_batch = list(price_batch)
+    # Move every price tensor to the bao device.
+    price_batch = [
+        t.to(device) if isinstance(t, torch.Tensor) else t for t in price_batch]
+    num_clauses = price_batch.pop() if len(price_batch) == 7 else None
+    price_emb, _, _ = price_embedder(*price_batch, num_clauses=num_clauses)
+    return price_emb
+
+
+class _BaoPriceDataset(torch.utils.data.Dataset):
+    """Pairs each featurized tree with its per-query PRICE feature tuple (aligned
+    by index to the featurized X). __getitem__ -> (featurized_tree, price_tuple, y)."""
+    def __init__(self, featurized_X, price_feats, y):
+        assert len(featurized_X) == len(price_feats) == len(y), (
+            f"bao joint: featurized_X ({len(featurized_X)}), price_feats "
+            f"({len(price_feats)}), y ({len(y)}) length mismatch")
+        self.X = featurized_X
+        self.price_feats = price_feats
+        self.y = y
+
+    def __len__(self):
+        return len(self.X)
+
+    def __getitem__(self, i):
+        return self.X[i], self.price_feats[i], self.y[i]
+
+
+def _bao_price_collate(batch, tree_collate, stack_price):
+    """Collate (featurized_tree, price_tuple, y) triples.
+
+    The trees go through bao's existing tree collate (returns (Batch, y)); the
+    price half is batched into the PRICEEmbedder tuple via _stack_price (REUSED
+    from experiments/baseline_price_data.py, NOT hand-rolled)."""
+    trees = [b[0] for b in batch]
+    price_items = [b[1] for b in batch]
+    ys = [b[2] for b in batch]
+    tree_batch, y_batch = tree_collate(list(zip(trees, ys)))
+    price_batch = stack_price(price_items)
+    return tree_batch, price_batch, y_batch
+
 class BaoRegression:
-    def __init__(self, verbose=False, have_cache_data=False):
+    def __init__(self, verbose=False, have_cache_data=False,
+                 price_embedder=None, hid_units=256):
         self.__net = None
         self.__verbose = verbose
+        # --baseline_price_concat joint path: when price_embedder is set, the
+        # model becomes BaoNet (tree-conv -> 64-dim) concat the mode-7 cx=0 PRICE
+        # embedding (512-dim) -> Prediction(64+512, hid_units). price_embedder is
+        # None for the plain-bao path (byte-for-byte unchanged behavior).
+        self.__price_embedder = price_embedder
+        self.__hid_units = hid_units
+        self.__head = None
 
         log_transformer = preprocessing.FunctionTransformer(
             np.log1p, _inv_log1p,
@@ -83,17 +144,41 @@ class BaoRegression:
         if torch.cuda.is_available():
             self.__net = self.__net.cuda()
         self.__net.eval()
-        
+
         with open(_y_transform_path(path), "rb") as f:
             self.__pipeline = joblib.load(f)
         with open(_x_transform_path(path), "rb") as f:
             self.__tree_transform = joblib.load(f)
+
+        # --baseline_price_concat joint path: restore the joint head + the
+        # finetuned PRICE embedder so predict() can run the joint forward. The
+        # cache key carries a "_priceConcat" suffix (set in train_and_test_bao),
+        # so a joint run never loads a plain-bao cache and vice versa.
+        if self.__price_embedder is not None:
+            from trainer import Prediction
+            _head_path = os.path.join(path, "head_weights")
+            _price_path = os.path.join(path, "price_embedder_weights")
+            _head_sd = torch.load(_head_path)
+            _price_emb_dim = getattr(self.__price_embedder, 'price_output_dim', 512)
+            _bao_emb_dim = _head_sd['out_mlp1.weight'].shape[1] - _price_emb_dim
+            self.__head = Prediction(_bao_emb_dim + _price_emb_dim, self.__hid_units)
+            self.__head.load_state_dict(_head_sd)
+            self.__price_embedder.load_state_dict(torch.load(_price_path))
+            if torch.cuda.is_available():
+                self.__head = self.__head.cuda()
+            self.__head.eval(); self.__price_embedder.eval()
 
     def save(self, path):
         # try to create a directory here
         os.makedirs(path, exist_ok=True)
         
         torch.save(self.__net.state_dict(), _nn_path(path))
+        # Joint (--baseline_price_concat) extra weights: the head and the
+        # finetuned PRICE embedder. Plain-bao saves none of these.
+        if self.__price_embedder is not None and self.__head is not None:
+            torch.save(self.__head.state_dict(), os.path.join(path, "head_weights"))
+            torch.save(self.__price_embedder.state_dict(),
+                       os.path.join(path, "price_embedder_weights"))
         with open(_y_transform_path(path), "wb") as f:
             joblib.dump(self.__pipeline, f)
         with open(_x_transform_path(path), "wb") as f:
@@ -103,35 +188,57 @@ class BaoRegression:
         with open(_n_path(path), "wb") as f:
             joblib.dump(self.__n, f)
 
-    def fit(self, X, y, args, val_X=None, val_y=None):
+    def fit(self, X, y, args, val_X=None, val_y=None,
+            price_feats=None, val_price_feats=None):
         if isinstance(y, list):
             y = np.array(y)
 
 #         X = [json.loads(x) if isinstance(x, str) else x for x in X]
         self.__n = len(X)
-            
+
         # transform the set of trees into feature vectors using a log
         # (assuming the tail behavior exists, TODO investigate
         #  the quantile transformer from scikit)
         y = self.__pipeline.fit_transform(y.reshape(-1, 1)).astype(np.float32)
-        
+
         self.__tree_transform.fit(X)
         X = self.__tree_transform.transform(X)
 
-        pairs = list(zip(X, y))
-        dataset = DataLoader(pairs,
-                             batch_size=args.batch_size,
-                            #  batch_size=16,
-                             shuffle=True,
-                             collate_fn=collate)
+        # --baseline_price_concat joint path: when a PRICE embedder was injected,
+        # pair each featurized tree with its (index-aligned) per-query PRICE tuple
+        # so each batch is (tree_batch, price_batch, y).
+        _joint = self.__price_embedder is not None
+        if _joint:
+            assert price_feats is not None and len(price_feats) == len(X), (
+                "bao joint (--baseline_price_concat): price_feats must be aligned "
+                f"1:1 to X ({len(price_feats) if price_feats is not None else None} "
+                f"vs {len(X)})")
+            # REUSE _stack_price from the baseline PRICE feature provider (do NOT
+            # hand-roll tensor stacking) — same fn the qf/aimai/e2e_cost path uses.
+            from baseline_price_data import _stack_price
+            _bp_dev = next(self.__price_embedder.parameters()).device
+            dataset = DataLoader(
+                _BaoPriceDataset(X, price_feats, y),
+                batch_size=args.batch_size, shuffle=True,
+                collate_fn=lambda b: _bao_price_collate(b, collate, _stack_price))
+        else:
+            pairs = list(zip(X, y))
+            dataset = DataLoader(pairs,
+                                 batch_size=args.batch_size,
+                                #  batch_size=16,
+                                 shuffle=True,
+                                 collate_fn=collate)
 
         # # determine the initial number of channels
         # for inp, _tar in dataset:
         #     in_channels = inp[0][0].shape[0]
         #     break
 
-        for inp, _tar in dataset:
-        # inp is a Batch, with `inp.trees` shape [batch, channels, nodes]
+        for _batch in dataset:
+        # inp is a Batch, with `inp.trees` shape [batch, channels, nodes].
+        # Both collates put the tree Batch first: non-joint -> (Batch, targets),
+        # joint -> (tree_batch, price_batch, y).
+            inp = _batch[0]
             in_channels = inp.trees.shape[1]
             break
 
@@ -147,7 +254,33 @@ class BaoRegression:
         if CUDA:
             self.__net = self.__net.cuda()
 
-        optimizer = torch.optim.Adam(self.__net.parameters(), lr=args.learning_rate)
+        if _joint:
+            # Probe the bao tree-embedding width on one featurized batch (should be
+            # 64 — BaoNet's final Linear is commented out, so it outputs the
+            # DynamicPooling width), then build the joint head over 64 + 512.
+            from trainer import Prediction
+            _first = next(iter(dataset))
+            _ft = _first[0]
+            if CUDA:
+                if hasattr(_ft, 'trees'): _ft.trees = _ft.trees.cuda()
+                if hasattr(_ft, 'idxes'): _ft.idxes = _ft.idxes.cuda()
+            with torch.no_grad():
+                bao_emb_dim = self.__net(_ft).shape[1]
+            price_emb_dim = getattr(self.__price_embedder, 'price_output_dim', 512)
+            self.__head = Prediction(bao_emb_dim + price_emb_dim, self.__hid_units)
+            if CUDA:
+                self.__head = self.__head.cuda()
+            self.__log(f"[bao joint] head input_dim = {bao_emb_dim} (bao) + "
+                       f"{price_emb_dim} (price) = {bao_emb_dim + price_emb_dim}")
+
+        if _joint:
+            # Train BaoNet + price_embedder + head jointly.
+            _params = (list(self.__net.parameters())
+                       + list(self.__price_embedder.parameters())
+                       + list(self.__head.parameters()))
+            optimizer = torch.optim.Adam(_params, lr=args.learning_rate)
+        else:
+            optimizer = torch.optim.Adam(self.__net.parameters(), lr=args.learning_rate)
         loss_fn = torch.nn.MSELoss()
 
         losses = []
@@ -162,24 +295,45 @@ class BaoRegression:
             _val_true = np.asarray(val_y, dtype=np.float64).reshape(-1)
             # BaoNet.forward needs a COLLATED Batch (.trees/.idxes), like the
             # training loop — feed it through a DataLoader with collate_fn=collate.
-            _val_loader = DataLoader(list(zip(_val_trees, [0.0] * len(_val_trees))),
-                                     batch_size=args.batch_size, shuffle=False,
-                                     collate_fn=collate)
+            # Joint path: pair val trees with their (aligned) PRICE feats and run
+            # the SAME (tree, price, y) collate + joint forward.
+            if _joint:
+                assert val_price_feats is not None and len(val_price_feats) == len(_val_trees), (
+                    "bao joint: val_price_feats must be aligned 1:1 to val_X")
+                from baseline_price_data import _stack_price as _vsp
+                _val_loader = DataLoader(
+                    _BaoPriceDataset(_val_trees, val_price_feats, [0.0] * len(_val_trees)),
+                    batch_size=args.batch_size, shuffle=False,
+                    collate_fn=lambda b: _bao_price_collate(b, collate, _vsp))
+            else:
+                _val_loader = DataLoader(list(zip(_val_trees, [0.0] * len(_val_trees))),
+                                         batch_size=args.batch_size, shuffle=False,
+                                         collate_fn=collate)
             _es_best = float('inf'); _es_wait = 0; _es_best_epoch = -1
         # for epoch in range(100):
         for epoch in range(args.num_epoch):
             loss_accum = 0
-            for x, y in dataset:
+            for _batch in dataset:
+                if _joint:
+                    x, price_batch, y = _batch
+                else:
+                    x, y = _batch
                 if CUDA:
                     y = y.cuda()
                     if hasattr(x, 'trees'):
                         x.trees = x.trees.cuda()
                     if hasattr(x, 'idxes'):
                         x.idxes = x.idxes.cuda()
-                y_pred = self.__net(x)
+                if _joint:
+                    # head(cat(BaoNet(trees), PRICEEmbedder(price)))  — _embed_price
+                    # uses the num_clauses-keyword pattern from BaselinePriceJointModel.
+                    price_emb = _embed_price(self.__price_embedder, price_batch, _bp_dev)
+                    y_pred = self.__head(torch.cat([self.__net(x), price_emb], dim=1))
+                else:
+                    y_pred = self.__net(x)
                 loss = loss_fn(y_pred, y)
                 loss_accum += loss.item()
-        
+
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -193,14 +347,25 @@ class BaoRegression:
             # trainer.train(): we stop, we do not roll back to the best epoch).
             if _do_es and epoch >= _es_after:
                 self.__net.eval()
+                if _joint: self.__head.eval(); self.__price_embedder.eval()
                 _vchunks = []
                 with torch.no_grad():
-                    for _vx, _ in _val_loader:
+                    for _vbatch in _val_loader:
+                        if _joint:
+                            _vx, _vprice, _ = _vbatch
+                        else:
+                            _vx, _ = _vbatch
                         if CUDA:
                             if hasattr(_vx, 'trees'): _vx.trees = _vx.trees.cuda()
                             if hasattr(_vx, 'idxes'): _vx.idxes = _vx.idxes.cuda()
-                        _vchunks.append(self.__net(_vx).cpu().detach().numpy())
+                        if _joint:
+                            _vpe = _embed_price(self.__price_embedder, _vprice, _bp_dev)
+                            _vout = self.__head(torch.cat([self.__net(_vx), _vpe], dim=1))
+                        else:
+                            _vout = self.__net(_vx)
+                        _vchunks.append(_vout.cpu().detach().numpy())
                 self.__net.train()
+                if _joint: self.__head.train(); self.__price_embedder.train()
                 _vp = np.concatenate(_vchunks, axis=0)   # (N, C); BaoNet's final
                 # Linear is commented out so output is C-dim. The prediction is
                 # column 0 (matches the test loop's inverse_transform(...)[0,0]).
@@ -228,13 +393,41 @@ class BaoRegression:
         else:
             self.__log("Stopped training after max epochs")
 
-    def predict(self, X):
+    def predict(self, X, price_feats=None):
         if not isinstance(X, list):
             X = [X]
         X = [json.loads(x) if isinstance(x, str) else x for x in X]
 
         X = self.__tree_transform.transform(X)
-        
+
         self.__net.eval()
+
+        # --baseline_price_concat joint path: forward
+        # head(cat(BaoNet(trees), PRICEEmbedder(price))) and return the predictions
+        # in the SAME shape/units as the plain path (inverse_transform of an (N,1)
+        # array). Batch the price feats per query via _stack_price.
+        if self.__price_embedder is not None:
+            assert price_feats is not None and len(price_feats) == len(X), (
+                "bao joint predict: price_feats must be aligned 1:1 to X "
+                f"({len(price_feats) if price_feats is not None else None} vs {len(X)})")
+            from baseline_price_data import _stack_price
+            self.__head.eval(); self.__price_embedder.eval()
+            _bp_dev = next(self.__price_embedder.parameters()).device
+            loader = DataLoader(
+                _BaoPriceDataset(X, price_feats, [0.0] * len(X)),
+                batch_size=getattr(self, '_predict_batch_size', 64), shuffle=False,
+                collate_fn=lambda b: _bao_price_collate(b, collate, _stack_price))
+            chunks = []
+            with torch.no_grad():
+                for tree_batch, price_batch, _ in loader:
+                    if CUDA:
+                        if hasattr(tree_batch, 'trees'): tree_batch.trees = tree_batch.trees.cuda()
+                        if hasattr(tree_batch, 'idxes'): tree_batch.idxes = tree_batch.idxes.cuda()
+                    pe = _embed_price(self.__price_embedder, price_batch, _bp_dev)
+                    out = self.__head(torch.cat([self.__net(tree_batch), pe], dim=1))
+                    chunks.append(out.cpu().detach().numpy())
+            pred = np.concatenate(chunks, axis=0)   # (N, 1)
+            return self.__pipeline.inverse_transform(pred)
+
         pred = self.__net(X).cpu().detach().numpy()
         return self.__pipeline.inverse_transform(pred)

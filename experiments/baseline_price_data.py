@@ -58,7 +58,8 @@ from price_data_utils import generate_price_features  # noqa: F401 (public re-ex
 # ---------------------------------------------------------------------------
 # Per-query feature construction
 # ---------------------------------------------------------------------------
-def load_price_feats(workload, sql_list, db_name, bin_size, price_n_or):
+def load_price_feats(workload, sql_list, db_name, bin_size, price_n_or,
+                     return_max_dims=False):
     """Build per-query PRICE features for ``sql_list``.
 
     Returns a list indexed by query position (0..N-1, same order as
@@ -145,6 +146,15 @@ def load_price_feats(workload, sql_list, db_name, bin_size, price_n_or):
                           n_join_cols[qi], n_fanouts[qi],
                           n_tables[qi], n_filter_cols[qi],
                           int(num_clauses[qi])))
+        if return_max_dims:
+            max_dims = {
+                "max_n_join_col": int(out["max_n_join_col"]),
+                "max_n_fanout": int(out["max_n_fanout"]),
+                "max_n_table": int(out["max_n_table"]),
+                "max_n_filter_col": int(out["max_n_filter_col"]),
+                "max_n_pairwise_intra": int(out.get("max_n_pairwise_intra", 0)),
+            }
+            return feats, max_dims
         return feats
 
     # Single-clause path: data_features is list of 5-tuples (Sql2FeatureN always
@@ -186,6 +196,15 @@ def load_price_feats(workload, sql_list, db_name, bin_size, price_n_or):
         feats.append((padded_features[i], padding_masks[i],
                       n_join_cols[i], n_fanouts[i],
                       n_tables[i], n_filter_cols[i]))
+    if return_max_dims:
+        max_dims = {
+            "max_n_join_col": int(_max_njc),
+            "max_n_fanout": int(_max_nfo),
+            "max_n_table": int(_max_ntb),
+            "max_n_filter_col": int(_max_nfc),
+            "max_n_pairwise_intra": int(_max_npi) if _max_npi is not None else 0,
+        }
+        return feats, max_dims
     return feats
 
 
@@ -280,6 +299,131 @@ def baseline_price_collate(batch, base_collate):
     base_batch = base_collate(base_items)    # the baseline's existing collate
     price_batch = _stack_price(price_items)  # -> (x, padding_mask, n_join_col, ...)
     return base_batch, price_batch
+
+
+# ---------------------------------------------------------------------------
+# Per-split alignment to the baseline train/val/test split
+# ---------------------------------------------------------------------------
+def build_aligned_price_feats_for_splits(argsP, dat_paths_train_list, dat_path_test,
+                                         dat_dict):
+    """Produce (train_feats, val_feats, test_feats) aligned 1:1 to the baseline
+    split (``dat_dict['train_roots']`` / ``val_roots`` / ``test_roots``).
+
+    Mirrors mode 7's get_price_only_ds_from_csv split exactly (same_file vs
+    separate-file) so the per-query PRICE feature at index ``i`` of each returned
+    list corresponds to the baseline root at index ``i`` of the matching split:
+
+      * same_file: build the FULL-file ``sql_list`` (file order) once, then subset
+        by ``dat_dict['train_ids']/['val_ids']/['test_ids']`` — exactly how
+        ``get_new`` derives ``train_roots = [roots[idx] for idx in train_ids]``.
+      * separate-file: build train+val features from the concatenated training SQL
+        (``for_training=True`` per train workload, in ``dat_paths_train_list``
+        order — the SAME order ``get_new`` concatenates ``df_train``) and subset by
+        ``train_ids``/``val_ids``; build test features from the test SQL
+        (``card=False``) indexed by ``test_ids - train_rows`` (``get_new`` sets
+        ``test_ids = range(train_rows, train_rows+test_rows)``).
+
+    The split id lists in ``dat_dict`` are produced by dataset_utils.get_new with
+    the SAME random_state=42 / TPC-DS template logic that mode 7's train_val_test
+    uses, so the alignment is positionally exact.
+
+    ALIGNMENT INVARIANT (verified for the in-scope postgres/time cells): the plan
+    CSV and the SQL file must have the SAME row order and row count, because the
+    ``*_ids`` index into both. ``get_new``/``df2nodes`` SKIPS rows whose plan JSON
+    is the literal string 'failed' (dataset_utils.py df2nodes), so a CSV containing
+    a failed row would make ``roots`` shorter than ``feats_all`` and shift the ids.
+    All in-scope postgres CSVs (imdb, imdb_job, stats, tpch, tpcds) have zero failed
+    rows, so this holds. The ``PriceAugmentedDataset`` length assertion catches a
+    total-count mismatch; if this is ever extended to engines/CSVs with failed rows,
+    add a per-segment count check (feats_all length vs baseline roots length).
+    """
+    bin_size = getattr(argsP, 'price_bin_size', 40)
+    price_n_or = getattr(argsP, 'price_n_or', False)
+    workload_test = argsP.workload_test
+
+    train_ids = dat_dict.get('train_ids')
+    val_ids = dat_dict.get('val_ids')
+    test_ids = dat_dict.get('test_ids')
+    if train_ids is None or val_ids is None or test_ids is None:
+        raise RuntimeError(
+            "baseline_price_concat: dat_dict is missing train/val/test ids "
+            "(needed to align PRICE features to the baseline split)")
+
+    def _subset(lst, ids):
+        return [lst[i] for i in ids]
+
+    # Build the FULL combined SQL list in the SAME order get_new builds
+    # total_roots (df = concat(df_train_paths..., df_test) for separate-file;
+    # df = df_test for same_file), so position i of feats_all aligns with
+    # total_roots[i] and the dat_dict id-lists index into it directly.
+    same_file = (len(dat_paths_train_list) == 1
+                 and dat_paths_train_list[0] == dat_path_test)
+
+    # Each segment: (workload, db_name, sql_list). Padding is done JOINTLY across
+    # all segments so the per-feature width and the model dims (price_max_n_*) are
+    # unified — exactly as mode 7's separate-file branch pads train+test together.
+    segments = []
+    if same_file:
+        sql_file = pdu.get_sql_file_for_workload(workload_test, card=argsP.card)
+        sql_list = pdu.extract_raw_sql_from_queries_true(sql_file)
+        segments.append((workload_test,
+                         pdu.get_db_name_for_workload(workload_test),
+                         sql_list))
+    else:
+        workloads_train = list(getattr(argsP, 'workloads_train', []) or [])
+        for idx_dp, _train_path in enumerate(dat_paths_train_list):
+            train_wl = (workloads_train[idx_dp]
+                        if idx_dp < len(workloads_train) else workload_test)
+            train_sql_file = pdu.get_sql_file_for_workload(
+                train_wl, card=argsP.card, for_training=True)
+            train_sqls = pdu.extract_raw_sql_from_queries_true(train_sql_file)
+            segments.append((train_wl,
+                             pdu.get_db_name_for_workload(train_wl),
+                             train_sqls))
+        test_sql_file = pdu.get_sql_file_for_workload(workload_test, card=argsP.card)
+        test_sqls = pdu.extract_raw_sql_from_queries_true(test_sql_file)
+        segments.append((workload_test,
+                         pdu.get_db_name_for_workload(workload_test),
+                         test_sqls))
+
+    # Per-segment feature extraction (raw widths per segment), then JOINT padding.
+    # load_price_feats already pads within a segment; to get a unified width we
+    # pad each segment to the GLOBAL maxima. We do this by extracting per-segment
+    # then re-padding against global max dims via a single combined call.
+    combined_sql = []
+    seg_lengths = []
+    seg_meta = []
+    for wl, db, sqls in segments:
+        combined_sql.extend(sqls)
+        seg_lengths.append(len(sqls))
+        seg_meta.append((wl, db))
+    # All segments share the same workload-family stats DB only when identical;
+    # generate_price_features keys on db_name, so segments with different DBs must
+    # be extracted separately. In practice baseline_price_concat targets a single
+    # workload family (train_wl == test_wl == workload_test), so one combined call
+    # over the SAME db is both correct and what unifies the padding width.
+    dbs = {db for _wl, db in seg_meta}
+    if len(dbs) != 1:
+        raise RuntimeError(
+            "baseline_price_concat currently supports a single stats-DB across "
+            f"train/test segments; got {sorted(dbs)}")
+    combined_db = next(iter(dbs))
+    feats_all, max_dims = load_price_feats(
+        workload_test, combined_sql, combined_db, bin_size, price_n_or,
+        return_max_dims=True)
+
+    # Publish the unified max dims so build_price_embedder sizes the PRICE model
+    # to match these features (mode 7 sets these from pad_and_cache_features too).
+    argsP.price_max_n_join_col = max_dims["max_n_join_col"]
+    argsP.price_max_n_fanout = max_dims["max_n_fanout"]
+    argsP.price_max_n_table = max_dims["max_n_table"]
+    argsP.price_max_n_filter_col = max_dims["max_n_filter_col"]
+    if getattr(argsP, 'price_n_pairwise', False):
+        argsP.price_max_n_pairwise_intra = max_dims["max_n_pairwise_intra"]
+
+    return (_subset(feats_all, train_ids),
+            _subset(feats_all, val_ids),
+            _subset(feats_all, test_ids))
 
 
 # ---------------------------------------------------------------------------

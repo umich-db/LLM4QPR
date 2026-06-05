@@ -222,6 +222,17 @@ if getattr(argsP, 'baseline_price_concat', False):
         raise SystemExit("--baseline_price_concat requires --algo qf|aimai|e2e_cost|bao")
     if argsP.card:
         raise SystemExit("--baseline_price_concat is time-only for now (no --card)")
+    # Tag the result CSV + log stems so a joint (base+PRICE) run never overwrites
+    # the plain-baseline cdf cell / log. Insert "_priceConcat" before the suffix.
+    def _bp_tag_path(p, tag="_priceConcat"):
+        if not p:
+            return p
+        _stem, _ext = os.path.splitext(p)
+        return f"{_stem}{tag}{_ext}" if tag not in _stem else p
+    if getattr(argsP, 'output_dir_qerror', None):
+        argsP.output_dir_qerror = _bp_tag_path(argsP.output_dir_qerror)
+    if getattr(argsP, 'log_file', None):
+        argsP.log_file = _bp_tag_path(argsP.log_file)
 
 # Global subdir component: inserted into every finetuned_models/{db}/<_GSUB>/... path
 # when --subdir_tag is set (e.g. "model_selection"). Empty string otherwise.
@@ -599,6 +610,50 @@ else:
             train_loader,  val_loader,  test_loader,  \
             test_lengths, test_templates, _ = utilsTrain.load_data(argsP, dat_path, dat_paths_train_list, dat_path_test, dat_dict)
 
+# --baseline_price_concat: wrap the baseline datasets with per-query PRICE
+# features (aligned 1:1 to the baseline split) and rebuild the loaders so each
+# batch is (base_batch, price_batch). The base half still flows through the
+# baseline's own collate; the price half is the mode-7 PRICEEmbedder tuple.
+if (getattr(argsP, 'baseline_price_concat', False)
+        and argsP.algo in ("qf", "aimai", "e2e_cost")):
+    from functools import partial as _bp_partial
+    from torch.utils.data import DataLoader as _BPDataLoader
+    from torch.utils.data import default_collate as _bp_default_collate
+    from baseline_price_data import (
+        PriceAugmentedDataset, baseline_price_collate,
+        build_aligned_price_feats_for_splits,
+    )
+    print("[baseline_price_concat] Building aligned PRICE features for "
+          f"{argsP.algo} (train/val/test)...", flush=True)
+    _bp_train_feats, _bp_val_feats, _bp_test_feats = \
+        build_aligned_price_feats_for_splits(
+            argsP, dat_paths_train_list, dat_path_test, dat_dict)
+    print(f"[baseline_price_concat] PRICE feats: train={len(_bp_train_feats)} "
+          f"val={len(_bp_val_feats)} test={len(_bp_test_feats)}", flush=True)
+
+    # The baseline's existing collate (must match how load_data built the loaders).
+    if argsP.algo == "qf":
+        from algorithms.queryformer.dataset_utils import collator as _bp_base_collate
+    elif argsP.algo == "e2e_cost":
+        from algorithms.e2e_cost.e2e_dataset import collator as _bp_base_collate
+    else:  # aimai uses the default collate (TensorDataset, no custom collate)
+        _bp_base_collate = _bp_default_collate
+
+    ds = PriceAugmentedDataset(ds, _bp_train_feats)
+    val_ds = PriceAugmentedDataset(val_ds, _bp_val_feats)
+    test_ds = PriceAugmentedDataset(test_ds, _bp_test_feats)
+    _bp_collate = _bp_partial(baseline_price_collate, base_collate=_bp_base_collate)
+
+    train_loader = _BPDataLoader(
+        dataset=ds, batch_size=argsP.batch_size, shuffle=True,
+        collate_fn=_bp_collate,
+        generator=torch.Generator().manual_seed(argsP.seed if hasattr(argsP, 'seed') else 42))
+    val_loader = _BPDataLoader(
+        dataset=val_ds, batch_size=argsP.batch_size, shuffle=False,
+        collate_fn=_bp_collate)
+    test_loader = _BPDataLoader(
+        dataset=test_ds, batch_size=1, shuffle=False, collate_fn=_bp_collate)
+
 from trainer import *
 
 if argsP.algo == "bao":
@@ -641,7 +696,36 @@ elif argsP.algo == "postgres":
 
 
 
-if argsP.algo == "aimai":
+_baseline_price_concat = (getattr(argsP, 'baseline_price_concat', False)
+                          and argsP.algo in ("qf", "aimai", "e2e_cost"))
+if _baseline_price_concat:
+  # --baseline_price_concat: concat a mode-7-style cx=0 PRICE embedding (512-dim)
+  # onto the baseline encoder output before the prediction MLP, trained jointly.
+  # Build the SAME base encoder the plain-baseline branch builds (so the encoder
+  # output dim feeding the MLP is identical), but route it through
+  # BaselinePriceJointModel instead of an MLP / nn.Sequential.
+  from price_embedder_factory import build_price_embedder
+  from models.baseline_price_model import BaselinePriceJointModel
+  price_embedder, price_dim = build_price_embedder(argsP, device)
+  if argsP.algo == "aimai":
+    base_encoder = nn.Identity()
+    input_dim = len(ds_info.nodeParallels) * 5          # aimai feature width
+  elif argsP.algo == "qf":
+    from algorithms.queryformer.model import *
+    base_encoder = QueryFormer(emb_size=64, use_sample=True, use_hist=True)
+    input_dim = 393                                     # QueryFormer embed dim
+  else:  # e2e_cost
+    from algorithms.e2e_cost.e2e_model import *
+    input_dim = 32                                      # E2E encoder embed dim
+    base_encoder = E2E_model(input_dim, 64, 64, ds_info)
+  model_comb = BaselinePriceJointModel(base_encoder, price_embedder, input_dim,
+                                       argsP.hid_units, price_emb_dim=price_dim)
+  # Marker consumed by trainer.train()/evaluate() to thread the (base, price) batch
+  # tuple through forward(base_input, price_feats); plain baselines are unaffected.
+  model_comb.is_baseline_price_joint = True
+  print(f"[baseline_price_concat] {argsP.algo}: MLP input_dim = "
+        f"{input_dim} + {price_dim} = {input_dim + price_dim}")
+elif argsP.algo == "aimai":
   input_dim = len(ds_info.nodeParallels) * 5
   MLP = Prediction(input_dim, argsP.hid_units)
   model_comb = MLP
@@ -1214,7 +1298,10 @@ if argsP.algo in ("aimai", "qf", "e2e_cost"):
         _stem = os.path.splitext(os.path.basename(_p))[0]
         _data_names.append(_stem[len(_prefix):] if _stem.startswith(_prefix) else _stem)
     _data_str = '-'.join(_data_names)
-    _cache_name = f"{_data_str}_{_task_str}_{argsP.algo}_d{input_dim}_{argsP.train_ratio}_b{argsP.batch_size}_h{argsP.hid_units}_seed{argsP.seed}_model.pt"
+    # --baseline_price_concat: a joint (base+PRICE) run has a different model
+    # architecture than the plain baseline, so it must NOT share the cache file.
+    _bp_tag = "_priceConcat" if getattr(argsP, 'baseline_price_concat', False) else ""
+    _cache_name = f"{_data_str}_{_task_str}_{argsP.algo}_d{input_dim}_{argsP.train_ratio}_b{argsP.batch_size}_h{argsP.hid_units}_seed{argsP.seed}{_bp_tag}_model.pt"
     _cache_path = os.path.join(_cache_dir, _cache_name)
     if os.path.exists(_cache_path):
         # The cache key uses the MLP input_dim, which does NOT capture model-internal

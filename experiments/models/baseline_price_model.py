@@ -15,6 +15,15 @@ class BaselinePriceJointModel(nn.Module):
 
     def forward(self, base_input, price_feats):
         base_emb = self.base_encoder(base_input)
-        # PRICEEmbedder.forward(x, padding_mask, n_join_col, n_fanout, n_table, n_filter_col)
-        price_emb, _, _ = self.price(*price_feats)
+        # PRICEEmbedder.forward(x, padding_mask, n_join_col, n_fanout, n_table, n_filter_col,
+        #                       llm_hidden_states=None, llm_attention_mask=None, num_clauses=None, ...)
+        # Under --price_n_or the collate appends num_clauses as a 7th element. It is
+        # the 9th *positional* param of forward (after the two llm_* slots), so it
+        # MUST be passed by keyword — exactly as mode 7's LLMPriceJointModel does
+        # (self.price(..., num_clauses=num_clauses)). Passing it positionally would
+        # leak it into llm_hidden_states and silently skip the OR-Transformer
+        # aggregation, leaving query_output at (batch*max_clauses) rows.
+        price_feats = list(price_feats)
+        num_clauses = price_feats.pop() if len(price_feats) == 7 else None
+        price_emb, _, _ = self.price(*price_feats, num_clauses=num_clauses)
         return self.mlp(torch.cat([base_emb, price_emb], dim=1))

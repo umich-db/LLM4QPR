@@ -23,6 +23,16 @@ timer = time.perf_counter
 _TRAINING_SESSION = {'tag': None, 'start_time': None, 'epoch': None}
 
 
+def _move_price_batch_to_device(price_batch, device):
+    """Move every tensor in a PRICEEmbedder price tuple to ``device``.
+
+    Used by the --baseline_price_concat path: the joint batch is
+    (base_batch, price_batch) where price_batch is a tuple of tensors
+    (x, padding_mask, n_join_col, n_fanout, n_table, n_filter_col[, num_clauses]).
+    """
+    return tuple(t.to(device) if torch.is_tensor(t) else t for t in price_batch)
+
+
 
 ## cost prediction MLP model
 class Prediction(nn.Module):
@@ -364,36 +374,45 @@ def evaluate(model, args, loader, norm, device, prints=True, data_sec="unknown",
             if data_sec == "test":
                 batch_start = timer()
             
-            if isinstance(batch, (list, tuple)) and len(batch) == 3:
+            _bp_price_batch = None
+            if getattr(model, 'is_baseline_price_joint', False):
+                # --baseline_price_concat: batch is (base_batch, price_batch).
+                base_batch, _bp_price_batch = batch
+                x, y = base_batch
+                _bp_price_batch = _move_price_batch_to_device(_bp_price_batch, device)
+            elif isinstance(batch, (list, tuple)) and len(batch) == 3:
                 x, stats, y = batch
             else:
                 x, y = batch
 
             # Move inputs to device if not LLM/PRICE finetuning (collate already puts x on device)
-            if args.algo not in ("llm_finetune", "llm_price_finetune", "price_finetune"):
+            if _bp_price_batch is not None or args.algo not in ("llm_finetune", "llm_price_finetune", "price_finetune"):
                 x = x.to(device)
-            
+
             # Store embeddings if requested (and not already provided)
-            if save_embeddings and test_embeddings is None:
+            if save_embeddings and test_embeddings is None and _bp_price_batch is None:
                 embeddings_list.append(x.cpu().numpy())
-            
+
             # Forward pass (handle Sequential models and extract embeddings for non-LLM)
-            if is_sequential:
-                # For qf/e2e_cost: Extract embedding from first module
-                embedding = model[0](x)
-                # Convert embedding to float32 if needed (LLM may output float16/bfloat16)
-                if embedding.dtype != torch.float32:
-                    embedding = embedding.float()
-                # Store embedding for verbose output
-                if extract_non_llm_embeddings:
-                    embeddings_list.append(embedding.cpu().numpy())
-                # Get prediction from second module
-                preds = model[1](embedding).squeeze()
+            if _bp_price_batch is not None:
+                preds = model(x, _bp_price_batch).squeeze()
             else:
-                # For aimai: Input features ARE the embeddings
-                if extract_non_llm_embeddings and args.algo == 'aimai':
-                    embeddings_list.append(x.cpu().numpy())
-            preds = model(x).squeeze()
+                if is_sequential:
+                    # For qf/e2e_cost: Extract embedding from first module
+                    embedding = model[0](x)
+                    # Convert embedding to float32 if needed (LLM may output float16/bfloat16)
+                    if embedding.dtype != torch.float32:
+                        embedding = embedding.float()
+                    # Store embedding for verbose output
+                    if extract_non_llm_embeddings:
+                        embeddings_list.append(embedding.cpu().numpy())
+                    # Get prediction from second module
+                    preds = model[1](embedding).squeeze()
+                else:
+                    # For aimai: Input features ARE the embeddings
+                    if extract_non_llm_embeddings and args.algo == 'aimai':
+                        embeddings_list.append(x.cpu().numpy())
+                preds = model(x).squeeze()
             
             # Collect predictions
             if isinstance(preds, torch.Tensor):
@@ -955,7 +974,15 @@ def train(model, train_loader, val_loader, \
             data_load_time = timer() - data_fetch_start
             args.main_logger.info(f"[Train] Epoch {epoch} Batch {batch_idx} DataLoad — {data_load_time*1000:.2f} ms")
             batch_start = timer()
-            if isinstance(batch, (list, tuple)) and len(batch) == 3:
+            _bp_price_batch = None
+            if getattr(model, 'is_baseline_price_joint', False):
+                # --baseline_price_concat: batch is (base_batch, price_batch).
+                # base_batch is the baseline collate's (base_x, y) tuple; the
+                # joint model forwards (base_x, price_feats) -> Prediction.
+                base_batch, _bp_price_batch = batch
+                x, y = base_batch
+                _bp_price_batch = _move_price_batch_to_device(_bp_price_batch, device)
+            elif isinstance(batch, (list, tuple)) and len(batch) == 3:
                 x, stats, y = batch
             else:
                 x, y = batch
@@ -972,7 +999,9 @@ def train(model, train_loader, val_loader, \
                 optimizer.zero_grad()
 
             # Forward pass (handle Sequential models)
-            if is_sequential:
+            if _bp_price_batch is not None:
+                preds = model(x, _bp_price_batch)
+            elif is_sequential:
                 # For Sequential: extract embedding from first module, then pass to second
                 embedding = model[0](x)
                 # Convert embedding to float32 if needed (LLM may output float16/bfloat16)

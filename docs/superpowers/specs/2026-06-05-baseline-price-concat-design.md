@@ -125,14 +125,14 @@ passed to `create_dataset_for_algo`). Honors `--price_n_or` (multi-clause) exact
 - New PRICE feature semantics — reuse `generate_price_features` verbatim.
 - `postgres` native baseline (no learned embedding to concat into).
 
-## 7. Open questions / assumptions
+## 7. Resolved decisions / assumptions
 
-- **`sql_list` source for alignment:** assume the per-query SQL used by
-  `generate_price_features` is obtainable for the baseline workload the same way mode 7 obtains
-  it, and aligns to baseline `query_ids` 1:1. The implementation plan must confirm the exact
-  source (plan CSV column vs reconstructed) and the alignment for syn/job/job_full canonical
-  training.
-- **`--card`:** assume **time-only** for the first cut (matches mode 7's usage); error on
+- **`sql_list` source for alignment (RESOLVED):** the baselines consume the **exact same
+  workload files the LLM path uses**, so the per-query SQL fed to `generate_price_features`
+  is obtained the same way mode 7 obtains it and aligns to the baseline queries 1:1 (same
+  order / `query_ids`, including the syn/job/job_full → imdb canonical training files). The
+  implementation reuses mode 7's SQL-loading path verbatim.
+- **`--card`:** **time-only** for the first cut (matches mode 7's usage); error on
   `--card + --baseline_price_concat` unless we later confirm card works.
 
 ## 8. Testing

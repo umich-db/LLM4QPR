@@ -188,6 +188,10 @@ def parse_args():
                         help="Pad pairwise intra-table tokens to this count.")
     parser.add_argument("--price_random_init", action="store_true", default=False,
                         help="Initialize PRICE with random weights instead of pretrained")
+    parser.add_argument("--baseline_price_concat", action="store_true",
+                        help="Concatenate a mode-7 PRICE/stats embedding before the baseline MLP "
+                             "(algos qf/aimai/e2e_cost/bao). Reuses --price_model_path/--price_bin_size/"
+                             "--price_n[_or]/--price_random_init.")
     parser.add_argument("--price_n_layers", type=int, default=6,
                         help="Number of transformer blocks per PRICE encoder (default 6, pretrained uses 6)")
     parser.add_argument("--price_n_embd", type=int, default=256,

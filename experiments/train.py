@@ -217,6 +217,12 @@ if getattr(argsP, 'no_llm_residual', False) and argsP.algo == "llm_price_finetun
     print("[no_llm_residual] Rerouting algo: llm_price_finetune → price_finetune")
     argsP.algo = "price_finetune"
 
+if getattr(argsP, 'baseline_price_concat', False):
+    if argsP.algo not in ("qf", "aimai", "e2e_cost", "bao"):
+        raise SystemExit("--baseline_price_concat requires --algo qf|aimai|e2e_cost|bao")
+    if argsP.card:
+        raise SystemExit("--baseline_price_concat is time-only for now (no --card)")
+
 # Global subdir component: inserted into every finetuned_models/{db}/<_GSUB>/... path
 # when --subdir_tag is set (e.g. "model_selection"). Empty string otherwise.
 _GSUB = f"/{argsP.subdir_tag}" if getattr(argsP, 'subdir_tag', '') else ""

@@ -275,7 +275,10 @@ def extract_display_name(col_name):
             # For aimai, also extract feature config if present
             feat_match = re.search(r'_f(\d+)', col_name)
             if feat_match and algo == 'aimai':
-                return f"{algo}_f{feat_match.group(1)}"
+                algo = f"{algo}_f{feat_match.group(1)}"
+            # --baseline_price_concat runs (_priceConcat tag) are a DISTINCT method.
+            if 'priceConcat' in col_name:
+                algo = f"{algo}_priceConcat"
             return algo
         return col_name
 

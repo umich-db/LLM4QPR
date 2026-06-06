@@ -288,7 +288,12 @@ def extract_display_name(col_name):
             algo = match.group(1)
             feat_match = re.search(r'_f(\d+)', col_name)
             if feat_match and algo == 'aimai':
-                return f"{algo}_f{feat_match.group(1)}"
+                algo = f"{algo}_f{feat_match.group(1)}"
+            # --baseline_price_concat runs carry a _priceConcat tag; keep them as a
+            # DISTINCT method (e.g. qf_priceConcat) so they don't collapse onto the
+            # plain baseline column and get dropped by the collision handler.
+            if 'priceConcat' in col_name:
+                algo = f"{algo}_priceConcat"
             return algo
         return col_name
 

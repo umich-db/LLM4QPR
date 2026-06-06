@@ -1373,10 +1373,14 @@ def train_and_test_bao(train_roots, train_costs, test_roots, test_costs, args, d
         test_time = time.time() - test_start
         args.main_logger.info(f"[Test] Testing took {test_time*1000:.2f} ms")
 
-        qerr = print_qerror(preds_test, test_costs)
-        abserr = get_abs_errors(preds_test, test_costs)
-        qerr_dist = get_qerror_distribution(preds_test, test_costs)
-        abserr_dist = get_abs_error_distribution(preds_test, test_costs)
+        # Compute Q-error against actuals clamped through the SAME Normalizer the
+        # qf/aimai/e2e_cost path uses (trainer.evaluate), so zero-latency queries
+        # are floored at a small epsilon instead of producing inf.
+        _test_costs_m = bao.clamp_actuals(test_costs)
+        qerr = print_qerror(preds_test, _test_costs_m)
+        abserr = get_abs_errors(preds_test, _test_costs_m)
+        qerr_dist = get_qerror_distribution(preds_test, _test_costs_m)
+        abserr_dist = get_abs_error_distribution(preds_test, _test_costs_m)
         return {
             'qerr': qerr,
             'abserr': abserr,
@@ -1417,15 +1421,19 @@ def train_and_test_bao(train_roots, train_costs, test_roots, test_costs, args, d
             # Get prediction
             raw_pred = bao._BaoRegression__net(batch)
             raw_np   = raw_pred.cpu().numpy()
-        final_pred = bao._BaoRegression__pipeline.inverse_transform(raw_np)
+        final_pred = np.asarray(bao._BaoRegression__norm.unnormalize_labels(raw_np))
         preds_test.append(final_pred[0,0])
     test_time = time.time() - test_start
     args.main_logger.info(f"[Test] Testing took {test_time*1000:.2f} ms")
 
-    qerr = print_qerror(preds_test, test_costs)
-    abserr = get_abs_errors(preds_test, test_costs)
-    qerr_dist = get_qerror_distribution(preds_test, test_costs)
-    abserr_dist = get_abs_error_distribution(preds_test, test_costs)
+    # Compute Q-error against actuals clamped through the SAME Normalizer the
+    # qf/aimai/e2e_cost path uses (trainer.evaluate), so zero-latency queries
+    # are floored at a small epsilon instead of producing inf.
+    _test_costs_m = bao.clamp_actuals(test_costs)
+    qerr = print_qerror(preds_test, _test_costs_m)
+    abserr = get_abs_errors(preds_test, _test_costs_m)
+    qerr_dist = get_qerror_distribution(preds_test, _test_costs_m)
+    abserr_dist = get_abs_error_distribution(preds_test, _test_costs_m)
     
     # Generate verbose output if requested
     if getattr(args, 'verbose_info', False) and train_embeddings_for_knn is not None and len(test_embeddings_list) > 0:

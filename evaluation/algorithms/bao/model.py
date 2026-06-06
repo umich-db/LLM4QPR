@@ -113,14 +113,15 @@ class BaoRegression:
         self.__hid_units = hid_units
         self.__head = None
 
-        log_transformer = preprocessing.FunctionTransformer(
-            np.log1p, _inv_log1p,
-            validate=True)
-        scale_transformer = preprocessing.MinMaxScaler()
+        # Label normalization: use the SAME Normalizer as the qf/aimai/e2e_cost
+        # baselines (evaluation/utils.py — log(x+0.001), min-max, clamped to
+        # [0.001, 1.0]) instead of bao's old sklearn log1p+MinMaxScaler. This
+        # unifies bao's label handling with the other baselines and, because the
+        # clamp floors actuals at a small positive epsilon, eliminates the inf
+        # Q-errors that zero-latency queries (e.g. duckdb tpch) produced. Fit in
+        # fit() on the training labels (reset_min_max=True), persisted via mini/maxi.
+        self.__norm = None
 
-        self.__pipeline = Pipeline([("log", log_transformer),
-                                    ("scale", scale_transformer)])
-        
         self.__tree_transform = TreeFeaturizer()
         self.__have_cache_data = have_cache_data
         self.__in_channels = None
@@ -132,6 +133,17 @@ class BaoRegression:
 
     def num_items_trained_on(self):
         return self.__n
+
+    def clamp_actuals(self, costs):
+        """Round-trip raw actual costs through the Normalizer (normalize then
+        unnormalize: log(x+0.001), clamp to [0.001,1], invert). Returns the
+        SAME clamped actuals the qf/aimai/e2e_cost path compares against in
+        trainer.evaluate() (labels_true = norm.unnormalize_labels(norm-labels)).
+        This is what makes zero-latency queries finite instead of inf in the
+        Q-error metric. Requires fit()/load() to have set self.__norm."""
+        costs = list(np.asarray(costs, dtype=np.float64).reshape(-1))
+        return np.asarray(self.__norm.unnormalize_labels(
+            self.__norm.normalize_labels(costs))).reshape(-1)
             
     def load(self, path):
         with open(_n_path(path), "rb") as f:
@@ -145,8 +157,10 @@ class BaoRegression:
             self.__net = self.__net.cuda()
         self.__net.eval()
 
+        from utils import Normalizer
         with open(_y_transform_path(path), "rb") as f:
-            self.__pipeline = joblib.load(f)
+            _nm = joblib.load(f)
+        self.__norm = Normalizer(_nm['mini'], _nm['maxi'])
         with open(_x_transform_path(path), "rb") as f:
             self.__tree_transform = joblib.load(f)
 
@@ -180,7 +194,7 @@ class BaoRegression:
             torch.save(self.__price_embedder.state_dict(),
                        os.path.join(path, "price_embedder_weights"))
         with open(_y_transform_path(path), "wb") as f:
-            joblib.dump(self.__pipeline, f)
+            joblib.dump({'mini': self.__norm.mini, 'maxi': self.__norm.maxi}, f)
         with open(_x_transform_path(path), "wb") as f:
             joblib.dump(self.__tree_transform, f)
         with open(_channels_path(path), "wb") as f:
@@ -196,10 +210,15 @@ class BaoRegression:
 #         X = [json.loads(x) if isinstance(x, str) else x for x in X]
         self.__n = len(X)
 
-        # transform the set of trees into feature vectors using a log
-        # (assuming the tail behavior exists, TODO investigate
-        #  the quantile transformer from scikit)
-        y = self.__pipeline.fit_transform(y.reshape(-1, 1)).astype(np.float32)
+        # Normalize labels with the shared Normalizer (log(x+0.001) + min-max,
+        # clamped to [0.001,1]), fit on these training labels — identical to how
+        # the qf/aimai/e2e_cost baselines normalize via ds_info.cost_norm.
+        from utils import Normalizer
+        self.__norm = Normalizer()
+        y = np.asarray(
+            self.__norm.normalize_labels(list(np.asarray(y, dtype=np.float64).reshape(-1)),
+                                         reset_min_max=True),
+            dtype=np.float32).reshape(-1, 1)
 
         self.__tree_transform.fit(X)
         X = self.__tree_transform.transform(X)
@@ -369,9 +388,11 @@ class BaoRegression:
                 _vp = np.concatenate(_vchunks, axis=0)   # (N, C); BaoNet's final
                 # Linear is commented out so output is C-dim. The prediction is
                 # column 0 (matches the test loop's inverse_transform(...)[0,0]).
-                _vpred = np.asarray(self.__pipeline.inverse_transform(_vp))[:, 0].reshape(-1)
+                _vpred = np.asarray(self.__norm.unnormalize_labels(_vp))[:, 0].reshape(-1)
                 _vpred = np.clip(_vpred, 1e-6, None)
-                _vtrue = np.clip(_val_true, 1e-6, None)
+                # Clamp val truth through the same Normalizer round-trip the test
+                # metric uses (so early-stop sees the same units / zero-handling).
+                _vtrue = np.clip(np.asarray(self.clamp_actuals(_val_true)).reshape(-1), 1e-6, None)
                 _qerr = np.maximum(_vpred / _vtrue, _vtrue / _vpred)
                 _val_p90 = float(np.percentile(_qerr, 90))
                 if _val_p90 < _es_best:
@@ -427,7 +448,7 @@ class BaoRegression:
                     out = self.__head(torch.cat([self.__net(tree_batch), pe], dim=1))
                     chunks.append(out.cpu().detach().numpy())
             pred = np.concatenate(chunks, axis=0)   # (N, 1)
-            return self.__pipeline.inverse_transform(pred)
+            return self.__norm.unnormalize_labels(pred)
 
         pred = self.__net(X).cpu().detach().numpy()
-        return self.__pipeline.inverse_transform(pred)
+        return self.__norm.unnormalize_labels(pred)

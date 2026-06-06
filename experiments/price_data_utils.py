@@ -5227,7 +5227,7 @@ def get_sql_file_for_workload(workload, card=False, for_training=False):
         elif workload in ("job", "imdb_job"):
             return os.path.join(base_dir, "imdb_job.sql")       # 69 queries → 69 plans
         elif workload == "job_full":
-            return os.path.join(base_dir, "imdb_job.sql")       # same JOB queries
+            return os.path.join(base_dir, "imdb_job_full.sql")  # 113 queries → 113 plans (JOB-full)
         elif workload in ("jobm", "imdb_jobm"):
             return os.path.join(base_dir, "imdb_jobm.sql")      # 113 queries → 113 plans
         elif workload == "stats":

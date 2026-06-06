@@ -178,10 +178,17 @@ class FeatureEmbed(nn.Module):
         ## avg by # of filters
         num_filters = torch.sum(filtersMask,dim = 1)
         total = torch.sum(emb, dim = 1)
-        avg = total / num_filters.view(-1,1)
-        
+        # clamp(min=1): padding nodes (trees padded to max_node) have an all-zero
+        # filtersMask → num_filters=0; total is also 0 there (masked), so 0/0 would
+        # be NaN and then poison the whole tree through attention (0*NaN=NaN). The
+        # clamp makes those rows 0/1=0 (the intended "no filters" embedding). Real
+        # nodes always have num_filters>=1 (node2feature sets n=max(len,1)), so this
+        # is a no-op for them. Fixes NaN qf outputs on small-tree workloads (spark
+        # tpch/tpcds), where padding rows are always present.
+        avg = total / num_filters.view(-1,1).clamp(min=1)
+
         return avg
-        
+
     def getFilter(self, filtersId, filtersMask):
         ## get Filters, then apply mask
         filterExpand = filtersId.view(-1,3, self.max_filters).transpose(1,2)
@@ -200,12 +207,14 @@ class FeatureEmbed(nn.Module):
         
         ## apply mask
         concat[~filtersMask.bool()] = 0.
-        
+
         ## avg by # of filters
         num_filters = torch.sum(filtersMask,dim = 1)
         total = torch.sum(concat, dim = 1)
-        avg = total / num_filters.view(-1,1)
-                
+        # clamp(min=1): see getHist — padding nodes have num_filters=0, and 0/0
+        # would NaN-poison the tree via attention. Real nodes have num_filters>=1.
+        avg = total / num_filters.view(-1,1).clamp(min=1)
+
         return avg
     
 #     def get_output_size(self):

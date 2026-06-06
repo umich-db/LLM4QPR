@@ -86,124 +86,98 @@ def load_price_feats(workload, sql_list, db_name, bin_size, price_n_or,
     applied: features are produced for the whole ``sql_list`` in order so the
     caller can align them 1:1 to the baseline ``roots``.
     """
-    # Mode 7's PRICE_N config: the `--price_n` shorthand turns on all four
-    # PRICE_N sub-flags (see CLAUDE.md PRICE_N_FLAGS). Sql2FeatureN always emits
-    # 75-dim filter / 42-dim fanout tokens; the sub-flags only gate which atoms
-    # are populated, not the token shape — so we enable all four to match the
-    # embedder dims produced by price_embedder_factory._price_dims.
-    pn_parsing = pn_filter = pn_fanout = pn_pairwise = True
-    or_max_clauses = 16  # default --price_n_or_max_clauses
+    # Single segment: extract (cached) then pad. Identical result to the previous
+    # monolithic implementation — extraction + padding are just split into the two
+    # reusable helpers below so build_aligned can extract train/test SEPARATELY
+    # (hitting per-segment caches) and pad them JOINTLY, exactly like mode 7.
+    return _pad_price_segments(
+        [_extract_price_segment(workload, sql_list, db_name, bin_size, price_n_or)],
+        bin_size, price_n_or, return_max_dims=return_max_dims)
 
-    gpf_out = generate_price_features(
+
+def _extract_price_segment(workload, sql_list, db_name, bin_size, price_n_or):
+    """Extract per-query RAW PRICE features for ONE segment via
+    generate_price_features — the slow part, cached by (workload, db, count).
+
+    Doing this PER SEGMENT lets a separate-file train segment (e.g. imdb's 100k
+    queries) HIT its existing cache, exactly as mode 7 does with its two separate
+    generate_price_features calls (utilsLLM.py:4752 test / :4958 train) instead of
+    one combined call whose count matches no cache. Per-query extraction is
+    stateless, so extracting segments separately and concatenating is byte-for-byte
+    identical to a single combined extraction — only the cache key differs.
+
+    `--price_n` turns on all four PRICE_N sub-flags (see CLAUDE.md PRICE_N_FLAGS);
+    Sql2FeatureN always emits 75-dim filter / 42-dim fanout tokens (the sub-flags
+    only gate which atoms populate, not the token shape) and, because
+    price_n_pairwise=True, returns a 6-tuple with a trailing per-query
+    n_pairwise_intras. Returns (features, njc, nfo, ntb, nfc, npi) where `features`
+    is the single-clause data_features (5-tuples) or, under price_n_or, the
+    multi_clause_data (list[list[6-tuple]])."""
+    pn = True
+    gpf = generate_price_features(
         workload, sql_list, db_name, bin_size,
-        price_n_parsing=pn_parsing,
-        price_n_filter=pn_filter,
-        price_n_fanout=pn_fanout,
-        price_n_pairwise=pn_pairwise,
-        price_n_or=price_n_or,
-        price_n_or_max_clauses=or_max_clauses,
-    )
+        price_n_parsing=pn, price_n_filter=pn, price_n_fanout=pn,
+        price_n_pairwise=pn, price_n_or=price_n_or, price_n_or_max_clauses=16)
+    return (gpf[0], list(gpf[1]), list(gpf[2]), list(gpf[3]), list(gpf[4]), list(gpf[5]))
+
+
+def _pad_price_segments(seg_raws, bin_size, price_n_or, return_max_dims=False):
+    """Concatenate RAW features from one-or-more segments (in segment order) and
+    pad them JOINTLY to a unified max — mirrors mode 7 padding train+test together
+    after separate extraction. Packs each query into the tuple PRICEEmbedder
+    consumes (see load_price_feats docstring). The pairwise-token axis is threaded
+    via n_pairwise_intras (single-clause) / inside multi_clause_data (OR), so it is
+    never silently dropped."""
+    features = []
+    njc, nfo, ntb, nfc, npi = [], [], [], [], []
+    for f, a, b, c, d, e in seg_raws:
+        features = features + list(f)
+        njc += a; nfo += b; ntb += c; nfc += d; npi += e
 
     if price_n_or:
-        # multi_clause_data: list[list[6-tuple]] (per-query list of per-clause
-        # feature tuples).  Pad via the multi_clause path, then pack each query's
-        # rows into (max_clauses, flat_size) — mirrors get_llm_price_ds_from_csv's
-        # _pad_and_unpack / _pack_multi_clause (utilsLLM.py ~4794-4839).
-        multi_clause_data = gpf_out[0]
-        n_join_cols = gpf_out[1]
-        n_fanouts = gpf_out[2]
-        n_tables = gpf_out[3]
-        n_filter_cols = gpf_out[4]
-
+        # multi_clause_data path: pad all clauses of all queries, then pack each
+        # query's rows into (max_clauses, flat_size). Mirrors
+        # get_llm_price_ds_from_csv's _pad_and_unpack (utilsLLM.py ~4794-4839).
         out = pdu.pad_and_cache_features(
-            [], [], [], [], [],
-            bin_size=bin_size,
-            filter_dim=75,
-            price_n_pairwise=pn_pairwise,
-            fanout_dim=42,
-            pairwise_intra_dim=70,
-            multi_clause_data=multi_clause_data,
-        )
-        flat_pf = out["padded_features"]          # (n_queries * max_clauses) tensors
+            [], [], [], [], [], bin_size=bin_size, filter_dim=75,
+            price_n_pairwise=True, fanout_dim=42, pairwise_intra_dim=70,
+            multi_clause_data=features)
+        flat_pf = out["padded_features"]
         flat_pm = out["padding_masks"]
         max_n_clauses = int(out["max_n_clauses"])
-        num_clauses = out["num_clauses"].tolist()  # per-query valid clause count
-        n_queries = len(multi_clause_data)
-
+        num_clauses = out["num_clauses"].tolist()
         feats = []
-        for qi in range(n_queries):
+        for qi in range(len(features)):
             slc = flat_pf[qi * max_n_clauses:(qi + 1) * max_n_clauses]
             pf_q = torch.stack([
-                f if isinstance(f, torch.Tensor) else torch.tensor(f, dtype=torch.float32)
-                for f in slc])
+                t if isinstance(t, torch.Tensor) else torch.tensor(t, dtype=torch.float32)
+                for t in slc])
             ms = flat_pm[qi * max_n_clauses:(qi + 1) * max_n_clauses]
             pm_q = torch.stack([
-                m if isinstance(m, torch.Tensor) else torch.tensor(m)
-                for m in ms])
-            # n_*_col in OR mode are per-query counts (max over the query's
-            # clauses, as PRICEEmbedder expects a single count per query).
-            feats.append((pf_q, pm_q,
-                          n_join_cols[qi], n_fanouts[qi],
-                          n_tables[qi], n_filter_cols[qi],
+                t if isinstance(t, torch.Tensor) else torch.tensor(t) for t in ms])
+            feats.append((pf_q, pm_q, njc[qi], nfo[qi], ntb[qi], nfc[qi],
                           int(num_clauses[qi])))
-        if return_max_dims:
-            max_dims = {
-                "max_n_join_col": int(out["max_n_join_col"]),
-                "max_n_fanout": int(out["max_n_fanout"]),
-                "max_n_table": int(out["max_n_table"]),
-                "max_n_filter_col": int(out["max_n_filter_col"]),
-                "max_n_pairwise_intra": int(out.get("max_n_pairwise_intra", 0)),
-            }
-            return feats, max_dims
-        return feats
-
-    # Single-clause path: data_features is list of 5-tuples (Sql2FeatureN always
-    # emits 5-tuples). pad_and_cache_features auto-detects the 5-tuple shape and
-    # returns one flat (flat_size,) tensor + (mask_size,) mask per query.
-    #
-    # Because ``--price_n`` sets price_n_pairwise=True (utilsTrain.py ~386-390),
-    # generate_price_features returns a 6-tuple here — an EXTRA trailing
-    # ``n_pairwise_intras`` (per-query pairwise-token counts) beyond the usual
-    # five (price_data_utils.py return ~4774-4775). We MUST thread that count
-    # into pad_and_cache_features exactly as mode 7 does
-    # (get_price_only_ds_from_csv, utilsLLM.py ~4449-4453 + the single-clause
-    # call ~4486-4491): without ``price_n_pairwise=True`` /
-    # ``pairwise_intra_dim=70`` / ``n_pairwise_intras=...`` the pairwise token
-    # axis is silently dropped, so when a workload has column-vs-column
-    # predicates (pairwise>0) our flat width would be (B,525) while mode 7
-    # yields (B, 525 + 70*max_pi) — a wrong-width tensor fed to the shared
-    # PRICEEmbedder. (Coincides only because standard benchmarks have pairwise=0.)
-    data_features = gpf_out[0]
-    n_join_cols = gpf_out[1]
-    n_fanouts = gpf_out[2]
-    n_tables = gpf_out[3]
-    n_filter_cols = gpf_out[4]
-    n_pairwise_intras = gpf_out[5]  # 6-tuple under price_n_pairwise=True
-
-    padded_features, padding_masks, _max_njc, _max_nfo, _max_ntb, _max_nfc, _max_npi = \
-        pdu.pad_and_cache_features(
-            data_features, n_join_cols, n_fanouts, n_tables, n_filter_cols,
-            bin_size=bin_size,
-            filter_dim=75,
-            price_n_pairwise=pn_pairwise,
-            fanout_dim=42,
-            pairwise_intra_dim=70,
-            n_pairwise_intras=n_pairwise_intras,
-        )
-
-    feats = []
-    for i in range(len(padded_features)):
-        feats.append((padded_features[i], padding_masks[i],
-                      n_join_cols[i], n_fanouts[i],
-                      n_tables[i], n_filter_cols[i]))
-    if return_max_dims:
         max_dims = {
-            "max_n_join_col": int(_max_njc),
-            "max_n_fanout": int(_max_nfo),
-            "max_n_table": int(_max_ntb),
-            "max_n_filter_col": int(_max_nfc),
-            "max_n_pairwise_intra": int(_max_npi) if _max_npi is not None else 0,
+            "max_n_join_col": int(out["max_n_join_col"]),
+            "max_n_fanout": int(out["max_n_fanout"]),
+            "max_n_table": int(out["max_n_table"]),
+            "max_n_filter_col": int(out["max_n_filter_col"]),
+            "max_n_pairwise_intra": int(out.get("max_n_pairwise_intra", 0)),
         }
+    else:
+        padded_features, padding_masks, _mj, _mf, _mt, _mfc, _mpi = \
+            pdu.pad_and_cache_features(
+                features, njc, nfo, ntb, nfc, bin_size=bin_size, filter_dim=75,
+                price_n_pairwise=True, fanout_dim=42, pairwise_intra_dim=70,
+                n_pairwise_intras=npi)
+        feats = [(padded_features[i], padding_masks[i], njc[i], nfo[i], ntb[i], nfc[i])
+                 for i in range(len(padded_features))]
+        max_dims = {
+            "max_n_join_col": int(_mj), "max_n_fanout": int(_mf),
+            "max_n_table": int(_mt), "max_n_filter_col": int(_mfc),
+            "max_n_pairwise_intra": int(_mpi) if _mpi is not None else 0,
+        }
+    if return_max_dims:
         return feats, max_dims
     return feats
 
@@ -386,31 +360,17 @@ def build_aligned_price_feats_for_splits(argsP, dat_paths_train_list, dat_path_t
                          pdu.get_db_name_for_workload(workload_test),
                          test_sqls))
 
-    # Per-segment feature extraction (raw widths per segment), then JOINT padding.
-    # load_price_feats already pads within a segment; to get a unified width we
-    # pad each segment to the GLOBAL maxima. We do this by extracting per-segment
-    # then re-padding against global max dims via a single combined call.
-    combined_sql = []
-    seg_lengths = []
-    seg_meta = []
-    for wl, db, sqls in segments:
-        combined_sql.extend(sqls)
-        seg_lengths.append(len(sqls))
-        seg_meta.append((wl, db))
-    # All segments share the same workload-family stats DB only when identical;
-    # generate_price_features keys on db_name, so segments with different DBs must
-    # be extracted separately. In practice baseline_price_concat targets a single
-    # workload family (train_wl == test_wl == workload_test), so one combined call
-    # over the SAME db is both correct and what unifies the padding width.
-    dbs = {db for _wl, db in seg_meta}
-    if len(dbs) != 1:
-        raise RuntimeError(
-            "baseline_price_concat currently supports a single stats-DB across "
-            f"train/test segments; got {sorted(dbs)}")
-    combined_db = next(iter(dbs))
-    feats_all, max_dims = load_price_feats(
-        workload_test, combined_sql, combined_db, bin_size, price_n_or,
-        return_max_dims=True)
+    # Extract each segment SEPARATELY (so a separate-file train segment — e.g.
+    # imdb's 100k queries — HITS its existing per-segment cache, exactly as mode 7
+    # does with two separate generate_price_features calls), then pad ALL segments
+    # JOINTLY to a unified max. Per-query extraction is stateless, so
+    # per-segment-extract + concat is byte-for-byte identical to a single combined
+    # extraction — only the cache key (and thus reuse) differs. Each segment is
+    # extracted with its OWN db_name, so mixed-db families are fine too.
+    seg_raws = [_extract_price_segment(wl, sqls, db, bin_size, price_n_or)
+                for wl, db, sqls in segments]
+    feats_all, max_dims = _pad_price_segments(
+        seg_raws, bin_size, price_n_or, return_max_dims=True)
 
     # Publish the unified max dims so build_price_embedder sizes the PRICE model
     # to match these features (mode 7 sets these from pad_and_cache_features too).

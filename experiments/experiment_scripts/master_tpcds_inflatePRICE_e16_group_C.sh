@@ -12,6 +12,7 @@
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUN_SCRIPT="$SCRIPT_DIR/run_different_llms.sh"
+cd "$SCRIPT_DIR/.."   # run_different_llms.sh calls core_scripts/ via a relative path
 
 MODELS=(
     "HuggingFaceTB/SmolLM2-135M"

@@ -23,12 +23,18 @@ fi
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 
 REPO_ROOT="$(cd "${SCRIPT_DIR_LOCAL}/../.." && pwd)"
-OUT_CSV="${REPO_ROOT}/experiments/analysis_scripts/profile_baselines_train_infer.csv"
-LOG_BASE="logs/postgres"
+export DB_ENGINE="${DB_ENGINE:-postgres}"
+mkdir -p "${REPO_ROOT}/experiments/analysis_scripts"
+# db-aware output + log dirs (postgres keeps its historical CSV name for back-compat)
+if [ "$DB_ENGINE" = "postgres" ]; then
+    OUT_CSV="${REPO_ROOT}/experiments/analysis_scripts/profile_baselines_train_infer.csv"
+else
+    OUT_CSV="${REPO_ROOT}/experiments/analysis_scripts/profile_baselines_train_infer_${DB_ENGINE}.csv"
+fi
+LOG_BASE="logs/${DB_ENGINE}"
 TASK="time"           # only time supported across all 6 workloads (card needs job/syn/stats)
 TRAIN_RATIO="1.0"
 SEED="42"
-export DB_ENGINE="${DB_ENGINE:-postgres}"
 
 ALGOS=(qf aimai e2e_cost bao)
 WORKLOADS=(tpch tpcds syn job job_full stats)

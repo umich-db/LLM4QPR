@@ -1372,6 +1372,9 @@ def train_and_test_bao(train_roots, train_costs, test_roots, test_costs, args, d
         preds_test = [float(_jp[i, 0]) for i in range(len(test_roots))]
         test_time = time.time() - test_start
         args.main_logger.info(f"[Test] Testing took {test_time*1000:.2f} ms")
+        # Also emit the canonical line the qf/aimai/e2e_cost path logs so the
+        # baseline time-profiling harness picks up bao's inference time too.
+        args.main_logger.info(f"[Test] Total evaluation time — {test_time*1000:.2f} ms")
 
         # Compute Q-error against actuals clamped through the SAME Normalizer the
         # qf/aimai/e2e_cost path uses (trainer.evaluate), so zero-latency queries
@@ -1425,6 +1428,9 @@ def train_and_test_bao(train_roots, train_costs, test_roots, test_costs, args, d
         preds_test.append(final_pred[0,0])
     test_time = time.time() - test_start
     args.main_logger.info(f"[Test] Testing took {test_time*1000:.2f} ms")
+    # Also emit the canonical line the qf/aimai/e2e_cost path logs so the
+    # baseline time-profiling harness picks up bao's inference time too.
+    args.main_logger.info(f"[Test] Total evaluation time — {test_time*1000:.2f} ms")
 
     # Compute Q-error against actuals clamped through the SAME Normalizer the
     # qf/aimai/e2e_cost path uses (trainer.evaluate), so zero-latency queries

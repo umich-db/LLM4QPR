@@ -193,13 +193,17 @@ def generate_table(db: str, datasets, task: str, results_dir: str,
         for m in missing:
             coverage_gaps.append((db, ds, m))
 
-    # Determine best (min) value per (dataset, quantile) column for bolding
-    best = {}  # (dataset, quantile) -> min value
+    # Per (dataset, quantile) column: shade the top-5 (lowest Q-error = best)
+    # cells with a 5-step green gradient (darkest = best). No bold.
+    GREEN_SHADES = [60, 47, 35, 24, 14]   # ranks 1..5 (green!XX)
+    shade = {}  # (dataset, quantile, method_key) -> green percentage
     for ds in datasets:
         for q in QUANTILE_COLS:
-            present = [dataset_values[ds][k][q] for k, _l, _m in METHODS
+            present = [(dataset_values[ds][k][q], k) for k, _l, _m in METHODS
                        if dataset_values[ds][k][q] is not None]
-            best[(ds, q)] = min(present) if present else None
+            present.sort(key=lambda t: t[0])   # ascending: best (lowest) first
+            for pos, (_v, k) in enumerate(present[:len(GREEN_SHADES)]):
+                shade[(ds, q, k)] = GREEN_SHADES[pos]
 
     # ----- Build LaTeX -----
     col_spec = 'l' + ''.join('|' + 'c' * len(QUANTILE_COLS) for _ in datasets)
@@ -209,6 +213,7 @@ def generate_table(db: str, datasets, task: str, results_dir: str,
     group_names = ', '.join(DATASET_DISPLAY.get(d, d.upper()) for d in datasets)
 
     lines = []
+    lines.append("% Requires \\usepackage[table]{xcolor} (for \\cellcolor) in the preamble.")
     lines.append("\\begin{table}[t]")
     lines.append("\\centering")
     lines.append(f"\\caption{{Time Q-error on {db_display} ({group_names})}}")
@@ -246,9 +251,9 @@ def generate_table(db: str, datasets, task: str, results_dir: str,
             for q in QUANTILE_COLS:
                 v = dataset_values[ds][key][q]
                 cell = format_number(v)
-                if (v is not None and best[(ds, q)] is not None
-                        and v <= best[(ds, q)] + 1e-12):
-                    cell = f"\\textbf{{{cell}}}"
+                sh = shade.get((ds, q, key))
+                if sh is not None:
+                    cell = f"\\cellcolor{{green!{sh}}}{cell}"
                 row_parts.append(cell)
         lines.append(" & ".join(row_parts) + " \\\\")
 

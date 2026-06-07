@@ -148,11 +148,11 @@ METHODS = [
      _baseline_matcher(r'^time_e2e_cost_.*_cdf_{db}_')),
     ('qf',       format_algo_name_for_display('qf'),
      lambda db: _qf_matcher(db)),
-    ('bert2',    'PRICE+' + format_model_name_for_display('google-bert_uncased_L-2_H-256_A-4'),
+    ('bert2',    'Data-aware ' + format_model_name_for_display('google-bert_uncased_L-2_H-256_A-4'),
      _llm_matcher('google-bert_uncased_L-2_H-256_A-4')),
-    ('bert4',    'PRICE+' + format_model_name_for_display('google-bert_uncased_L-4_H-768_A-12'),
+    ('bert4',    'Data-aware ' + format_model_name_for_display('google-bert_uncased_L-4_H-768_A-12'),
      _llm_matcher('google-bert_uncased_L-4_H-768_A-12')),
-    ('sentBert', 'PRICE+' + format_model_name_for_display('sentence-transformers-all-MiniLM-L12-v2'),
+    ('sentBert', 'Data-aware ' + format_model_name_for_display('sentence-transformers-all-MiniLM-L12-v2'),
      _llm_matcher('sentence-transformers-all-MiniLM-L12-v2')),
 ]
 

@@ -1,7 +1,7 @@
 % Requires \usepackage[table]{xcolor} and \definecolor{green1..green5} (green5=best) in the preamble.
 \begin{table*}[t]
 \centering
-\caption{Time Q-error on DuckDB (TPC-H, TPC-DS, Synthetic) ($^{r}$: retrainMLP variant)}
+\caption{Time Q-error on DuckDB (TPC-H, TPC-DS, Synthetic)}
 \label{tab:overleaf_time_duckdb_tpch_tpcds_syn}
 \resizebox{\linewidth}{!}{%
 \begin{tabular}{l|cccc|cccc|cccc}
@@ -14,7 +14,7 @@ Bao & 1.56 & 5.24 & 6.39 & 233.16 & 2.69 & \cellcolor{green1}{9.66} & \cellcolor
 E2E-Cost & 6.97 & 56.29 & 69.42 & 94.21 & 157.72 & 258.13 & 288.30 & 327.01 & 2.90 & 12.50 & 18.77 & \cellcolor{green2}{168.63} \\
 QueryFormer & \cellcolor{green1}{1.34} & \cellcolor{green3}{2.00} & \cellcolor{green3}{2.34} & \cellcolor{green2}{6.70} & \cellcolor{green3}{1.52} & \cellcolor{green4}{2.60} & \cellcolor{green4}{3.95} & \cellcolor{green5}{5.75} & \cellcolor{green1}{2.00} & \cellcolor{green1}{6.47} & \cellcolor{green1}{9.72} & \cellcolor{green3}{106.56} \\
 \midrule
-PRICE+BERT-2 & \cellcolor{green4}{1.22} & \cellcolor{green2}{2.04} & \cellcolor{green2}{2.74} & \cellcolor{green3}{5.89} & \cellcolor{green4}{1.40$^{r}$} & \cellcolor{green2}{3.61$^{r}$} & \cellcolor{green3}{4.43$^{r}$} & \cellcolor{green3}{7.82$^{r}$} & \cellcolor{green5}{1.11} & \cellcolor{green5}{1.38} & \cellcolor{green5}{1.56} & \cellcolor{green5}{10.71} \\
+PRICE+BERT-2 & \cellcolor{green4}{1.22} & \cellcolor{green2}{2.04} & \cellcolor{green2}{2.74} & \cellcolor{green3}{5.89} & \cellcolor{green4}{1.40} & \cellcolor{green2}{3.61} & \cellcolor{green3}{4.43} & \cellcolor{green3}{7.82} & \cellcolor{green5}{1.11} & \cellcolor{green5}{1.38} & \cellcolor{green5}{1.56} & \cellcolor{green5}{10.71} \\
 PRICE+BERT-4 & \cellcolor{green3}{1.24} & \cellcolor{green5}{1.57} & \cellcolor{green5}{1.85} & \cellcolor{green5}{3.93} & \cellcolor{green2}{1.73} & \cellcolor{green3}{3.48} & \cellcolor{green2}{6.68} & \cellcolor{green2}{10.38} & \cellcolor{green3}{1.14} & \cellcolor{green3}{1.67} & \cellcolor{green3}{2.18} & 327.79 \\
 PRICE+SentBERT & \cellcolor{green5}{1.16} & \cellcolor{green4}{1.59} & \cellcolor{green4}{2.13} & \cellcolor{green4}{4.42} & \cellcolor{green5}{1.37} & \cellcolor{green5}{2.08} & \cellcolor{green5}{3.68} & \cellcolor{green4}{5.95} & \cellcolor{green4}{1.13} & \cellcolor{green4}{1.53} & \cellcolor{green4}{1.85} & \cellcolor{green1}{195.24} \\
 \bottomrule

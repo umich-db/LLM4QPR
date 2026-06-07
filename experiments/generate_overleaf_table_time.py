@@ -252,10 +252,7 @@ def generate_table(db: str, datasets, task: str, results_dir: str,
                  "(green5=best) in the preamble.")
     lines.append("\\begin{table*}[t]")
     lines.append("\\centering")
-    _cap = f"Time Q-error on {db_display} ({group_names})"
-    if any(substituted.values()):
-        _cap += " ($^{r}$: retrainMLP variant)"
-    lines.append(f"\\caption{{{_cap}}}")
+    lines.append(f"\\caption{{Time Q-error on {db_display} ({group_names})}}")
     lines.append(f"\\label{{tab:overleaf_time_{db}_{'_'.join(datasets)}}}")
     lines.append("\\resizebox{\\linewidth}{!}{%")
     lines.append(f"\\begin{{tabular}}{{{col_spec}}}")
@@ -290,8 +287,6 @@ def generate_table(db: str, datasets, task: str, results_dir: str,
             for q in QUANTILE_COLS:
                 v = dataset_values[ds][key][q]
                 cell = format_number(v)
-                if v is not None and key in substituted.get(ds, ()):
-                    cell += "$^{r}$"
                 g = greennum.get((ds, q, key))
                 if g is not None:
                     cell = f"\\cellcolor{{green{g}}}{{{cell}}}"

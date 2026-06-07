@@ -228,18 +228,18 @@ def generate_table(db: str, datasets, task: str, results_dir: str,
         for m in missing:
             coverage_gaps.append((db, ds, m))
 
-    # Per (dataset, quantile) column: color the top-5 (lowest Q-error = best) cells
-    # with the user's Overleaf-defined named colors green1..green5
-    # (best -> green5, 2nd -> green4, ..., 5th -> green1). No bold.
-    N_TOP = 5
-    greennum = {}  # (dataset, quantile, method_key) -> 1..5 (5 = best)
+    # Per (dataset, quantile) column: color the top-4 (lowest Q-error = best) cells
+    # with the user's Overleaf-defined named colors green1..green4
+    # (best -> green4, 2nd -> green3, ..., 4th -> green1). No bold.
+    N_TOP = 4
+    greennum = {}  # (dataset, quantile, method_key) -> 1..4 (4 = best)
     for ds in datasets:
         for q in QUANTILE_COLS:
             present = [(dataset_values[ds][k][q], k) for k, _l, _m in METHODS
                        if dataset_values[ds][k][q] is not None]
             present.sort(key=lambda t: t[0])   # ascending: best (lowest) first
             for pos, (_v, k) in enumerate(present[:N_TOP]):
-                greennum[(ds, q, k)] = N_TOP - pos   # pos0->green5 (best) ... pos4->green1
+                greennum[(ds, q, k)] = N_TOP - pos   # pos0->green4 (best) ... pos3->green1
 
     # ----- Build LaTeX -----
     col_spec = 'l' + ''.join('|' + 'c' * len(QUANTILE_COLS) for _ in datasets)
@@ -249,8 +249,8 @@ def generate_table(db: str, datasets, task: str, results_dir: str,
     group_names = ', '.join(DATASET_DISPLAY.get(d, d.upper()) for d in datasets)
 
     lines = []
-    lines.append("% Requires \\usepackage[table]{xcolor} and \\definecolor{green1..green5} "
-                 "(green5=best) in the preamble.")
+    lines.append("% Requires \\usepackage[table]{xcolor} and \\definecolor{green1..green4} "
+                 "(green4=best) in the preamble.")
     lines.append("\\begin{table*}[t]")
     lines.append("\\centering")
     rb_width = "\\linewidth" if resizebox_frac == 1.0 else f"{resizebox_frac:g}\\linewidth"

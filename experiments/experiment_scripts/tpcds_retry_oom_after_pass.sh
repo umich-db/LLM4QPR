@@ -8,6 +8,9 @@
 #     bash .../tpcds_retry_oom_after_pass.sh
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Activate the GPU venv — run_different_llms.sh does NOT source one itself, so
+# without this the retry's train.py crashes at "import torch" (ModuleNotFound).
+source ~/venvs/py312/bin/activate 2>/dev/null || source ~/venvs/tmpenv/bin/activate 2>/dev/null || true
 : "${SESSION:?set SESSION (the pool tmux session to wait on)}"
 : "${LOG:?set LOG (the pool run log to scan for OOMs)}"
 

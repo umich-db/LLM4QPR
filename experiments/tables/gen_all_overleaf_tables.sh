@@ -16,7 +16,7 @@ mkdir -p tables
 
 for db in postgres duckdb spark; do
     python generate_overleaf_table_time.py --db "$db" --datasets "$G1" --task time \
-        --frzeven_retrainMLP_cells $CELLS \
+        --frzeven_retrainMLP_cells $CELLS --resizebox 0.9 \
         --output "tables/overleaf_table_time_${db}_g1.tex"
     python generate_overleaf_table_time.py --db "$db" --datasets "$G2" --task time \
         --frzeven_retrainMLP_cells $CELLS \

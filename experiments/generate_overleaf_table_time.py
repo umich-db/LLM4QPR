@@ -214,7 +214,8 @@ def load_dataset_values(db: str, dataset: str, task: str, results_dir: str,
 
 
 def generate_table(db: str, datasets, task: str, results_dir: str,
-                   output_path: Optional[str], retrain_cells=frozenset()) -> str:
+                   output_path: Optional[str], retrain_cells=frozenset(),
+                   resizebox_frac: float = 1.0) -> str:
     # Load every dataset
     dataset_values = {}
     coverage_gaps = []  # (db, dataset, method_key)
@@ -252,9 +253,8 @@ def generate_table(db: str, datasets, task: str, results_dir: str,
                  "(green5=best) in the preamble.")
     lines.append("\\begin{table*}[t]")
     lines.append("\\centering")
-    lines.append(f"\\caption{{Time Q-error on {db_display} ({group_names})}}")
-    lines.append(f"\\label{{tab:overleaf_time_{db}_{'_'.join(datasets)}}}")
-    lines.append("\\resizebox{\\linewidth}{!}{%")
+    rb_width = "\\linewidth" if resizebox_frac == 1.0 else f"{resizebox_frac:g}\\linewidth"
+    lines.append(f"\\resizebox{{{rb_width}}}{{!}}{{%")
     lines.append(f"\\begin{{tabular}}{{{col_spec}}}")
     lines.append("\\toprule")
 
@@ -296,6 +296,8 @@ def generate_table(db: str, datasets, task: str, results_dir: str,
     lines.append("\\bottomrule")
     lines.append("\\end{tabular}%")
     lines.append("}")
+    lines.append(f"\\caption{{Time Q-error on {db_display} ({group_names})}}")
+    lines.append(f"\\label{{tab:overleaf_time_{db}_{'_'.join(datasets)}}}")
     lines.append("\\end{table*}")
 
     latex = "\n".join(lines) + "\n"
@@ -323,6 +325,8 @@ def main():
     parser.add_argument('--task', default='time', choices=['time'])
     parser.add_argument('--results_dir', default='results')
     parser.add_argument('--output', default=None, help='Output .tex path')
+    parser.add_argument('--resizebox', type=float, default=1.0,
+                        help='resizebox width as a fraction of \\linewidth (default 1.0)')
     parser.add_argument('--frzeven_retrainMLP_cells', nargs='*', default=[],
                         metavar='MODEL:DB:WORKLOAD',
                         help='Use the retrainMLP (priceBiCrossAttnJoint) frzEven999 '
@@ -340,7 +344,7 @@ def main():
 
     datasets = [d.strip() for d in args.datasets.split(',') if d.strip()]
     latex = generate_table(args.db, datasets, args.task, args.results_dir,
-                           args.output, retrain_cells)
+                           args.output, retrain_cells, args.resizebox)
     if not args.output:
         print(latex)
 

@@ -1,9 +1,7 @@
 % Requires \usepackage[table]{xcolor} and \definecolor{green1..green5} (green5=best) in the preamble.
 \begin{table*}[t]
 \centering
-\caption{Time Q-error on Spark (TPC-H, TPC-DS, Synthetic)}
-\label{tab:overleaf_time_spark_tpch_tpcds_syn}
-\resizebox{\linewidth}{!}{%
+\resizebox{0.9\linewidth}{!}{%
 \begin{tabular}{l|cccc|cccc|cccc}
 \toprule
 \multirow{2}{*}{Method} & \multicolumn{4}{c|}{TPC-H} & \multicolumn{4}{c|}{TPC-DS} & \multicolumn{4}{c|}{Synthetic} \\
@@ -20,4 +18,6 @@ PRICE+SentBERT & \cellcolor{green3}{1.06} & \cellcolor{green4}{1.19} & \cellcolo
 \bottomrule
 \end{tabular}%
 }
+\caption{Time Q-error on Spark (TPC-H, TPC-DS, Synthetic)}
+\label{tab:overleaf_time_spark_tpch_tpcds_syn}
 \end{table*}

@@ -897,14 +897,14 @@ for SEED in "${seeds[@]}"; do
             # Run time prediction experiment if selected
             if [ "$RUN_TIME" = true ]; then
                 export LLM_DOWNSTREAM
-                bash experiment_scripts/core_scripts/run_llm_time.sh $TRAIN_WL $WORKLOAD 1.0 $FINETUNE_MODE $model_name $model_name1 $SEED
+                bash experiment_scripts/core_scripts/run_llm_time.sh $TRAIN_WL $WORKLOAD ${TRAIN_RATIO:-1.0} $FINETUNE_MODE $model_name $model_name1 $SEED
             fi
 
             # Run cardinality prediction experiment if selected and workload supports it
             if [ "$RUN_CARD" = true ]; then
                 if [[ "$WORKLOAD" == "job" || "$WORKLOAD" == "syn" || "$WORKLOAD" == "stats" ]]; then
                     export LLM_DOWNSTREAM
-                    bash experiment_scripts/core_scripts/run_llm_card.sh $TRAIN_WL $WORKLOAD 1.0 $FINETUNE_MODE $model_name $model_name1 $SEED
+                    bash experiment_scripts/core_scripts/run_llm_card.sh $TRAIN_WL $WORKLOAD ${TRAIN_RATIO:-1.0} $FINETUNE_MODE $model_name $model_name1 $SEED
                 fi
             fi
         done

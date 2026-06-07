@@ -12,6 +12,12 @@ cd "$SCRIPT_DIR/.."   # run_different_llms.sh calls core_scripts/ via a relative
 
 : "${MODELS_CSV:?set MODELS_CSV to a comma-separated model list}"
 : "${FT_BATCH:=2}"
+# Keep the EFFECTIVE batch at 4 via gradient accumulation: batch*accum = 4
+# (batch 4 -> accum 1, batch 2 -> accum 2, batch 1 -> accum 4). Override by
+# exporting GRAD_ACCUM_STEPS yourself. run_llm_time.sh forwards it to train.py.
+: "${GRAD_ACCUM_STEPS:=$(( 4 / FT_BATCH ))}"
+export GRAD_ACCUM_STEPS
+echo "[retry] effective batch = ${FT_BATCH} x ${GRAD_ACCUM_STEPS} = $(( FT_BATCH * GRAD_ACCUM_STEPS ))"
 
 COMMON=(
     --models "$MODELS_CSV"

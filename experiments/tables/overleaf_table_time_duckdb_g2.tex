@@ -1,0 +1,22 @@
+\begin{table}[t]
+\centering
+\caption{Time Q-error on DuckDB (JOB-light, JOB, STATS)}
+\label{tab:overleaf_time_duckdb_job_job_full_stats}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{l|cccc|cccc|cccc}
+\toprule
+\multirow{2}{*}{Method} & \multicolumn{4}{c|}{JOB-light} & \multicolumn{4}{c|}{JOB} & \multicolumn{4}{c|}{STATS} \\
+ & 50th & 90th & 95th & Max & 50th & 90th & 95th & Max & 50th & 90th & 95th & Max \\
+\midrule
+AiMeetsAi & 2.76 & 133.19 & 181.97 & 1215.56 & 845.60 & 94436.77 & 302673.44 & 945337.05 & 2.41 & 29.80 & 81.06 & 889.30 \\
+Bao & 2.84 & 11.41 & 20.17 & 44.28 & 14.89 & 7096.94 & 26170.48 & 126059.83 & 2.57 & 17.75 & 42.34 & 303.36 \\
+E2E-Cost & 3.74 & 30.56 & 45.61 & 157.47 & 31.05 & 86.15 & 122.17 & 301.13 & 105.20 & 3030.68 & 6352.69 & 15582.09 \\
+QueryFormer & 3.66 & 18.18 & 31.77 & 90.11 & 2.78 & 6.91 & 9.65 & 30.03 & 6.91 & 420.49 & 963.70 & 2857.85 \\
+\midrule
+PRICE+BERT-2 & \textbf{1.49} & 10.05 & 15.12 & 41.30 & 2.17 & 6.86 & 11.21 & 32.08 & \textbf{1.31} & 4.71 & 7.95 & 64.75 \\
+PRICE+BERT-4 & 1.90 & \textbf{9.36} & 20.80 & 44.92 & \textbf{1.96} & 8.29 & \textbf{9.65} & 24.99 & 1.38 & \textbf{3.40} & \textbf{4.87} & \textbf{55.89} \\
+PRICE+SentBERT & 1.57 & 9.58 & \textbf{14.95} & \textbf{40.01} & 2.11 & \textbf{6.23} & 9.87 & \textbf{19.77} & 1.39 & 3.49 & 7.84 & 73.09 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}

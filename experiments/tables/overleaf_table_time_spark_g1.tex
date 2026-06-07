@@ -1,0 +1,22 @@
+\begin{table}[t]
+\centering
+\caption{Time Q-error on Spark (TPC-H, TPC-DS, Synthetic)}
+\label{tab:overleaf_time_spark_tpch_tpcds_syn}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{l|cccc|cccc|cccc}
+\toprule
+\multirow{2}{*}{Method} & \multicolumn{4}{c|}{TPC-H} & \multicolumn{4}{c|}{TPC-DS} & \multicolumn{4}{c|}{Synthetic} \\
+ & 50th & 90th & 95th & Max & 50th & 90th & 95th & Max & 50th & 90th & 95th & Max \\
+\midrule
+AiMeetsAi & 1.15 & 1.53 & 1.58 & 2.82 & 2.57 & 11.28 & 11.84 & 12.24 & 1.48 & 2.69 & 3.37 & 13.35 \\
+Bao & 1.19 & 2.34 & 5.83 & 7.89 & 1.43 & 5.33 & 5.46 & 5.71 & 1.70 & 8.70 & 32.79 & 121.54 \\
+E2E-Cost & 6.44 & 27.92 & 38.99 & 52.78 & 25.27 & 95.56 & 103.26 & 121.53 & 1.68 & 3.97 & 6.03 & 24.17 \\
+QueryFormer & 1.12 & 2.06 & 2.10 & 2.59 & 1.78 & 5.31 & 5.39 & 5.63 & 1.59 & 6.66 & 10.63 & 55.58 \\
+\midrule
+PRICE+BERT-2 & \textbf{1.05} & 1.19 & 1.23 & 2.26 & \textbf{1.43} & 3.94 & 4.44 & 5.37 & 1.32 & 2.22 & 2.76 & 6.90 \\
+PRICE+BERT-4 & 1.06 & \textbf{1.17} & \textbf{1.19} & \textbf{2.18} & 1.66 & \textbf{2.37} & \textbf{2.48} & \textbf{2.80} & 1.18 & 1.60 & 1.83 & \textbf{4.75} \\
+PRICE+SentBERT & 1.06 & 1.19 & 1.21 & 2.19 & 1.64 & 12.03 & 13.11 & 14.66 & \textbf{1.17} & \textbf{1.53} & \textbf{1.73} & 4.87 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}

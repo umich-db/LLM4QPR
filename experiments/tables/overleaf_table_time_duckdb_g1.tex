@@ -1,0 +1,22 @@
+\begin{table}[t]
+\centering
+\caption{Time Q-error on DuckDB (TPC-H, TPC-DS, Synthetic)}
+\label{tab:overleaf_time_duckdb_tpch_tpcds_syn}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{l|cccc|cccc|cccc}
+\toprule
+\multirow{2}{*}{Method} & \multicolumn{4}{c|}{TPC-H} & \multicolumn{4}{c|}{TPC-DS} & \multicolumn{4}{c|}{Synthetic} \\
+ & 50th & 90th & 95th & Max & 50th & 90th & 95th & Max & 50th & 90th & 95th & Max \\
+\midrule
+AiMeetsAi & 1.26 & 3.97 & 4.00 & 19.50 & 2.18 & 59.86 & 78.39 & 99.58 & 1.41 & 2.95 & 3.92 & 88.41 \\
+Bao & 1.56 & 5.24 & 6.39 & 233.16 & 2.69 & 9.66 & 16.45 & 27.82 & 2.19 & 7.04 & 15.14 & 316.64 \\
+E2E-Cost & 6.97 & 56.29 & 69.42 & 94.21 & 157.72 & 258.13 & 288.30 & 327.01 & 2.90 & 12.50 & 18.77 & 168.63 \\
+QueryFormer & 1.34 & 2.00 & 2.34 & 6.70 & 1.52 & 2.60 & 3.95 & \textbf{5.75} & 2.00 & 6.47 & 9.72 & 106.56 \\
+\midrule
+PRICE+BERT-2 & 1.22 & 2.04 & 2.74 & 5.89 & 2.02 & 13.52 & 32.75 & 49.15 & \textbf{1.11} & \textbf{1.38} & \textbf{1.56} & \textbf{10.71} \\
+PRICE+BERT-4 & 1.24 & \textbf{1.57} & \textbf{1.85} & \textbf{3.93} & 1.73 & 3.48 & 6.68 & 10.38 & 1.14 & 1.67 & 2.18 & 327.79 \\
+PRICE+SentBERT & \textbf{1.16} & 1.59 & 2.13 & 4.42 & \textbf{1.37} & \textbf{2.08} & \textbf{3.68} & 5.95 & 1.13 & 1.53 & 1.85 & 195.24 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}

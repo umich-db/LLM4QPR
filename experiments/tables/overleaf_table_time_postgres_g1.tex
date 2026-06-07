@@ -1,0 +1,22 @@
+\begin{table}[t]
+\centering
+\caption{Time Q-error on PostgreSQL (TPC-H, TPC-DS, Synthetic)}
+\label{tab:overleaf_time_postgres_tpch_tpcds_syn}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{l|cccc|cccc|cccc}
+\toprule
+\multirow{2}{*}{Method} & \multicolumn{4}{c|}{TPC-H} & \multicolumn{4}{c|}{TPC-DS} & \multicolumn{4}{c|}{Synthetic} \\
+ & 50th & 90th & 95th & Max & 50th & 90th & 95th & Max & 50th & 90th & 95th & Max \\
+\midrule
+AiMeetsAi & \textbf{1.02} & \textbf{1.08} & 1.11 & 3.51 & 3.85 & 493.94 & 562.56 & 1102.25 & 1.14 & 1.77 & 2.29 & 15.14 \\
+Bao & 1.09 & 1.42 & 1.56 & 3.01 & 2.75 & 12.67 & 29.85 & 45.37 & 1.59 & 4.18 & 6.46 & 11.58 \\
+E2E-Cost & 7.88 & 26.77 & 50.31 & 52.59 & 13.32 & 415.16 & 427.22 & 443.11 & 1.85 & 8.29 & 14.78 & 77.08 \\
+QueryFormer & 1.11 & 1.35 & 1.37 & 1.92 & 5.52 & 112.78 & 267.32 & 321.34 & 2.90 & 12.65 & 19.91 & 332.26 \\
+\midrule
+PRICE+BERT-2 & 1.04 & 1.15 & 1.19 & 1.27 & 2.41 & 12.72 & 18.94 & 39.26 & 1.06 & 1.24 & 1.34 & 12.51 \\
+PRICE+BERT-4 & 1.03 & 1.08 & \textbf{1.10} & \textbf{1.14} & \textbf{2.30} & \textbf{5.77} & \textbf{6.05} & \textbf{7.13} & 1.07 & \textbf{1.17} & \textbf{1.23} & \textbf{2.56} \\
+PRICE+SentBERT & 1.03 & 1.09 & 1.12 & 1.17 & 3.66 & 17.66 & 42.31 & 87.78 & \textbf{1.06} & 1.19 & 1.27 & 3.17 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}

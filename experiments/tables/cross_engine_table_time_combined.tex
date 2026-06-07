@@ -1,0 +1,21 @@
+% Requires \usepackage[table]{xcolor} (for \cellcolor) in the preamble.
+\begin{table*}[t]
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{l|cccc|cccc|cccc}
+\toprule
+\multirow{2}{*}{Method} & \multicolumn{4}{c|}{BERT-2} & \multicolumn{4}{c|}{BERT-4} & \multicolumn{4}{c|}{SentBERT} \\
+ & 50th & 90th & 95th & Max & 50th & 90th & 95th & Max & 50th & 90th & 95th & Max \\
+\midrule
+QF + Canon (concat) & \cellcolor[rgb]{1.0,0.5,0.0}{2.67} & \cellcolor[rgb]{1.0,0.5,0.0}{20.73} & \cellcolor[rgb]{1.0,0.5,0.0}{43.26} & \cellcolor[rgb]{1.0,0.5,0.0}{333.42} & \cellcolor[rgb]{1.0,0.5,0.0}{2.67} & \cellcolor[rgb]{1.0,0.5,0.0}{20.73} & \cellcolor[rgb]{1.0,0.5,0.0}{43.26} & \cellcolor[rgb]{1.0,0.5,0.0}{333.42} & \cellcolor[rgb]{1.0,0.5,0.0}{2.67} & \cellcolor[rgb]{1.0,0.5,0.0}{20.73} & \cellcolor[rgb]{1.0,0.5,0.0}{43.26} & \cellcolor[rgb]{1.0,0.5,0.0}{333.42} \\
+FT LLM + PRICE (concat) & \cellcolor[rgb]{0.0,0.650,0.0}{0.74} & \cellcolor[rgb]{0.0,0.650,0.0}{1.63} & \cellcolor[rgb]{0.0,0.475,0.0}{\color{white}2.19} & \cellcolor[rgb]{0.0,0.475,0.0}{\color{white}6.70} & \cellcolor[rgb]{0.0,0.475,0.0}{\color{white}0.68} & \cellcolor[rgb]{0.0,0.475,0.0}{\color{white}1.60} & \cellcolor[rgb]{0.0,0.475,0.0}{\color{white}2.11} & \cellcolor[rgb]{0.0,0.300,0.0}{\color{white}12.35} & \cellcolor[rgb]{0.0,0.475,0.0}{\color{white}0.75} & \cellcolor[rgb]{0.0,0.650,0.0}{2.18} & \cellcolor[rgb]{0.0,0.650,0.0}{2.76} & \cellcolor[rgb]{0.0,0.475,0.0}{\color{white}7.78} \\
+FT LLM + Canon (concat) & \cellcolor[rgb]{0.0,0.475,0.0}{\color{white}0.73} & \cellcolor[rgb]{0.0,0.300,0.0}{\color{white}1.45} & \cellcolor[rgb]{0.0,0.300,0.0}{\color{white}2.02} & \cellcolor[rgb]{0.0,0.300,0.0}{\color{white}6.44} & \cellcolor[rgb]{0.0,0.650,0.0}{0.69} & \cellcolor[rgb]{0.0,0.650,0.0}{1.63} & \cellcolor[rgb]{0.0,0.650,0.0}{2.16} & \cellcolor[rgb]{0.0,0.475,0.0}{\color{white}12.60} & \cellcolor[rgb]{0.0,0.650,0.0}{0.77} & \cellcolor[rgb]{0.0,0.475,0.0}{\color{white}1.82} & \cellcolor[rgb]{0.0,0.475,0.0}{\color{white}2.32} & \cellcolor[rgb]{0.0,0.300,0.0}{\color{white}7.43} \\
+FT LLM + Canon (cross-attn) & \cellcolor[rgb]{0.0,0.300,0.0}{\color{white}0.66} & \cellcolor[rgb]{0.0,0.475,0.0}{\color{white}1.53} & \cellcolor[rgb]{0.0,0.650,0.0}{2.24} & \cellcolor[rgb]{0.0,0.650,0.0}{6.83} & \cellcolor[rgb]{0.0,0.300,0.0}{\color{white}0.68} & \cellcolor[rgb]{0.0,0.300,0.0}{\color{white}1.43} & \cellcolor[rgb]{0.0,0.300,0.0}{\color{white}1.93} & \cellcolor[rgb]{0.0,0.650,0.0}{18.30} & \cellcolor[rgb]{0.0,0.300,0.0}{\color{white}0.66} & \cellcolor[rgb]{0.0,0.300,0.0}{\color{white}1.46} & \cellcolor[rgb]{0.0,0.300,0.0}{\color{white}2.23} & \cellcolor[rgb]{0.0,0.650,0.0}{13.61} \\
+FT LLM & \cellcolor[rgb]{0.0,0.825,0.0}{0.88} & \cellcolor[rgb]{0.0,0.825,0.0}{2.44} & \cellcolor[rgb]{0.0,0.825,0.0}{3.42} & \cellcolor[rgb]{0.0,0.825,0.0}{17.36} & \cellcolor[rgb]{0.0,0.825,0.0}{0.76} & \cellcolor[rgb]{0.0,0.825,0.0}{1.86} & \cellcolor[rgb]{0.0,0.825,0.0}{2.73} & \cellcolor[rgb]{0.0,0.825,0.0}{35.82} & \cellcolor[rgb]{0.0,1.000,0.0}{0.89} & \cellcolor[rgb]{0.0,0.825,0.0}{2.61} & \cellcolor[rgb]{0.0,0.825,0.0}{3.89} & \cellcolor[rgb]{0.0,0.825,0.0}{26.53} \\
+PT LLM & \cellcolor[rgb]{0.0,1.000,0.0}{0.89} & \cellcolor[rgb]{0.0,1.000,0.0}{3.96} & \cellcolor[rgb]{0.0,1.000,0.0}{8.51} & \cellcolor[rgb]{0.0,1.000,0.0}{73.17} & \cellcolor[rgb]{0.0,1.000,0.0}{0.87} & \cellcolor[rgb]{0.0,1.000,0.0}{2.52} & \cellcolor[rgb]{0.0,1.000,0.0}{5.14} & \cellcolor[rgb]{0.0,1.000,0.0}{45.13} & \cellcolor[rgb]{0.0,0.825,0.0}{0.86} & \cellcolor[rgb]{0.0,1.000,0.0}{3.08} & \cellcolor[rgb]{0.0,1.000,0.0}{8.90} & \cellcolor[rgb]{0.0,1.000,0.0}{66.92} \\
+\bottomrule
+\end{tabular}%
+}
+\caption{Averaged relative Q-error (time), cross-engine simple average, by LLM model. Orange: QF+Canon baseline; green: LLM variants (darkest = best per column).}
+\label{tab:cross_engine_time_combined}
+\end{table*}

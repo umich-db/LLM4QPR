@@ -18,9 +18,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source ~/venvs/py312/bin/activate 2>/dev/null || source ~/venvs/tmpenv/bin/activate 2>/dev/null || true
 
 export FT_BATCH="${FT_BATCH:-2}"
-# poolA's 13 not-yet-finished big models (Qwen2.5-Coder-0.5B-Instruct already has a
-# CDF; add it here too if you want to re-run that one cleanly):
-export MODELS_CSV="Qwen/Qwen2.5-0.5B-Instruct,Qwen/Qwen2.5-0.5B,Qwen/Qwen2-0.5B,Qwen/Qwen2.5-Coder-0.5B,Qwen/Qwen2-0.5B-Instruct,Qwen/Qwen1.5-0.5B-Chat,Qwen/Qwen1.5-0.5B,HuggingFaceTB/SmolLM2-360M-Instruct,HuggingFaceTB/SmolLM2-360M,HuggingFaceTB/SmolLM-360M,HuggingFaceTB/SmolLM-360M-Instruct,google/electra-large-discriminator,FacebookAI/roberta-large"
+# The 9 large-context DECODER models that OOM the 32 GB 5090 at cx4 even at batch 1
+# (32k/8k context -> a ~5k-token tpcds plan is one long sequence). The other 4 poolA
+# models (SmolLM-360M v1 = 2048-ctx -> chunked; electra-large + roberta-large =
+# encoders) DO fit the 5090 at batch 4 and run there, so they're not in this list.
+# (Qwen2.5-Coder-0.5B-Instruct already has a CDF; add it to re-run that one cleanly.)
+export MODELS_CSV="Qwen/Qwen2.5-0.5B-Instruct,Qwen/Qwen2.5-0.5B,Qwen/Qwen2-0.5B,Qwen/Qwen2.5-Coder-0.5B,Qwen/Qwen2-0.5B-Instruct,Qwen/Qwen1.5-0.5B-Chat,Qwen/Qwen1.5-0.5B,HuggingFaceTB/SmolLM2-360M-Instruct,HuggingFaceTB/SmolLM2-360M"
 
 echo "=== poolA on H100 | ${MODELS_CSV//,/ } | FT_BATCH=$FT_BATCH ==="
 bash "$SCRIPT_DIR/master_tpcds_inflatePRICE_e16_retry.sh"

@@ -9,6 +9,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUN_SCRIPT="$SCRIPT_DIR/run_different_llms.sh"
 cd "$SCRIPT_DIR/.."   # run_different_llms.sh calls core_scripts/ via a relative path
+# Activate the GPU venv if not already active (run_different_llms.sh does not), so
+# direct invocations don't crash at "import pandas/torch".
+python -c "import torch" 2>/dev/null || source ~/venvs/py312/bin/activate 2>/dev/null || source ~/venvs/tmpenv/bin/activate 2>/dev/null || true
 
 : "${MODELS_CSV:?set MODELS_CSV to a comma-separated model list}"
 : "${FT_BATCH:=2}"

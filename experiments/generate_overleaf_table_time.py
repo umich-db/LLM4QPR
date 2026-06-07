@@ -250,7 +250,7 @@ def generate_table(db: str, datasets, task: str, results_dir: str,
     lines = []
     lines.append("% Requires \\usepackage[table]{xcolor} and \\definecolor{green1..green5} "
                  "(green5=best) in the preamble.")
-    lines.append("\\begin{table}[t]")
+    lines.append("\\begin{table*}[t]")
     lines.append("\\centering")
     _cap = f"Time Q-error on {db_display} ({group_names})"
     if any(substituted.values()):
@@ -301,7 +301,7 @@ def generate_table(db: str, datasets, task: str, results_dir: str,
     lines.append("\\bottomrule")
     lines.append("\\end{tabular}%")
     lines.append("}")
-    lines.append("\\end{table}")
+    lines.append("\\end{table*}")
 
     latex = "\n".join(lines) + "\n"
 

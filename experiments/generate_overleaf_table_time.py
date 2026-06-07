@@ -227,17 +227,18 @@ def generate_table(db: str, datasets, task: str, results_dir: str,
         for m in missing:
             coverage_gaps.append((db, ds, m))
 
-    # Per (dataset, quantile) column: shade the top-5 (lowest Q-error = best)
-    # cells with a 5-step green gradient (darkest = best). No bold.
-    GREEN_SHADES = [60, 47, 35, 24, 14]   # ranks 1..5 (green!XX)
-    shade = {}  # (dataset, quantile, method_key) -> green percentage
+    # Per (dataset, quantile) column: color the top-5 (lowest Q-error = best) cells
+    # with the user's Overleaf-defined named colors green1..green5
+    # (best -> green5, 2nd -> green4, ..., 5th -> green1). No bold.
+    N_TOP = 5
+    greennum = {}  # (dataset, quantile, method_key) -> 1..5 (5 = best)
     for ds in datasets:
         for q in QUANTILE_COLS:
             present = [(dataset_values[ds][k][q], k) for k, _l, _m in METHODS
                        if dataset_values[ds][k][q] is not None]
             present.sort(key=lambda t: t[0])   # ascending: best (lowest) first
-            for pos, (_v, k) in enumerate(present[:len(GREEN_SHADES)]):
-                shade[(ds, q, k)] = GREEN_SHADES[pos]
+            for pos, (_v, k) in enumerate(present[:N_TOP]):
+                greennum[(ds, q, k)] = N_TOP - pos   # pos0->green5 (best) ... pos4->green1
 
     # ----- Build LaTeX -----
     col_spec = 'l' + ''.join('|' + 'c' * len(QUANTILE_COLS) for _ in datasets)
@@ -247,7 +248,8 @@ def generate_table(db: str, datasets, task: str, results_dir: str,
     group_names = ', '.join(DATASET_DISPLAY.get(d, d.upper()) for d in datasets)
 
     lines = []
-    lines.append("% Requires \\usepackage[table]{xcolor} (for \\cellcolor) in the preamble.")
+    lines.append("% Requires \\usepackage[table]{xcolor} and \\definecolor{green1..green5} "
+                 "(green5=best) in the preamble.")
     lines.append("\\begin{table}[t]")
     lines.append("\\centering")
     _cap = f"Time Q-error on {db_display} ({group_names})"
@@ -290,9 +292,9 @@ def generate_table(db: str, datasets, task: str, results_dir: str,
                 cell = format_number(v)
                 if v is not None and key in substituted.get(ds, ()):
                     cell += "$^{r}$"
-                sh = shade.get((ds, q, key))
-                if sh is not None:
-                    cell = f"\\cellcolor{{green!{sh}}}{cell}"
+                g = greennum.get((ds, q, key))
+                if g is not None:
+                    cell = f"\\cellcolor{{green{g}}}{{{cell}}}"
                 row_parts.append(cell)
         lines.append(" & ".join(row_parts) + " \\\\")
 

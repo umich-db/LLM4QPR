@@ -1,4 +1,4 @@
-% Requires \usepackage[table]{xcolor} (for \cellcolor) in the preamble.
+% Requires \usepackage[table]{xcolor} and \definecolor{green1..green5} (green5=best) in the preamble.
 \begin{table}[t]
 \centering
 \caption{Time Q-error on Spark (JOB-light, JOB, STATS)}
@@ -9,14 +9,14 @@
 \multirow{2}{*}{Method} & \multicolumn{4}{c|}{JOB-light} & \multicolumn{4}{c|}{JOB} & \multicolumn{4}{c|}{STATS} \\
  & 50th & 90th & 95th & Max & 50th & 90th & 95th & Max & 50th & 90th & 95th & Max \\
 \midrule
-AiMeetsAi & \cellcolor{green!14}1.98 & \cellcolor{green!14}10.39 & \cellcolor{green!14}12.58 & \cellcolor{green!14}18.91 & 7.36 & 16.29 & 21.65 & 36.36 & \cellcolor{green!24}1.31 & \cellcolor{green!24}3.09 & \cellcolor{green!24}4.51 & \cellcolor{green!47}10.41 \\
-Bao & \cellcolor{green!24}1.71 & \cellcolor{green!24}5.60 & \cellcolor{green!24}8.99 & \cellcolor{green!24}12.82 & 8.09 & 14.14 & 16.25 & 40.44 & \cellcolor{green!14}1.35 & \cellcolor{green!14}3.84 & \cellcolor{green!14}5.73 & \cellcolor{green!14}25.14 \\
-E2E-Cost & 3.20 & 13.64 & 19.02 & 41.06 & \cellcolor{green!24}3.31 & \cellcolor{green!24}6.06 & \cellcolor{green!24}7.87 & \cellcolor{green!24}12.03 & 1.98 & 5.82 & 11.81 & 33.19 \\
-QueryFormer & 3.95 & 19.23 & 25.91 & 47.27 & \cellcolor{green!14}4.16 & \cellcolor{green!14}9.78 & \cellcolor{green!14}10.72 & \cellcolor{green!14}23.86 & 2.07 & 7.78 & 16.75 & 45.51 \\
+AiMeetsAi & \cellcolor{green1}{1.98} & \cellcolor{green1}{10.39} & \cellcolor{green1}{12.58} & \cellcolor{green1}{18.91} & 7.36 & 16.29 & 21.65 & 36.36 & \cellcolor{green2}{1.31} & \cellcolor{green2}{3.09} & \cellcolor{green2}{4.51} & \cellcolor{green4}{10.41} \\
+Bao & \cellcolor{green2}{1.71} & \cellcolor{green2}{5.60} & \cellcolor{green2}{8.99} & \cellcolor{green2}{12.82} & 8.09 & 14.14 & 16.25 & 40.44 & \cellcolor{green1}{1.35} & \cellcolor{green1}{3.84} & \cellcolor{green1}{5.73} & \cellcolor{green1}{25.14} \\
+E2E-Cost & 3.20 & 13.64 & 19.02 & 41.06 & \cellcolor{green2}{3.31} & \cellcolor{green2}{6.06} & \cellcolor{green2}{7.87} & \cellcolor{green2}{12.03} & 1.98 & 5.82 & 11.81 & 33.19 \\
+QueryFormer & 3.95 & 19.23 & 25.91 & 47.27 & \cellcolor{green1}{4.16} & \cellcolor{green1}{9.78} & \cellcolor{green1}{10.72} & \cellcolor{green1}{23.86} & 2.07 & 7.78 & 16.75 & 45.51 \\
 \midrule
-PRICE+BERT-2 & \cellcolor{green!60}1.28 & \cellcolor{green!60}2.48 & \cellcolor{green!60}3.54 & \cellcolor{green!47}5.71 & \cellcolor{green!47}1.73 & \cellcolor{green!35}3.98 & \cellcolor{green!47}4.51 & \cellcolor{green!47}7.32 & \cellcolor{green!47}1.19 & \cellcolor{green!35}2.85 & \cellcolor{green!47}3.56 & \cellcolor{green!24}11.53 \\
-PRICE+BERT-4 & \cellcolor{green!47}1.33 & \cellcolor{green!35}3.32 & \cellcolor{green!35}4.57 & \cellcolor{green!35}8.01 & \cellcolor{green!35}1.98 & \cellcolor{green!60}3.65 & \cellcolor{green!35}4.52 & \cellcolor{green!35}7.65 & \cellcolor{green!60}1.16 & \cellcolor{green!60}2.11 & \cellcolor{green!60}3.16 & \cellcolor{green!60}7.01 \\
-PRICE+SentBERT & \cellcolor{green!35}1.39 & \cellcolor{green!47}2.90 & \cellcolor{green!47}3.71 & \cellcolor{green!60}5.50 & \cellcolor{green!60}1.72 & \cellcolor{green!47}3.81 & \cellcolor{green!60}4.20 & \cellcolor{green!60}6.82 & \cellcolor{green!35}1.20 & \cellcolor{green!47}2.33 & \cellcolor{green!35}3.78 & \cellcolor{green!35}10.63 \\
+PRICE+BERT-2 & \cellcolor{green5}{1.28} & \cellcolor{green5}{2.48} & \cellcolor{green5}{3.54} & \cellcolor{green4}{5.71} & \cellcolor{green4}{1.73} & \cellcolor{green3}{3.98} & \cellcolor{green4}{4.51} & \cellcolor{green4}{7.32} & \cellcolor{green4}{1.19} & \cellcolor{green3}{2.85} & \cellcolor{green4}{3.56} & \cellcolor{green2}{11.53} \\
+PRICE+BERT-4 & \cellcolor{green4}{1.33} & \cellcolor{green3}{3.32} & \cellcolor{green3}{4.57} & \cellcolor{green3}{8.01} & \cellcolor{green3}{1.98} & \cellcolor{green5}{3.65} & \cellcolor{green3}{4.52} & \cellcolor{green3}{7.65} & \cellcolor{green5}{1.16} & \cellcolor{green5}{2.11} & \cellcolor{green5}{3.16} & \cellcolor{green5}{7.01} \\
+PRICE+SentBERT & \cellcolor{green3}{1.39} & \cellcolor{green4}{2.90} & \cellcolor{green4}{3.71} & \cellcolor{green5}{5.50} & \cellcolor{green5}{1.72} & \cellcolor{green4}{3.81} & \cellcolor{green5}{4.20} & \cellcolor{green5}{6.82} & \cellcolor{green3}{1.20} & \cellcolor{green4}{2.33} & \cellcolor{green3}{3.78} & \cellcolor{green3}{10.63} \\
 \bottomrule
 \end{tabular}%
 }

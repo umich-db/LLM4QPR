@@ -1,4 +1,4 @@
-% Requires \usepackage[table]{xcolor} (for \cellcolor) in the preamble.
+% Requires \usepackage[table]{xcolor} and \definecolor{green1..green5} (green5=best) in the preamble.
 \begin{table}[t]
 \centering
 \caption{Time Q-error on DuckDB (JOB-light, JOB, STATS)}
@@ -9,14 +9,14 @@
 \multirow{2}{*}{Method} & \multicolumn{4}{c|}{JOB-light} & \multicolumn{4}{c|}{JOB} & \multicolumn{4}{c|}{STATS} \\
  & 50th & 90th & 95th & Max & 50th & 90th & 95th & Max & 50th & 90th & 95th & Max \\
 \midrule
-AiMeetsAi & \cellcolor{green!24}2.76 & 133.19 & 181.97 & 1215.56 & 845.60 & 94436.77 & 302673.44 & 945337.05 & \cellcolor{green!24}2.41 & \cellcolor{green!14}29.80 & \cellcolor{green!14}81.06 & \cellcolor{green!14}889.30 \\
-Bao & \cellcolor{green!14}2.84 & \cellcolor{green!24}11.41 & \cellcolor{green!35}20.17 & \cellcolor{green!35}44.28 & \cellcolor{green!14}14.89 & 7096.94 & 26170.48 & 126059.83 & \cellcolor{green!14}2.57 & \cellcolor{green!24}17.75 & \cellcolor{green!24}42.34 & \cellcolor{green!24}303.36 \\
-E2E-Cost & 3.74 & 30.56 & 45.61 & 157.47 & 31.05 & \cellcolor{green!14}86.15 & \cellcolor{green!14}122.17 & \cellcolor{green!14}301.13 & 105.20 & 3030.68 & 6352.69 & 15582.09 \\
-QueryFormer & 3.66 & \cellcolor{green!14}18.18 & \cellcolor{green!14}31.77 & \cellcolor{green!14}90.11 & \cellcolor{green!24}2.78 & \cellcolor{green!35}6.91 & \cellcolor{green!47}9.65 & \cellcolor{green!35}30.03 & 6.91 & 420.49 & 963.70 & 2857.85 \\
+AiMeetsAi & \cellcolor{green2}{2.76} & 133.19 & 181.97 & 1215.56 & 845.60 & 94436.77 & 302673.44 & 945337.05 & \cellcolor{green2}{2.41} & \cellcolor{green1}{29.80} & \cellcolor{green1}{81.06} & \cellcolor{green1}{889.30} \\
+Bao & \cellcolor{green1}{2.84} & \cellcolor{green2}{11.41} & \cellcolor{green3}{20.17} & \cellcolor{green3}{44.28} & \cellcolor{green1}{14.89} & 7096.94 & 26170.48 & 126059.83 & \cellcolor{green1}{2.57} & \cellcolor{green2}{17.75} & \cellcolor{green2}{42.34} & \cellcolor{green2}{303.36} \\
+E2E-Cost & 3.74 & 30.56 & 45.61 & 157.47 & 31.05 & \cellcolor{green1}{86.15} & \cellcolor{green1}{122.17} & \cellcolor{green1}{301.13} & 105.20 & 3030.68 & 6352.69 & 15582.09 \\
+QueryFormer & 3.66 & \cellcolor{green1}{18.18} & \cellcolor{green1}{31.77} & \cellcolor{green1}{90.11} & \cellcolor{green2}{2.78} & \cellcolor{green3}{6.91} & \cellcolor{green4}{9.65} & \cellcolor{green3}{30.03} & 6.91 & 420.49 & 963.70 & 2857.85 \\
 \midrule
-PRICE+BERT-2 & \cellcolor{green!60}1.49 & \cellcolor{green!35}10.05 & \cellcolor{green!47}15.12 & \cellcolor{green!47}41.30 & \cellcolor{green!35}2.17 & \cellcolor{green!47}6.86 & \cellcolor{green!24}11.21 & \cellcolor{green!24}32.08 & \cellcolor{green!60}1.31 & \cellcolor{green!35}4.71 & \cellcolor{green!35}7.95 & \cellcolor{green!47}64.75 \\
-PRICE+BERT-4 & \cellcolor{green!35}1.90 & \cellcolor{green!60}9.36 & \cellcolor{green!24}20.80 & \cellcolor{green!24}44.92 & \cellcolor{green!60}1.96 & \cellcolor{green!24}8.29 & \cellcolor{green!60}9.65 & \cellcolor{green!47}24.99 & \cellcolor{green!47}1.38 & \cellcolor{green!60}3.40 & \cellcolor{green!60}4.87 & \cellcolor{green!60}55.89 \\
-PRICE+SentBERT & \cellcolor{green!47}1.57 & \cellcolor{green!47}9.58 & \cellcolor{green!60}14.95 & \cellcolor{green!60}40.01 & \cellcolor{green!47}2.11 & \cellcolor{green!60}6.23 & \cellcolor{green!35}9.87 & \cellcolor{green!60}19.77 & \cellcolor{green!35}1.39 & \cellcolor{green!47}3.49 & \cellcolor{green!47}7.84 & \cellcolor{green!35}73.09 \\
+PRICE+BERT-2 & \cellcolor{green5}{1.49} & \cellcolor{green3}{10.05} & \cellcolor{green4}{15.12} & \cellcolor{green4}{41.30} & \cellcolor{green3}{2.17} & \cellcolor{green4}{6.86} & \cellcolor{green2}{11.21} & \cellcolor{green2}{32.08} & \cellcolor{green5}{1.31} & \cellcolor{green3}{4.71} & \cellcolor{green3}{7.95} & \cellcolor{green4}{64.75} \\
+PRICE+BERT-4 & \cellcolor{green3}{1.90} & \cellcolor{green5}{9.36} & \cellcolor{green2}{20.80} & \cellcolor{green2}{44.92} & \cellcolor{green5}{1.96} & \cellcolor{green2}{8.29} & \cellcolor{green5}{9.65} & \cellcolor{green4}{24.99} & \cellcolor{green4}{1.38} & \cellcolor{green5}{3.40} & \cellcolor{green5}{4.87} & \cellcolor{green5}{55.89} \\
+PRICE+SentBERT & \cellcolor{green4}{1.57} & \cellcolor{green4}{9.58} & \cellcolor{green5}{14.95} & \cellcolor{green5}{40.01} & \cellcolor{green4}{2.11} & \cellcolor{green5}{6.23} & \cellcolor{green3}{9.87} & \cellcolor{green5}{19.77} & \cellcolor{green3}{1.39} & \cellcolor{green4}{3.49} & \cellcolor{green4}{7.84} & \cellcolor{green3}{73.09} \\
 \bottomrule
 \end{tabular}%
 }

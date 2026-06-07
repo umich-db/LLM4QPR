@@ -45,12 +45,12 @@ def _m_pt_llm(c):       return (c.endswith('_quant-4-bit')
 
 # (display label, matcher, is_llm) in the requested row order
 METHODS = [
-    ('QF + Canon (concat)',         _m_qf,           False),
+    ('PT LLM',                      _m_pt_llm,       True),
+    ('FT LLM',                      _m_ft_llm,       True),
     ('FT LLM + PRICE (concat)',     _m_price_concat, True),
+    ('QF + Canon (concat)',         _m_qf,           False),
     ('FT LLM + Canon (concat)',     _m_canon_concat, True),
     ('FT LLM + Canon (cross-attn)', _m_canon_cross,  True),
-    ('FT LLM',                      _m_ft_llm,       True),
-    ('PT LLM',                      _m_pt_llm,       True),
 ]
 
 

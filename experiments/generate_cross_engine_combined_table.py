@@ -96,20 +96,23 @@ def load_model(model, anchor, variant, results_dir):
 def generate(anchor, variant, results_dir, output_path: Optional[str]) -> str:
     per_model = {m: load_model(m, anchor, variant, results_dir) for m, _disp in MODELS}
 
-    # green intensity per (model, quantile, llm_label): rank ascending among LLM rows
-    llm_labels = [lab for lab, _m, is_llm in METHODS if is_llm]
-    green = {}
+    # Named colors green1..green5 (green5 = best) per (model, quantile) column,
+    # ranking ALL rows together (QF + Canon included). Every row is shaded; with 6
+    # rows and 5 shades the lowest rank(s) clamp to green1 (so the worst is green1).
+    N_TOP = 5
+    all_labels = [lab for lab, _m, _is in METHODS]
+    greennum = {}
     for m, _disp in MODELS:
         for q in QUANTILE_COLS:
-            present = sorted([(per_model[m][lab][q], lab) for lab in llm_labels
+            present = sorted([(per_model[m][lab][q], lab) for lab in all_labels
                               if per_model[m][lab][q] is not None])
-            n = len(present)
-            for rank, (_v, lab) in enumerate(present):
-                green[(m, q, lab)] = 0.3 + (rank / (n - 1)) * 0.7 if n > 1 else 0.65
+            for pos, (_v, lab) in enumerate(present):
+                greennum[(m, q, lab)] = max(1, N_TOP - pos)   # pos0->green5 (best) ... clamp to green1
 
     col_spec = 'l' + ''.join('|' + 'c' * len(QUANTILE_COLS) for _ in MODELS)
     lines = []
-    lines.append("% Requires \\usepackage[table]{xcolor} (for \\cellcolor) in the preamble.")
+    lines.append("% Requires \\usepackage[table]{xcolor} and \\definecolor{green1..green5} "
+                 "(green5=best) in the preamble.")
     lines.append("\\begin{table*}[t]")
     lines.append("\\centering")
     lines.append("\\resizebox{\\linewidth}{!}{%")
@@ -125,19 +128,15 @@ def generate(anchor, variant, results_dir, output_path: Optional[str]) -> str:
     lines.append(h2 + " \\\\")
     lines.append("\\midrule")
 
-    for label, _matcher, is_llm in METHODS:
+    for label, _matcher, _is_llm in METHODS:
         cells = [label]
         for m, _disp in MODELS:
             for q in QUANTILE_COLS:
                 v = per_model[m][label][q]
                 cell = fmt(v)
-                if v is not None:
-                    if not is_llm:
-                        cell = f"\\cellcolor[rgb]{{1.0,0.5,0.0}}{{{cell}}}"
-                    else:
-                        inten = green[(m, q, label)]
-                        txt = "\\color{white}" if inten < 0.55 else ""
-                        cell = f"\\cellcolor[rgb]{{0.0,{inten:.3f},0.0}}{{{txt}{cell}}}"
+                g = greennum.get((m, q, label))
+                if g is not None:
+                    cell = f"\\cellcolor{{green{g}}}{{{cell}}}"
                 cells.append(cell)
         lines.append(" & ".join(cells) + " \\\\")
 
@@ -145,8 +144,8 @@ def generate(anchor, variant, results_dir, output_path: Optional[str]) -> str:
     lines.append("\\end{tabular}%")
     lines.append("}")
     lines.append("\\caption{Averaged relative Q-error (time), cross-engine simple average, "
-                 "by LLM model. Orange: QF+Canon baseline; green: LLM variants "
-                 "(darkest = best per column).}")
+                 "by LLM model. Per column, the best methods are shaded green5 (best) "
+                 "down to green1.}")
     lines.append("\\label{tab:cross_engine_time_combined}")
     lines.append("\\end{table*}")
     latex = "\n".join(lines) + "\n"

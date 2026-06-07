@@ -118,6 +118,27 @@ def _llm_matcher(model_token):
     return factory
 
 
+def _llm_retrain_matcher(model_token):
+    """retrainMLP variant of mode-12 frzEvenAll: the priceBiCrossAttnJoint
+    (inference-phase, pretrained-lora) cdf instead of the finetune-phase jointMLP.
+    Used for cells named via --frzeven_retrainMLP_cells."""
+    def match(col):
+        return (
+            'priceBiCrossAttnJoint' in col
+            and model_token in col
+            and 'frzEven999' in col
+        )
+    return match
+
+
+# method key -> model token (LLM rows only); lets us build the retrainMLP matcher.
+LLM_MODEL_TOKEN = {
+    'bert2': 'google-bert_uncased_L-2_H-256_A-4',
+    'bert4': 'google-bert_uncased_L-4_H-768_A-12',
+    'sentBert': 'sentence-transformers-all-MiniLM-L12-v2',
+}
+
+
 METHODS = [
     ('aimai',    format_algo_name_for_display('aimai'),
      _baseline_matcher(r'^time_aimai_.*_cdf_{db}_')),
@@ -148,9 +169,12 @@ def find_quantile_csv(db: str, dataset: str, task: str,
     return os.path.join(base, db, stem, fname)
 
 
-def load_dataset_values(db: str, dataset: str, task: str, results_dir: str):
-    """Return (values, missing) where values[method_key][quantile] = float or None,
-    and missing is a list of method keys with no matching column."""
+def load_dataset_values(db: str, dataset: str, task: str, results_dir: str,
+                        retrain_cells=frozenset()):
+    """Return (values, missing, substituted) where values[method_key][quantile] =
+    float or None, missing is a list of method keys with no matching column, and
+    substituted is the set of LLM keys that used the retrainMLP variant here
+    (because (key, db, dataset) was named in --frzeven_retrainMLP_cells)."""
     path = find_quantile_csv(db, dataset, task, results_dir)
     if not os.path.exists(path):
         raise FileNotFoundError(path)
@@ -161,8 +185,15 @@ def load_dataset_values(db: str, dataset: str, task: str, results_dir: str):
 
     values = {}
     missing = []
+    substituted = set()
     for key, _label, matcher_factory in METHODS:
-        match = matcher_factory(db)
+        # For LLM rows named in --frzeven_retrainMLP_cells, swap jointMLP -> retrainMLP.
+        if (key in LLM_MODEL_TOKEN
+                and (key.lower(), db.lower(), dataset.lower()) in retrain_cells):
+            match = _llm_retrain_matcher(LLM_MODEL_TOKEN[key])
+            substituted.add(key)
+        else:
+            match = matcher_factory(db)
         matched = [c for c in cols if match(c)]
         if len(matched) != 1:
             missing.append(key)
@@ -179,17 +210,20 @@ def load_dataset_values(db: str, dataset: str, task: str, results_dir: str):
                 values[key][q] = float(v) if pd.notna(v) else None
             else:
                 values[key][q] = None
-    return values, missing
+    return values, missing, substituted
 
 
 def generate_table(db: str, datasets, task: str, results_dir: str,
-                   output_path: Optional[str]) -> str:
+                   output_path: Optional[str], retrain_cells=frozenset()) -> str:
     # Load every dataset
     dataset_values = {}
     coverage_gaps = []  # (db, dataset, method_key)
+    substituted = {}    # dataset -> set of LLM keys using retrainMLP
     for ds in datasets:
-        vals, missing = load_dataset_values(db, ds, task, results_dir)
+        vals, missing, subst = load_dataset_values(
+            db, ds, task, results_dir, retrain_cells)
         dataset_values[ds] = vals
+        substituted[ds] = subst
         for m in missing:
             coverage_gaps.append((db, ds, m))
 
@@ -216,7 +250,10 @@ def generate_table(db: str, datasets, task: str, results_dir: str,
     lines.append("% Requires \\usepackage[table]{xcolor} (for \\cellcolor) in the preamble.")
     lines.append("\\begin{table}[t]")
     lines.append("\\centering")
-    lines.append(f"\\caption{{Time Q-error on {db_display} ({group_names})}}")
+    _cap = f"Time Q-error on {db_display} ({group_names})"
+    if any(substituted.values()):
+        _cap += " ($^{r}$: retrainMLP variant)"
+    lines.append(f"\\caption{{{_cap}}}")
     lines.append(f"\\label{{tab:overleaf_time_{db}_{'_'.join(datasets)}}}")
     lines.append("\\resizebox{\\linewidth}{!}{%")
     lines.append(f"\\begin{{tabular}}{{{col_spec}}}")
@@ -251,6 +288,8 @@ def generate_table(db: str, datasets, task: str, results_dir: str,
             for q in QUANTILE_COLS:
                 v = dataset_values[ds][key][q]
                 cell = format_number(v)
+                if v is not None and key in substituted.get(ds, ()):
+                    cell += "$^{r}$"
                 sh = shade.get((ds, q, key))
                 if sh is not None:
                     cell = f"\\cellcolor{{green!{sh}}}{cell}"
@@ -287,10 +326,24 @@ def main():
     parser.add_argument('--task', default='time', choices=['time'])
     parser.add_argument('--results_dir', default='results')
     parser.add_argument('--output', default=None, help='Output .tex path')
+    parser.add_argument('--frzeven_retrainMLP_cells', nargs='*', default=[],
+                        metavar='MODEL:DB:WORKLOAD',
+                        help='Use the retrainMLP (priceBiCrossAttnJoint) frzEven999 '
+                             'result instead of jointMLP for these cells, e.g. '
+                             '--frzeven_retrainMLP_cells bert2:duckdb:tpcds sentbert:spark:tpcds')
     args = parser.parse_args()
 
+    # parse MODEL:DB:WORKLOAD triples -> set of (model_lower, db_lower, wl_lower)
+    retrain_cells = set()
+    for spec in args.frzeven_retrainMLP_cells:
+        parts = spec.split(':')
+        if len(parts) != 3:
+            parser.error(f"--frzeven_retrainMLP_cells entry must be MODEL:DB:WORKLOAD, got {spec!r}")
+        retrain_cells.add((parts[0].lower(), parts[1].lower(), parts[2].lower()))
+
     datasets = [d.strip() for d in args.datasets.split(',') if d.strip()]
-    latex = generate_table(args.db, datasets, args.task, args.results_dir, args.output)
+    latex = generate_table(args.db, datasets, args.task, args.results_dir,
+                           args.output, retrain_cells)
     if not args.output:
         print(latex)
 

@@ -1,7 +1,7 @@
 % Requires \usepackage[table]{xcolor} (for \cellcolor) in the preamble.
 \begin{table}[t]
 \centering
-\caption{Time Q-error on Spark (TPC-H, TPC-DS, Synthetic)}
+\caption{Time Q-error on Spark (TPC-H, TPC-DS, Synthetic) ($^{r}$: retrainMLP variant)}
 \label{tab:overleaf_time_spark_tpch_tpcds_syn}
 \resizebox{\linewidth}{!}{%
 \begin{tabular}{l|cccc|cccc|cccc}
@@ -9,14 +9,14 @@
 \multirow{2}{*}{Method} & \multicolumn{4}{c|}{TPC-H} & \multicolumn{4}{c|}{TPC-DS} & \multicolumn{4}{c|}{Synthetic} \\
  & 50th & 90th & 95th & Max & 50th & 90th & 95th & Max & 50th & 90th & 95th & Max \\
 \midrule
-AiMeetsAi & \cellcolor{green!14}1.15 & \cellcolor{green!24}1.53 & \cellcolor{green!24}1.58 & \cellcolor{green!14}2.82 & 2.57 & \cellcolor{green!14}11.28 & \cellcolor{green!14}11.84 & \cellcolor{green!14}12.24 & \cellcolor{green!24}1.48 & \cellcolor{green!24}2.69 & \cellcolor{green!24}3.37 & \cellcolor{green!24}13.35 \\
+AiMeetsAi & \cellcolor{green!14}1.15 & \cellcolor{green!24}1.53 & \cellcolor{green!24}1.58 & \cellcolor{green!14}2.82 & 2.57 & 11.28 & 11.84 & 12.24 & \cellcolor{green!24}1.48 & \cellcolor{green!24}2.69 & \cellcolor{green!24}3.37 & \cellcolor{green!24}13.35 \\
 Bao & 1.19 & 2.34 & 5.83 & 7.89 & \cellcolor{green!47}1.43 & \cellcolor{green!24}5.33 & \cellcolor{green!24}5.46 & \cellcolor{green!24}5.71 & 1.70 & 8.70 & 32.79 & 121.54 \\
 E2E-Cost & 6.44 & 27.92 & 38.99 & 52.78 & 25.27 & 95.56 & 103.26 & 121.53 & 1.68 & \cellcolor{green!14}3.97 & \cellcolor{green!14}6.03 & \cellcolor{green!14}24.17 \\
 QueryFormer & \cellcolor{green!24}1.12 & \cellcolor{green!14}2.06 & \cellcolor{green!14}2.10 & \cellcolor{green!24}2.59 & \cellcolor{green!14}1.78 & \cellcolor{green!35}5.31 & \cellcolor{green!35}5.39 & \cellcolor{green!35}5.63 & \cellcolor{green!14}1.59 & 6.66 & 10.63 & 55.58 \\
 \midrule
 PRICE+BERT-2 & \cellcolor{green!60}1.05 & \cellcolor{green!35}1.19 & \cellcolor{green!35}1.23 & \cellcolor{green!35}2.26 & \cellcolor{green!60}1.43 & \cellcolor{green!47}3.94 & \cellcolor{green!47}4.44 & \cellcolor{green!47}5.37 & \cellcolor{green!35}1.32 & \cellcolor{green!35}2.22 & \cellcolor{green!35}2.76 & \cellcolor{green!35}6.90 \\
 PRICE+BERT-4 & \cellcolor{green!47}1.06 & \cellcolor{green!60}1.17 & \cellcolor{green!60}1.19 & \cellcolor{green!60}2.18 & \cellcolor{green!24}1.66 & \cellcolor{green!60}2.37 & \cellcolor{green!60}2.48 & \cellcolor{green!60}2.80 & \cellcolor{green!47}1.18 & \cellcolor{green!47}1.60 & \cellcolor{green!47}1.83 & \cellcolor{green!60}4.75 \\
-PRICE+SentBERT & \cellcolor{green!35}1.06 & \cellcolor{green!47}1.19 & \cellcolor{green!47}1.21 & \cellcolor{green!47}2.19 & \cellcolor{green!35}1.64 & 12.03 & 13.11 & 14.66 & \cellcolor{green!60}1.17 & \cellcolor{green!60}1.53 & \cellcolor{green!60}1.73 & \cellcolor{green!47}4.87 \\
+PRICE+SentBERT & \cellcolor{green!35}1.06 & \cellcolor{green!47}1.19 & \cellcolor{green!47}1.21 & \cellcolor{green!47}2.19 & \cellcolor{green!35}1.59$^{r}$ & \cellcolor{green!14}6.21$^{r}$ & \cellcolor{green!14}7.34$^{r}$ & \cellcolor{green!14}7.57$^{r}$ & \cellcolor{green!60}1.17 & \cellcolor{green!60}1.53 & \cellcolor{green!60}1.73 & \cellcolor{green!47}4.87 \\
 \bottomrule
 \end{tabular}%
 }

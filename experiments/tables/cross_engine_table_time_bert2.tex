@@ -1,0 +1,20 @@
+% Requires \usepackage[table]{xcolor} (for \cellcolor) in the preamble.
+\begin{table*}[t]
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{l|cccc}
+\toprule
+Method & 50th & 90th & 95th & Max \\
+\midrule
+qf\_priceConcat & \cellcolor[rgb]{1.0,0.5,0.0}{2.67} & \cellcolor[rgb]{1.0,0.5,0.0}{20.73} & \cellcolor[rgb]{1.0,0.5,0.0}{43.26} & \cellcolor[rgb]{1.0,0.5,0.0}{333.42} \\
+\textbf{[JointPrice] google-bert\_uncased\_L-2\_H-256\_A-4\_quant-4-bit\_priceB\_randInit\_jointMLP} & \cellcolor[rgb]{0.0,0.650,0.0}{0.74} & \cellcolor[rgb]{0.0,0.650,0.0}{1.63} & \cellcolor[rgb]{0.0,0.475,0.0}{\color{white}2.19} & \cellcolor[rgb]{0.0,0.475,0.0}{\color{white}6.70} \\
+\textbf{[JointPrice] google-bert\_uncased\_L-2\_H-256\_A-4\_quant-4-bit\_priceN-or\_randInit\_frzEven999\_biCrossAttn\_cx4\_inflatePRICE\_jointMLP} & \cellcolor[rgb]{0.0,0.300,0.0}{\color{white}0.66} & \cellcolor[rgb]{0.0,0.475,0.0}{\color{white}1.53} & \cellcolor[rgb]{0.0,0.650,0.0}{2.24} & \cellcolor[rgb]{0.0,0.650,0.0}{6.83} \\
+\textbf{[JointPrice] google-bert\_uncased\_L-2\_H-256\_A-4\_quant-4-bit\_priceN-or\_randInit\_jointMLP} & \cellcolor[rgb]{0.0,0.475,0.0}{\color{white}0.73} & \cellcolor[rgb]{0.0,0.300,0.0}{\color{white}1.45} & \cellcolor[rgb]{0.0,0.300,0.0}{\color{white}2.02} & \cellcolor[rgb]{0.0,0.300,0.0}{\color{white}6.44} \\
+\textbf{google-bert\_uncased\_L-2\_H-256\_A-4\_quant-4-bit} & \cellcolor[rgb]{0.0,1.000,0.0}{0.89} & \cellcolor[rgb]{0.0,1.000,0.0}{3.96} & \cellcolor[rgb]{0.0,1.000,0.0}{8.51} & \cellcolor[rgb]{0.0,1.000,0.0}{73.17} \\
+\textbf{google-bert\_uncased\_L-2\_H-256\_A-4\_quant-4-bit\_jointMLP} & \cellcolor[rgb]{0.0,0.825,0.0}{0.88} & \cellcolor[rgb]{0.0,0.825,0.0}{2.44} & \cellcolor[rgb]{0.0,0.825,0.0}{3.42} & \cellcolor[rgb]{0.0,0.825,0.0}{17.36} \\
+\bottomrule
+\end{tabular}%
+}
+\caption{Averaged Relative Q-Error (time) --- bert2 $\cdot$ simple avg. Orange: qf\_priceConcat baseline; green: LLM (darkest = best per column); \textbf{bold}: beats qf\_priceConcat in $\geq$2 columns.}
+\label{tab:cross_engine_time_bert2}
+\end{table*}

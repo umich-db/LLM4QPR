@@ -296,7 +296,7 @@ def generate_table(db: str, datasets, task: str, results_dir: str,
     lines.append("\\bottomrule")
     lines.append("\\end{tabular}%")
     lines.append("}")
-    lines.append(f"\\caption{{Time Q-error on {db_display} ({group_names})}}")
+    lines.append(f"\\caption{{Q-Error of Cost Estimation on {db_display} ({group_names})}}")
     lines.append(f"\\label{{tab:overleaf_time_{db}_{'_'.join(datasets)}}}")
     lines.append("\\end{table*}")
 

@@ -192,6 +192,11 @@ def parse_args():
                         help="Concatenate a mode-7 PRICE/stats embedding before the baseline MLP "
                              "(algos qf/aimai/e2e_cost/bao). Reuses --price_model_path/--price_bin_size/"
                              "--price_n[_or]/--price_random_init.")
+    parser.add_argument("--baseline_price_cross", action="store_true",
+                        help="qf + PRICE via mode-12-style cross-attention: the QueryFormer token "
+                             "sequence cross-attends to the inflated priceN stats token (cx blocks, "
+                             "frzEvenAll), then cat([refined-qf-CLS, price]) -> MLP. qf only. Reuses "
+                             "--n_cross_layers (4) and --freeze_even_blocks_until_epoch (999=frzEvenAll).")
     parser.add_argument("--price_n_layers", type=int, default=6,
                         help="Number of transformer blocks per PRICE encoder (default 6, pretrained uses 6)")
     parser.add_argument("--price_n_embd", type=int, default=256,

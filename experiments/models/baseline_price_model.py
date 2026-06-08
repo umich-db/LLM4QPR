@@ -27,3 +27,43 @@ class BaselinePriceJointModel(nn.Module):
         num_clauses = price_feats.pop() if len(price_feats) == 7 else None
         price_emb, _, _ = self.price(*price_feats, num_clauses=num_clauses)
         return self.mlp(torch.cat([base_emb, price_emb], dim=1))
+
+
+class BaselinePriceCrossAttnModel(nn.Module):
+    """qf + PRICE via mode-12-style cross-attention (the cross-attn analog of
+    BaselinePriceJointModel). The QueryFormer token sequence (super-token + nodes)
+    cross-attends to the inflated priceN stats token through the embedder's cx
+    blocks (frzEvenAll: even PRICE<-qf blocks frozen, odd qf<-PRICE blocks trained),
+    exactly like LLMPriceJointModel but with qf tokens replacing the LLM tokens.
+    Final embedding: cat([refined-qf super-token, refined-price]) -> MLP.
+
+    base_encoder must accept forward(x, return_sequence=True) -> (tokens[B,S,H], mask[B,S]).
+    price_embedder is a cx>0 PRICEEmbedder built with llm_hidden_dim == base_emb_dim.
+    """
+    def __init__(self, base_encoder, price_embedder, base_emb_dim, hid_units,
+                 price_emb_dim=512):
+        super().__init__()
+        from trainer import Prediction
+        self.base_encoder = base_encoder
+        self.price = price_embedder
+        self.mlp = Prediction(base_emb_dim + price_emb_dim, hid_units)
+
+    def forward(self, base_input, price_feats):
+        # qf token sequence + node validity mask (the LLM-hidden-states analog).
+        qf_tokens, qf_mask = self.base_encoder(base_input, return_sequence=True)
+        qf_tokens = qf_tokens.float()
+        # See BaselinePriceJointModel: num_clauses (the optional 7th price-feat) MUST
+        # be passed as a keyword, else it leaks into the llm_hidden_states slot.
+        price_feats = list(price_feats)
+        num_clauses = price_feats.pop() if len(price_feats) == 7 else None
+        price_emb, updated_qf, _ = self.price(
+            *price_feats, llm_hidden_states=qf_tokens, llm_attention_mask=qf_mask,
+            num_clauses=num_clauses)
+        # Refined qf super-token (index 0). updated_qf is [B,S,H] when the odd
+        # (qf<-PRICE) blocks are active; falls back to the pre-cross-attn super-token
+        # if cross-attn produced nothing (e.g. all blocks frozen-at-zero).
+        if updated_qf is not None and updated_qf.dim() == 3:
+            qf_emb = updated_qf[:, 0, :]
+        else:
+            qf_emb = qf_tokens[:, 0, :]
+        return self.mlp(torch.cat([qf_emb, price_emb], dim=1))

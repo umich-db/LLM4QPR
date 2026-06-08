@@ -275,9 +275,9 @@ class QueryFormer(nn.Module):
             use_hist = use_hist, bin_number = bin_number, max_filters = max_filters)
 
     # original forward
-    def forward(self, batched_data):
+    def forward(self, batched_data, return_sequence=False):
         attn_bias, rel_pos, x = batched_data.attn_bias, batched_data.rel_pos, batched_data.x
-        heights = batched_data.heights  
+        heights = batched_data.heights
         additional_feature = batched_data.additional_feature  # Access additional_feature from the batch
         # print("x_size",x.size())
         n_batch, n_node = x.size()[:2]
@@ -348,6 +348,13 @@ class QueryFormer(nn.Module):
             output = enc_layer(output, tree_attn_bias)
         output = self.final_ln(output)
 
+        if return_sequence:
+            # Full token sequence [B, 1+max_node, H] (super-token at index 0) + a
+            # validity mask for cross-attn. The raw attn_bias super-token row is 0
+            # (finite) for real tokens and -inf for padded nodes (pad_attn_bias_
+            # unsqueeze fills the padded columns with -inf), so:
+            node_mask = (attn_bias[:, 0, :] > float('-inf')).float()   # [B, 1+max_node]
+            return output, node_mask
         return output[:,0,:]
 
 

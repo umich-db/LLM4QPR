@@ -217,6 +217,25 @@ if getattr(argsP, 'no_llm_residual', False) and argsP.algo == "llm_price_finetun
     print("[no_llm_residual] Rerouting algo: llm_price_finetune → price_finetune")
     argsP.algo = "price_finetune"
 
+if getattr(argsP, 'baseline_price_cross', False):
+    if argsP.algo != "qf":
+        raise SystemExit("--baseline_price_cross requires --algo qf (only QueryFormer "
+                         "produces a token sequence to cross-attend)")
+    if argsP.card:
+        raise SystemExit("--baseline_price_cross is time-only for now (no --card)")
+    if getattr(argsP, 'baseline_price_concat', False):
+        raise SystemExit("--baseline_price_cross and --baseline_price_concat are mutually exclusive")
+    # Tag result CSV + log stems with _priceCross so a cross-attn run never collides
+    # with the plain-baseline or the _priceConcat cell.
+    def _bpx_tag(p, tag="_priceCross"):
+        if not p:
+            return p
+        _stem, _ext = os.path.splitext(p)
+        return f"{_stem}{tag}{_ext}" if tag not in _stem else p
+    if getattr(argsP, 'output_dir_qerror', None):
+        argsP.output_dir_qerror = _bpx_tag(argsP.output_dir_qerror)
+    if getattr(argsP, 'log_file', None):
+        argsP.log_file = _bpx_tag(argsP.log_file)
 if getattr(argsP, 'baseline_price_concat', False):
     if argsP.algo not in ("qf", "aimai", "e2e_cost", "bao"):
         raise SystemExit("--baseline_price_concat requires --algo qf|aimai|e2e_cost|bao")
@@ -614,8 +633,8 @@ else:
 # features (aligned 1:1 to the baseline split) and rebuild the loaders so each
 # batch is (base_batch, price_batch). The base half still flows through the
 # baseline's own collate; the price half is the mode-7 PRICEEmbedder tuple.
-if (getattr(argsP, 'baseline_price_concat', False)
-        and argsP.algo in ("qf", "aimai", "e2e_cost")):
+if ((getattr(argsP, 'baseline_price_concat', False) and argsP.algo in ("qf", "aimai", "e2e_cost"))
+        or (getattr(argsP, 'baseline_price_cross', False) and argsP.algo == "qf")):
     from functools import partial as _bp_partial
     from torch.utils.data import DataLoader as _BPDataLoader
     from torch.utils.data import default_collate as _bp_default_collate
@@ -723,9 +742,44 @@ elif argsP.algo == "postgres":
 
 
 
+_baseline_price_cross = (getattr(argsP, 'baseline_price_cross', False)
+                         and argsP.algo == "qf")
 _baseline_price_concat = (getattr(argsP, 'baseline_price_concat', False)
                           and argsP.algo in ("qf", "aimai", "e2e_cost"))
-if _baseline_price_concat:
+if _baseline_price_cross:
+  # --baseline_price_cross: qf token sequence cross-attends to the priceN stats
+  # token via cx=4 frzEvenAll blocks (mode-12 analog), then cat([refined-qf-CLS,
+  # price]) -> MLP. Build a cx>0 PRICEEmbedder with llm_hidden_dim == qf hidden.
+  from price_embedder_factory import build_price_embedder
+  from models.baseline_price_model import BaselinePriceCrossAttnModel
+  from models.llm_price_model import PRICEEmbedder
+  from algorithms.queryformer.model import QueryFormer
+  input_dim = 393                                       # QueryFormer embed dim (qf token hidden)
+  n_cross = getattr(argsP, 'n_cross_layers', 4) or 4
+  _frz_even = getattr(argsP, 'freeze_even_blocks_until_epoch', 0) > 0
+  # Drive the factory to build the PRICE RegressionModel with query_hidden_dim ==
+  # input_dim (so PRICEEmbedder's cx>0 assert price_output_dim == llm_hidden_dim holds):
+  argsP.embed_size = input_dim
+  argsP.use_bi_cross_attention = True
+  argsP.inflate_price = True
+  argsP.n_cross_layers = n_cross
+  _, _, price_model = build_price_embedder(argsP, device, return_price_model=True)
+  price_embedder = PRICEEmbedder(
+      price_model, n_cross_layers=n_cross, llm_hidden_dim=input_dim,
+      n_heads=getattr(argsP, 'price_n_heads', 8),
+      dropout_rate=getattr(argsP, 'cross_attn_dropout', 0.1),
+      zero_init_even_blocks=_frz_even)
+  price_dim = price_embedder.price_output_dim
+  if _frz_even:                                         # frzEvenAll: freeze even (PRICE<-qf) blocks
+    for _p in price_embedder.even_layer_parameters():
+      _p.requires_grad = False
+  base_encoder = QueryFormer(emb_size=64, use_sample=True, use_hist=True)
+  model_comb = BaselinePriceCrossAttnModel(base_encoder, price_embedder, input_dim,
+                                           argsP.hid_units, price_emb_dim=price_dim)
+  model_comb.is_baseline_price_joint = True             # reuse the (base, price) tuple trainer path
+  print(f"[baseline_price_cross] qf: cx={n_cross} frzEven={_frz_even} | MLP input_dim = "
+        f"{input_dim} + {price_dim} = {input_dim + price_dim}")
+elif _baseline_price_concat:
   # --baseline_price_concat: concat a mode-7-style cx=0 PRICE embedding (512-dim)
   # onto the baseline encoder output before the prediction MLP, trained jointly.
   # Build the SAME base encoder the plain-baseline branch builds (so the encoder
@@ -1325,9 +1379,12 @@ if argsP.algo in ("aimai", "qf", "e2e_cost"):
         _stem = os.path.splitext(os.path.basename(_p))[0]
         _data_names.append(_stem[len(_prefix):] if _stem.startswith(_prefix) else _stem)
     _data_str = '-'.join(_data_names)
-    # --baseline_price_concat: a joint (base+PRICE) run has a different model
-    # architecture than the plain baseline, so it must NOT share the cache file.
-    _bp_tag = "_priceConcat" if getattr(argsP, 'baseline_price_concat', False) else ""
+    # --baseline_price_concat / --baseline_price_cross: a joint (base+PRICE) run has
+    # a different model architecture than the plain baseline (and from each other),
+    # so it must NOT share the cache file.
+    _bp_tag = ("_priceConcat" if getattr(argsP, 'baseline_price_concat', False)
+               else "_priceCross" if getattr(argsP, 'baseline_price_cross', False)
+               else "")
     _cache_name = f"{_data_str}_{_task_str}_{argsP.algo}_d{input_dim}_{argsP.train_ratio}_b{argsP.batch_size}_h{argsP.hid_units}_seed{argsP.seed}{_bp_tag}_model.pt"
     _cache_path = os.path.join(_cache_dir, _cache_name)
     if os.path.exists(_cache_path):

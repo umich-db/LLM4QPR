@@ -27,20 +27,21 @@ export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 DB="${DB:-postgres}"
 CX_LIST="${CX_LIST:-2 4}"
 MODELS="google/bert_uncased_L-2_H-256_A-4,google/bert_uncased_L-4_H-768_A-12,sentence-transformers/all-MiniLM-L12-v2"
-# Per-workload batch must MATCH the cx4 ablation so the cx2/cx4 ratio is at the
-# same batch: the ablation used b4 for tpch/tpcds (its 16 GB OOM guard) and b16 for
-# stats/job/job_full/syn. run_llm_time.sh has no per-workload override, so we split
-# into two batch groups (one run_different_llms call each).
-BATCH_GROUPS=("16:stats,job,job_full,syn" "4:tpch,tpcds")
+# Match the REAL experiment config: EFFECTIVE batch = 24 for every workload.
+#   tpch/tpcds        -> micro-batch 4, grad_accum 6  (4 x 6 = 24)
+#   stats/job/job_full/syn -> batch 24, grad_accum 1
+# run_llm_time.sh has no per-workload override, so we split into two groups (one
+# run_different_llms call each). Format: "<batch>:<accum>:<workloads>".
+BATCH_GROUPS=("24:1:stats,job,job_full,syn" "4:6:tpch,tpcds")
 
 for cx in $CX_LIST; do
     for grp in "${BATCH_GROUPS[@]}"; do
-        bs="${grp%%:*}"; wls="${grp#*:}"
+        bs="${grp%%:*}"; rest="${grp#*:}"; accum="${rest%%:*}"; wls="${rest#*:}"
         echo ""
         echo "############################################################"
-        echo "  LLM time profile | DB=$DB | n_cross_layers=$cx | batch=$bs | workloads=$wls | tr0.1 e1"
+        echo "  LLM time profile | DB=$DB | cx=$cx | batch=$bs x accum=$accum (eff $((bs*accum))) | workloads=$wls | tr0.1 e1"
         echo "############################################################"
-        TRAIN_RATIO=0.1 FT_BATCH_SIZE="$bs" FT_NUM_EPOCH=1 \
+        TRAIN_RATIO=0.1 FT_BATCH_SIZE="$bs" GRAD_ACCUM_STEPS="$accum" FT_NUM_EPOCH=1 \
         bash experiment_scripts/run_different_llms.sh \
             --models "$MODELS" --task time --downstream mlp --quantification 4-bit \
             --bucketize None --embed_size 1000 --concat_true false \

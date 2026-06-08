@@ -3875,6 +3875,9 @@ def _load_price_embedder(argsP, max_njc, max_nfo, max_ntb, max_nfc, device):
     # so the inference loader picks the correct artifact for argsP.seed.
     seed_suffix = (f"_seed{int(argsP.seed)}"
                    if getattr(argsP, 'seed', None) is not None else "")
+    # Subdir component (e.g. "/model_selection") — must match train.py's _GSUB on the
+    # SAVE side, else the inference phase loads PRICE weights from the wrong directory.
+    _gsub = f"/{argsP.subdir_tag}" if getattr(argsP, 'subdir_tag', '') else ""
     # Helper: load checkpoint into model with partial init for size-mismatched weights.
     # For PRICE_M, filter_embeddings.weight changes from [n_embd,43] to [n_embd,61];
     # copies the overlapping columns (histogram bins) and leaves the rest randomly initialized.
@@ -3900,13 +3903,13 @@ def _load_price_embedder(argsP, max_njc, max_nfo, max_ntb, max_nfc, device):
         _partial_init_load(price_embedder, price_sd, f"Loaded pretrained PRICE weights from {argsP.price_model_path}")
     elif source == "separate":
         # Load PRICE weights finetuned separately on cardinality
-        price_weight_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_card_b{ft_bs}{price_path_suffix}{rand_init_suffix}{epoch_suffix}_price_separate.pt"
+        price_weight_path = f"finetuned_models/{argsP.db}{_gsub}/{argsP.canonical_wl_prefix}_card_b{ft_bs}{price_path_suffix}{rand_init_suffix}{epoch_suffix}_price_separate.pt"
         price_sd = torch.load(price_weight_path, map_location=device)
         _partial_init_load(price_embedder, price_sd, f"Loaded separately finetuned PRICE weights from {price_weight_path}")
     elif source == "joint":
         # Load PRICE weights from joint LLM+PRICE finetuning
         task_str = "card" if argsP.card else "time"
-        price_weight_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_path_suffix}_llm_price{arch_path_suffix}{rand_init_suffix}{epoch_suffix}{seed_suffix}_price.pt"
+        price_weight_path = f"finetuned_models/{argsP.db}{_gsub}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_path_suffix}_llm_price{arch_path_suffix}{rand_init_suffix}{epoch_suffix}{seed_suffix}_price.pt"
         # Stash for QRT side-loader in _compute_combined_for_dat_path.
         argsP._last_price_weight_path = price_weight_path
         price_sd = torch.load(price_weight_path, map_location=device)
@@ -3914,26 +3917,26 @@ def _load_price_embedder(argsP, max_njc, max_nfo, max_ntb, max_nfc, device):
     elif source == "frozen_joint":
         # Load PRICE weights finetuned with frozen LLM (llm_mode=inference)
         task_str = "card" if argsP.card else "time"
-        price_weight_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_inference_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_path_suffix}_llm_price{arch_path_suffix}{rand_init_suffix}{epoch_suffix}{seed_suffix}_price.pt"
+        price_weight_path = f"finetuned_models/{argsP.db}{_gsub}/{argsP.canonical_wl_prefix}_{task_str}_inference_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_path_suffix}_llm_price{arch_path_suffix}{rand_init_suffix}{epoch_suffix}{seed_suffix}_price.pt"
         price_sd = torch.load(price_weight_path, map_location=device)
         _partial_init_load(price_embedder, price_sd, f"Loaded frozen-joint finetuned PRICE weights from {price_weight_path}")
     elif source == "joint_frozen_init":
         # Load PRICE weights from joint finetuning that started from frozen-joint init
         task_str = "card" if argsP.card else "time"
-        price_weight_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_path_suffix}_llm_price{arch_path_suffix}{rand_init_suffix}{epoch_suffix}{seed_suffix}_price.pt"
+        price_weight_path = f"finetuned_models/{argsP.db}{_gsub}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_path_suffix}_llm_price{arch_path_suffix}{rand_init_suffix}{epoch_suffix}{seed_suffix}_price.pt"
         price_sd = torch.load(price_weight_path, map_location=device)
         _partial_init_load(price_embedder, price_sd, f"Loaded frozen-init jointly finetuned PRICE weights from {price_weight_path}")
     elif source == "gated_joint":
         # Load PRICE weights from gated joint finetuning
         task_str = "card" if argsP.card else "time"
-        price_weight_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_path_suffix}_llm_price{arch_path_suffix}{rand_init_suffix}{epoch_suffix}{seed_suffix}_price.pt"
+        price_weight_path = f"finetuned_models/{argsP.db}{_gsub}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_path_suffix}_llm_price{arch_path_suffix}{rand_init_suffix}{epoch_suffix}{seed_suffix}_price.pt"
         price_sd = torch.load(price_weight_path, map_location=device)
         _partial_init_load(price_embedder, price_sd, f"Loaded gated jointly finetuned PRICE weights from {price_weight_path}")
     elif source == "cross_attn_joint":
         # Load PRICE weights from cross-attention joint finetuning
         # These are CrossAttentionPRICEEmbedder weights (includes llm_proj + cross_attn_blocks)
         task_str = "card" if argsP.card else "time"
-        price_weight_path = f"finetuned_models/{argsP.db}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_path_suffix}_llm_price{arch_path_suffix}{rand_init_suffix}{epoch_suffix}{seed_suffix}_price.pt"
+        price_weight_path = f"finetuned_models/{argsP.db}{_gsub}/{argsP.canonical_wl_prefix}_{task_str}_{argsP.llm_pretrained}_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_path_suffix}_llm_price{arch_path_suffix}{rand_init_suffix}{epoch_suffix}{seed_suffix}_price.pt"
         price_sd = torch.load(price_weight_path, map_location=device)
         # Build a CrossAttentionPRICEEmbedder instead of plain PRICEEmbedder
         from models.llm_price_model import CrossAttentionPRICEEmbedder

@@ -27,7 +27,7 @@ export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 DB="${DB:-postgres}"
 CX_LIST="${CX_LIST:-2 4}"
 MODELS="google/bert_uncased_L-2_H-256_A-4,google/bert_uncased_L-4_H-768_A-12,sentence-transformers/all-MiniLM-L12-v2"
-WORKLOADS="stats tpch tpcds job job_full syn"   # train: stats/tpch/tpcds/job(imdb); test: all 6
+WORKLOADS="stats,tpch,tpcds,job,job_full,syn"   # comma-separated (run_different_llms splits on commas); train: stats/tpch/tpcds/job(imdb), test: all 6
 
 for cx in $CX_LIST; do
     echo ""

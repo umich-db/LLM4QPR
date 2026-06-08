@@ -27,12 +27,10 @@ export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 DB="${DB:-postgres}"
 CX_LIST="${CX_LIST:-2 4}"
 MODELS="google/bert_uncased_L-2_H-256_A-4,google/bert_uncased_L-4_H-768_A-12,sentence-transformers/all-MiniLM-L12-v2"
-# Match the REAL experiment config: EFFECTIVE batch = 24 for every workload.
-#   tpch/tpcds        -> micro-batch 4, grad_accum 6  (4 x 6 = 24)
-#   stats/job/job_full/syn -> batch 24, grad_accum 1
-# run_llm_time.sh has no per-workload override, so we split into two groups (one
-# run_different_llms call each). Format: "<batch>:<accum>:<workloads>".
-BATCH_GROUPS=("24:1:stats,job,job_full,syn" "4:6:tpch,tpcds")
+# Uniform batch 24 for all workloads (effective batch 24, no accumulation). The H100
+# has ample memory, so the tpch/tpcds b4 OOM-guard from the 16 GB runs isn't needed.
+# Format: "<batch>:<accum>:<workloads>".
+BATCH_GROUPS=("24:1:stats,tpch,tpcds,job,job_full,syn")
 
 for cx in $CX_LIST; do
     for grp in "${BATCH_GROUPS[@]}"; do

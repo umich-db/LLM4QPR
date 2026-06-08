@@ -27,22 +27,29 @@ export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 DB="${DB:-postgres}"
 CX_LIST="${CX_LIST:-2 4}"
 MODELS="google/bert_uncased_L-2_H-256_A-4,google/bert_uncased_L-4_H-768_A-12,sentence-transformers/all-MiniLM-L12-v2"
-WORKLOADS="stats,tpch,tpcds,job,job_full,syn"   # comma-separated (run_different_llms splits on commas); train: stats/tpch/tpcds/job(imdb), test: all 6
+# Per-workload batch must MATCH the cx4 ablation so the cx2/cx4 ratio is at the
+# same batch: the ablation used b4 for tpch/tpcds (its 16 GB OOM guard) and b16 for
+# stats/job/job_full/syn. run_llm_time.sh has no per-workload override, so we split
+# into two batch groups (one run_different_llms call each).
+BATCH_GROUPS=("16:stats,job,job_full,syn" "4:tpch,tpcds")
 
 for cx in $CX_LIST; do
-    echo ""
-    echo "############################################################"
-    echo "  LLM time profile | DB=$DB | n_cross_layers=$cx | tr0.1 e1"
-    echo "############################################################"
-    TRAIN_RATIO=0.1 FT_BATCH_SIZE=16 FT_NUM_EPOCH=1 \
-    bash experiment_scripts/run_different_llms.sh \
-        --models "$MODELS" --task time --downstream mlp --quantification 4-bit \
-        --bucketize None --embed_size 1000 --concat_true false \
-        --ft_batch_size 16 --ft_num_epoch 1 --removed_fields "" --seeds 42 --db "$DB" \
-        --price_s --price_random_init --inflate_price --n_cross_layers "$cx" \
-        --checkpoint_interval 0 --freeze_llm_until_epoch 4 --price_warmup_epochs 4 \
-        --subdir_tag cx_profile --workloads "$WORKLOADS" \
-        --finetune_mode 12 --finetune_method lora
+    for grp in "${BATCH_GROUPS[@]}"; do
+        bs="${grp%%:*}"; wls="${grp#*:}"
+        echo ""
+        echo "############################################################"
+        echo "  LLM time profile | DB=$DB | n_cross_layers=$cx | batch=$bs | workloads=$wls | tr0.1 e1"
+        echo "############################################################"
+        TRAIN_RATIO=0.1 FT_BATCH_SIZE="$bs" FT_NUM_EPOCH=1 \
+        bash experiment_scripts/run_different_llms.sh \
+            --models "$MODELS" --task time --downstream mlp --quantification 4-bit \
+            --bucketize None --embed_size 1000 --concat_true false \
+            --ft_batch_size "$bs" --ft_num_epoch 1 --removed_fields "" --seeds 42 --db "$DB" \
+            --price_s --price_random_init --inflate_price --n_cross_layers "$cx" \
+            --checkpoint_interval 0 --freeze_llm_until_epoch 4 --price_warmup_epochs 4 \
+            --subdir_tag cx_profile --workloads "$wls" \
+            --finetune_mode 12 --finetune_method lora
+    done
 done
 
 echo ""

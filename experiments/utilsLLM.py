@@ -3374,7 +3374,29 @@ def get_embeddings(predictor, ds_info, dat_path, argsP, batch_size=1, normalize_
     if argsP.algo == "llm_price":
         _pflags = _price_flags_cache_tag(argsP)
         _cx = getattr(argsP, 'n_cross_layers', 0)
-        _combined_tag = f"_combined-{_pflags}_cx{_cx}" if _pflags else f"_combined_cx{_cx}"
+        # The combined embedding is the post-cross-attn output of the LOADED finetuned
+        # weights, so the cache key must encode EVERY flag that changes those weights,
+        # else two finetune variants collide on one cache (e.g. frzEven999 vs frzLLM5,
+        # or cx2 vs cx4). cx is below; model/seed/ft_num_epoch are already in cache_file.
+        # Add: the freeze schedule (frzEven/Odd/All/LLM), inflate, random-init, warmup.
+        _arch = []
+        if getattr(argsP, 'inflate_price', False):
+            _arch.append("inflate")
+        if getattr(argsP, 'price_random_init', False):
+            _arch.append("randInit")
+        for _fk, _tok in (("freeze_llm_until_epoch", "frzLLM"),
+                          ("freeze_odd_blocks_until_epoch", "frzOdd"),
+                          ("freeze_all_blocks_until_epoch", "frzAll"),
+                          ("freeze_even_blocks_until_epoch", "frzEven")):
+            _v = int(getattr(argsP, _fk, 0) or 0)
+            if _v > 0:
+                _arch.append(f"{_tok}{_v}")
+        _pwm = int(getattr(argsP, 'price_warmup_epochs', 0) or 0)
+        if _pwm > 0:
+            _arch.append(f"pwm{_pwm}")
+        _arch_tag = ("-" + "-".join(_arch)) if _arch else ""
+        _combined_tag = (f"_combined-{_pflags}_cx{_cx}{_arch_tag}" if _pflags
+                         else f"_combined_cx{_cx}{_arch_tag}")
         combined_cache_file = cache_file.replace(".csv", f"{_combined_tag}.csv")
         combined_cache_path = os.path.join(cache_dir, combined_cache_file)
 

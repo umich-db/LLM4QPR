@@ -1474,6 +1474,19 @@ elif _baseline_cached:
     training_time = 0.0
     argsP.main_logger.info(f"[Train] Skipped training (loaded from cache)")
 else:
+    # retrainMLP inference phase (the fresh MLP trained on the cached post-cross-attn
+    # combined embeddings): default to early stopping on val p90 — patience 5, first
+    # allowed after epoch 20 — unless the user set it explicitly. The joint finetune
+    # (--llm_mode lora) is unaffected.
+    if (getattr(argsP, 'llm_mode', '') == 'inference'
+            and not getattr(argsP, 'no_retrain_mlp_at_inference', False)):
+        if not int(getattr(argsP, 'early_stop_patience', 0) or 0):
+            argsP.early_stop_patience = 5
+        if not int(getattr(argsP, 'early_stop_after_epoch', 0) or 0):
+            argsP.early_stop_after_epoch = 20
+        argsP.main_logger.info(
+            f"[retrainMLP] early stop: patience={argsP.early_stop_patience} "
+            f"after_epoch={argsP.early_stop_after_epoch}")
     training_start = timer()
     trained_model = train(model_comb, train_loader, val_loader, ds_info, argsP, crit=crit,
                           optimizer=price_finetune_optimizer, scheduler=price_finetune_scheduler,

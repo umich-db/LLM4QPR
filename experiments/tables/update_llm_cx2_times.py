@@ -34,7 +34,7 @@ with open(os.path.join(here, "train_infer_times.csv"), "w", newline="") as fo:
     for db in SYS:
         for m in ORDER:
             t, i = get(db, m)
-            note = ("baseline_pg_fallback" if (m in BASELINES and base_flag[(db, m)])
+            note = ("bao_train_uncapped" if (m in BASELINES and base_flag[(db, m)])
                     else f"llm_cx2=cx4x{RATIO_TRAIN}tr/{RATIO_INFER}inf" if m not in BASELINES else "")
             w.writerow([db, m, "" if t is None else f"{t:.2f}", "" if i is None else f"{i:.3f}", note])
 

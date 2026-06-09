@@ -77,7 +77,12 @@ def cells(log):
 
 # model token from a log path
 def tok(p): return re.search(r"h2048_(.+?)_quant-4-bit", p).group(1)
-logs={tok(p):p for p in glob.glob(f"{ZIP}/*finetune*_quant-4-bit_priceS_inflatePRICE_randInit_cx4_frzLLM4_pwm4_e16_seed42.log") if "inference" not in p}
+logs={}
+for p in glob.glob(f"{ZIP}/*finetune*_quant-4-bit_priceS_inflatePRICE_randInit_cx4_frzLLM4_pwm4_e16_seed42.log"):
+    if "inference" in p: continue
+    t=tok(p); mx=max(parse2(p)["train"] or [-1])
+    if t not in logs or mx > logs[t][0]: logs[t]=(mx,p)
+logs={t:p for t,(mx,p) in logs.items()}
 print("model logs found:", len(logs))
 
 rows=list(csv.reader(open(CSV))); hdr=rows[0]; idx={h:i for i,h in enumerate(hdr)}

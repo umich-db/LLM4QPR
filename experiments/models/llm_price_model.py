@@ -535,9 +535,16 @@ class LLMPriceJointModel(nn.Module):
             num_clauses = x.pop()
         texts, price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col = x
 
-        # When cross-attn is enabled, the embedder needs LLM hidden states.
-        # Otherwise (mode 7 / cx=0), use the cheaper LLM forward.
-        pooled_emb, hidden_states, attn_mask, per_window = self._llm_forward(texts)
+        # Frozen-LLM path (--freeze_llm, llm=None): the collate hands us
+        # pre-computed pooled embeddings instead of raw text, so there is no
+        # LLM forward. Cross-attn is impossible here (no token sequence) —
+        # train.py validates that combination away.
+        if isinstance(texts, torch.Tensor):
+            pooled_emb, hidden_states, attn_mask, per_window = texts, None, None, None
+        else:
+            # When cross-attn is enabled, the embedder needs LLM hidden states.
+            # Otherwise (mode 7 / cx=0), use the cheaper LLM forward.
+            pooled_emb, hidden_states, attn_mask, per_window = self._llm_forward(texts)
         if pooled_emb.dtype != torch.float32:
             pooled_emb = pooled_emb.float()
 
@@ -598,7 +605,11 @@ class LLMPriceJointModel(nn.Module):
         if len(x) == 8:
             num_clauses = x.pop()
         texts, price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col = x
-        pooled_emb, hidden_states, attn_mask, per_window = self._llm_forward(texts)
+        if isinstance(texts, torch.Tensor):
+            # Frozen-LLM path: pre-computed pooled embeddings (see forward()).
+            pooled_emb, hidden_states, attn_mask, per_window = texts, None, None, None
+        else:
+            pooled_emb, hidden_states, attn_mask, per_window = self._llm_forward(texts)
         if pooled_emb.dtype != torch.float32:
             pooled_emb = pooled_emb.float()
         r_qry, r_mask = (None, None)
@@ -644,65 +655,6 @@ class GatedLLMPriceJointModel(nn.Module):
         )
         gated_price_emb = self.gate(llm_emb) * price_emb
         combined = torch.cat([llm_emb, gated_price_emb], dim=1)
-        return self.mlp(combined)
-
-
-class FrozenLLMPriceModel(nn.Module):
-    """
-    Model for finetuning PRICE+MLP with pre-computed (frozen) LLM embeddings.
-
-    Unlike LLMPriceJointModel, this model does NOT contain the LLM.
-    The forward method receives pre-computed LLM embeddings as tensors
-    instead of raw text, so no LLM forward pass occurs during training.
-
-    The forward method receives a tuple:
-      (llm_embeddings, price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col)
-    """
-
-    def __init__(self, price_embedder, llm_embed_size, price_embed_size, hid_units):
-        """
-        Args:
-            price_embedder: PRICEEmbedder instance
-            llm_embed_size: LLM hidden dim (must match pre-computed embeddings)
-            price_embed_size: legacy default; ignored if price_embedder.price_output_dim is set
-            hid_units: MLP hidden dimension
-        """
-        super().__init__()
-        self.price = price_embedder
-        # Read PRICE output dim from embedder; fall back to legacy arg
-        # (matches LLMPriceJointModel so the MLP dim agrees with the embedder).
-        _pod = getattr(price_embedder, 'price_output_dim', price_embed_size)
-        combined_dim = llm_embed_size + _pod
-        from trainer import Prediction
-        self.mlp = Prediction(combined_dim, hid_units)
-
-    def forward(self, x):
-        """
-        Args:
-            x: tuple of (llm_emb, price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col)
-               + optional num_clauses (torch.LongTensor) under --price_n_or.
-               llm_emb: [B, D_llm] pre-computed LLM embeddings (tensor)
-
-        Returns:
-            prediction: [B, 1]
-        """
-        num_clauses = None
-        x = list(x)
-        if len(x) == 8:
-            num_clauses = x.pop()
-        llm_emb, price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col = x
-
-        if llm_emb.dtype != torch.float32:
-            llm_emb = llm_emb.float()
-
-        # PRICE embedding (PRICEEmbedder now always returns 3-tuple).
-        price_emb, _, _ = self.price(
-            price_features, padding_mask, n_join_col, n_fanout, n_table, n_filter_col,
-            num_clauses=num_clauses,
-        )
-
-        # Concatenate and predict
-        combined = torch.cat([llm_emb, price_emb], dim=1)
         return self.mlp(combined)
 
 

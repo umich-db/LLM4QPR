@@ -450,12 +450,23 @@ def llm_collate(batch):
     ).unsqueeze(1)
     return list(texts), costs_tensor
 
+def _batch_llm_inputs(texts):
+    """Batch the LLMPriceDataset 'texts' column. Raw text (the normal joint
+    finetune) stays a list for the LLM tokenizer; pre-computed pooled
+    embeddings (--freeze_llm stores tensors in the same slot) are stacked so
+    LLMPriceJointModel.forward sees a [B, D] tensor and skips the LLM."""
+    if isinstance(texts[0], torch.Tensor):
+        return torch.stack(texts).float().to(device)
+    return list(texts)
+
+
 def llm_price_collate(batch):
     """Collate function for LLMPriceDataset.
-    Each item: (text, price_feat, pad_mask, njc, nfo, ntb, nfc, [residual_text,] label)
-    Returns: ((texts, price_feats, pad_masks, njcs, nfos, ntbs, nfcs, [residual_texts]), labels_tensor)
+    Each item: (text_or_emb, price_feat, pad_mask, njc, nfo, ntb, nfc, [residual_text,] label)
+    Returns: ((texts_or_embs, price_feats, pad_masks, njcs, nfos, ntbs, nfcs, [residual_texts]), labels_tensor)
     The residual_texts tail tuple is only present when the dataset was built
     with --use_qrt_cross_attn (i.e., residual_texts was passed to LLMPriceDataset).
+    Under --freeze_llm the first slot holds pre-computed embedding tensors.
     """
     # Detect presence of residual_text by item length: base is 8 (incl. label),
     # +1 when residual_text is included.
@@ -472,7 +483,7 @@ def llm_price_collate(batch):
     nfos = torch.tensor(nfo, dtype=torch.float32, device=device).unsqueeze(1)
     ntbs = torch.tensor(ntb, dtype=torch.float32, device=device).unsqueeze(1)
     nfcs = torch.tensor(nfc, dtype=torch.float32, device=device).unsqueeze(1)
-    base = (list(texts), price_feats, pad_masks, njcs, nfos, ntbs, nfcs)
+    base = (_batch_llm_inputs(texts), price_feats, pad_masks, njcs, nfos, ntbs, nfcs)
     if has_residual:
         base = base + (list(rtxt),)
     return base, labels_tensor
@@ -511,7 +522,7 @@ def llm_price_or_collate(batch):
     if pad_masks.dim() == 3:
         bsz, max_c, mask_len = pad_masks.shape
         pad_masks = pad_masks.view(bsz * max_c, mask_len)
-    base = (list(texts), price_feats, pad_masks, njcs, nfos, ntbs, nfcs, num_clauses)
+    base = (_batch_llm_inputs(texts), price_feats, pad_masks, njcs, nfos, ntbs, nfcs, num_clauses)
     if has_residual:
         base = base + (list(rtxt),)
     return base, labels_tensor
@@ -555,49 +566,6 @@ def price_or_collate(batch):
     return (price_feats, pg_est_cards, pad_masks, njcs, nfos, ntbs, nfcs, num_clauses), labels_tensor
 
 
-def frozen_llm_price_collate(batch):
-    """Collate function for FrozenLLMPriceDataset.
-    Each item: (llm_emb, price_feat, pad_mask, njc, nfo, ntb, nfc, label)
-    Returns: ((llm_embs, price_feats, pad_masks, njcs, nfos, ntbs, nfcs), labels_tensor)
-    """
-    llm_embs, pf, pm, njc, nfo, ntb, nfc, labels = zip(*batch)
-    labels_tensor = torch.tensor(labels, dtype=torch.float32, device=device).unsqueeze(1)
-    llm_embs_tensor = torch.stack([e if isinstance(e, torch.Tensor) else torch.tensor(e, dtype=torch.float32) for e in llm_embs]).float().to(device)
-    price_feats = torch.stack([f if isinstance(f, torch.Tensor) else torch.tensor(f, dtype=torch.float32) for f in pf]).float().to(device)
-    pad_masks = torch.stack([m if isinstance(m, torch.Tensor) else torch.tensor(m) for m in pm]).float().to(device)
-    njcs = torch.tensor(njc, dtype=torch.float32, device=device).unsqueeze(1)
-    nfos = torch.tensor(nfo, dtype=torch.float32, device=device).unsqueeze(1)
-    ntbs = torch.tensor(ntb, dtype=torch.float32, device=device).unsqueeze(1)
-    nfcs = torch.tensor(nfc, dtype=torch.float32, device=device).unsqueeze(1)
-    return (llm_embs_tensor, price_feats, pad_masks, njcs, nfos, ntbs, nfcs), labels_tensor
-
-
-def frozen_llm_price_or_collate(batch):
-    """Collate function for FrozenLLMPriceDataset under --price_n_or (multi-clause DNF).
-    Each item: (llm_emb, price_feat, pad_mask, njc, nfo, ntb, nfc, num_clauses_i, label)
-        where price_feat has shape (max_clauses, flat_size) and pad_mask matches —
-        the dataset stores per-query packed tensors (same layout as llm_price_or_collate).
-    Returns: ((llm_embs, price_feats, pad_masks, njcs, nfos, ntbs, nfcs, num_clauses), labels_tensor)
-        with price_feats/pad_masks flattened to (batch * max_clauses, *).
-    """
-    llm_embs, pf, pm, njc, nfo, ntb, nfc, nc, labels = zip(*batch)
-    labels_tensor = torch.tensor(labels, dtype=torch.float32, device=device).unsqueeze(1)
-    llm_embs_tensor = torch.stack([e if isinstance(e, torch.Tensor) else torch.tensor(e, dtype=torch.float32) for e in llm_embs]).float().to(device)
-    price_feats = torch.stack([f if isinstance(f, torch.Tensor) else torch.tensor(f, dtype=torch.float32) for f in pf]).float().to(device)
-    pad_masks = torch.stack([m if isinstance(m, torch.Tensor) else torch.tensor(m) for m in pm]).float().to(device)
-    njcs = torch.tensor(njc, dtype=torch.float32, device=device).unsqueeze(1)
-    nfos = torch.tensor(nfo, dtype=torch.float32, device=device).unsqueeze(1)
-    ntbs = torch.tensor(ntb, dtype=torch.float32, device=device).unsqueeze(1)
-    nfcs = torch.tensor(nfc, dtype=torch.float32, device=device).unsqueeze(1)
-    num_clauses = torch.tensor(nc, dtype=torch.long, device=device)
-    if price_feats.dim() == 3:
-        bsz, max_c, flat_size = price_feats.shape
-        price_feats = price_feats.view(bsz * max_c, flat_size)
-    if pad_masks.dim() == 3:
-        bsz, max_c, mask_len = pad_masks.shape
-        pad_masks = pad_masks.view(bsz * max_c, mask_len)
-    return (llm_embs_tensor, price_feats, pad_masks, njcs, nfos, ntbs, nfcs, num_clauses), labels_tensor
-
 if argsP.algo == "price_finetune":
   from utilsLLM import get_price_only_ds_from_csv
   ds, val_ds, test_ds, val_costs, test_costs = get_price_only_ds_from_csv(
@@ -625,10 +593,10 @@ elif argsP.algo == "llm_price_finetune" and getattr(argsP, 'freeze_llm', False):
       LLM, dat_paths_train_list, dat_path_test, dat_dict['ds_info'], argsP
   )
   ds_info = dat_dict['ds_info']
-  # Under --price_n_or the dataset emits 9-tuples with num_clauses_i for the
-  # OR-Transformer's multi-clause path (mirrors _llm_price_active_collate below).
-  _frozen_collate = (frozen_llm_price_or_collate if getattr(argsP, 'price_n_or', False)
-                     else frozen_llm_price_collate)
+  # Same collates as the live joint finetune: the dataset's first column holds
+  # embedding tensors instead of text, which _batch_llm_inputs stacks to [B, D].
+  _frozen_collate = (llm_price_or_collate if getattr(argsP, 'price_n_or', False)
+                     else llm_price_collate)
   train_loader = DataLoader(dataset=ds, batch_size=argsP.batch_size, shuffle=True,
                             collate_fn=_frozen_collate,
                             generator=torch.Generator().manual_seed(argsP.seed))
@@ -909,7 +877,7 @@ elif argsP.algo == "llm_price_finetune":
   if _price_root not in _sys.path:
       _sys.path.insert(0, _price_root)
   from model.encoder import RegressionModel
-  from models.llm_price_model import PRICEEmbedder, LLMPriceJointModel, GatedLLMPriceJointModel, FrozenLLMPriceModel, CrossAttentionPRICEEmbedder, CrossAttentionLLMPriceModel, BiCrossAttentionPRICEEmbedder, BiCrossAttentionLLMPriceModel, ReverseCrossAttentionPRICEEmbedder, ReverseCrossAttentionLLMPriceModel, InflatedBiCrossAttentionPRICEEmbedder, InflatedBiCrossAttentionLLMPriceModel
+  from models.llm_price_model import PRICEEmbedder, LLMPriceJointModel, GatedLLMPriceJointModel, CrossAttentionPRICEEmbedder, CrossAttentionLLMPriceModel, BiCrossAttentionPRICEEmbedder, BiCrossAttentionLLMPriceModel, ReverseCrossAttentionPRICEEmbedder, ReverseCrossAttentionLLMPriceModel, InflatedBiCrossAttentionPRICEEmbedder, InflatedBiCrossAttentionLLMPriceModel
 
   # --no_llm_residual: skip LLM/fusion components; build a PRICE-only model
   # (mirrors the price_finetune branch) and reroute algo so the rest of the
@@ -982,9 +950,12 @@ elif argsP.algo == "llm_price_finetune":
 
     if getattr(argsP, 'freeze_llm', False):
       # Frozen LLM path: model has no LLM, uses pre-computed embeddings
-      model_comb = FrozenLLMPriceModel(price_embedder, argsP.embed_size, 512, argsP.hid_units)
+      # Same joint model as mode 7, just with no LLM inside: llm=None and the
+      # collate feeds pre-computed pooled embeddings, so forward() skips the
+      # LLM entirely. State-dict layout (price.*/mlp.*) is unchanged.
+      model_comb = LLMPriceJointModel(None, price_embedder, argsP.embed_size, 512, argsP.hid_units)
       n_trainable = sum(1 for p in model_comb.parameters() if p.requires_grad)
-      print(f"[freeze_llm] Using FrozenLLMPriceModel with pre-computed LLM embeddings. {n_trainable} trainable parameter tensors (PRICE + MLP).")
+      print(f"[freeze_llm] Using LLMPriceJointModel(llm=None) with pre-computed LLM embeddings. {n_trainable} trainable parameter tensors (PRICE + MLP).")
     elif getattr(argsP, 'use_cross_attention', False):
       # Cross-attention path: PRICE tokens attend to LLM hidden states
       n_cross = getattr(argsP, 'n_cross_layers', 2)

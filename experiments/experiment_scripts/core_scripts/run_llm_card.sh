@@ -163,6 +163,10 @@ setup_args_and_suffixes() {
   QUANTIFICATION_ARG=""
   QUANTIFICATION_SUFFIX=""
   EMBEDDINGS_ARG=""
+  EMBED_BS_ARG=""
+  if [[ -n "${EMBED_BATCH_SIZE:-}" ]]; then
+    EMBED_BS_ARG="--embed_batch_size $EMBED_BATCH_SIZE"
+  fi
   VERBOSE_ARG=""
   DOWNSTREAM_ARG=""
   DOWNSTREAM_SUFFIX=""
@@ -303,7 +307,8 @@ if [ "$finetune" == "False" ]; then
                                       $CONCAT_TRUE_ARG \
                                       $STATS_ARGS \
                                       $PRICE_M_ARG $PRICE_S_ARG $PRICE_B_ARG \
-                                      $MAX_QUERIES_ARG
+                                      $MAX_QUERIES_ARG \
+                                      $EMBED_BS_ARG
 fi
 
 if [ "$finetune" == "True" ]; then

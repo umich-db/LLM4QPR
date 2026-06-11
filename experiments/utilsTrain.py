@@ -43,6 +43,10 @@ def parse_args():
     parser.add_argument("--mlp_init_weight", type=int, default=5000, help="Initial weight for the last layer of MLP")
     parser.add_argument("--learning_rate", type=float, default=1e-4)
     parser.add_argument("--batch_size", type=int, default=102)
+    parser.add_argument("--embed_batch_size", type=int, default=16,
+                        help="LLM forward batch size for embedding-cache generation "
+                             "(get_embeddings). Drop to 1 for big decoders whose plans "
+                             "are one long sequence (e.g. Llama-3.1-8B on tpcds).")
     parser.add_argument("--hid_units", type=int, default=256)
     # parser.add_argument("--num_epoch", type=int, default=2)
     parser.add_argument("--num_epoch", type=int, default=200)

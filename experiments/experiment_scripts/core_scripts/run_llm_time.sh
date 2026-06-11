@@ -377,6 +377,10 @@ if [[ -n "${EARLY_STOP_PATIENCE:-}" ]] && [[ "$EARLY_STOP_PATIENCE" -gt 0 ]]; th
   fi
 fi
 
+EMBED_BS_ARG=""
+if [[ -n "${EMBED_BATCH_SIZE:-}" ]]; then
+  EMBED_BS_ARG="--embed_batch_size $EMBED_BATCH_SIZE"
+fi
 FREEZE_LLM_ARG=""
 FREEZE_LLM_SUFFIX=""
 if [[ -n "${FREEZE_LLM_UNTIL_EPOCH:-}" ]] && [[ "$FREEZE_LLM_UNTIL_EPOCH" -gt 0 ]]; then
@@ -626,7 +630,8 @@ if [ "$finetune" == "False" ]; then
                                       $CONCAT_TRUE_ARG \
                                       $STATS_ARGS \
                                       $PRICE_M_ARG $PRICE_S_ARG $PRICE_B_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
-                                      $MAX_QUERIES_ARG
+                                      $MAX_QUERIES_ARG \
+                                      $EMBED_BS_ARG
 fi
 
 if [ "$finetune" == "True" ]; then

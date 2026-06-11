@@ -3394,6 +3394,16 @@ def get_embeddings(predictor, ds_info, dat_path, argsP, batch_size=1, normalize_
         _pwm = int(getattr(argsP, 'price_warmup_epochs', 0) or 0)
         if _pwm > 0:
             _arch.append(f"pwm{_pwm}")
+        # PRICE weight source disambiguation within the pretrained-None family:
+        # sources loaded WITHOUT a finetuned LLM (pretrained / separate /
+        # frozen_joint) share the same cache_file but hold different PRICE
+        # weights, so they'd collide on one combined cache. "pretrained" keeps
+        # the legacy name; other sources get an explicit token. (With a
+        # finetuned LLM, pretrained-lora in cache_file already separates runs.)
+        _pws = getattr(argsP, 'price_weights_source', 'pretrained')
+        _lp = getattr(argsP, 'llm_pretrained', None)
+        if _pws != 'pretrained' and (_lp is None or _lp == 'None'):
+            _arch.append(f"pws-{_pws}")
         _arch_tag = ("-" + "-".join(_arch)) if _arch else ""
         _combined_tag = (f"_combined-{_pflags}_cx{_cx}{_arch_tag}" if _pflags
                          else f"_combined_cx{_cx}{_arch_tag}")
@@ -3428,6 +3438,19 @@ def get_embeddings(predictor, ds_info, dat_path, argsP, batch_size=1, normalize_
     # Track max query plan token length for this workload
     max_plan_tokens = 0
     texts = None
+
+    # Pretrained-LLM reuse: an algo=llm_price run with llm_pretrained=None uses
+    # the PRETRAINED LLM (LoRA adapters are identity at init), so its pooled
+    # embeddings are identical to a mode-1 (algo=llm) run's. If our
+    # llm_price-tagged cache is missing but the mode-1 cache exists, read that
+    # instead of re-running the LLM over the whole workload.
+    if (not os.path.exists(cache_path) and argsP.algo == "llm_price"
+            and (argsP.llm_pretrained is None or argsP.llm_pretrained == "None")
+            and "_algo-llm_price" in cache_file):
+        _m1_path = os.path.join(cache_dir, cache_file.replace("_algo-llm_price", "", 1))
+        if os.path.exists(_m1_path):
+            print(f"[get_embeddings] Reusing mode-1 pretrained embedding cache: {_m1_path}")
+            cache_path = _m1_path
 
     if os.path.exists(cache_path):
         # Load cached embeddings
@@ -3937,9 +3960,16 @@ def _load_price_embedder(argsP, max_njc, max_nfo, max_ntb, max_nfc, device):
         price_sd = torch.load(price_weight_path, map_location=device)
         _partial_init_load(price_embedder, price_sd, f"Loaded jointly finetuned PRICE weights from {price_weight_path}")
     elif source == "frozen_joint":
-        # Load PRICE weights finetuned with frozen LLM (llm_mode=inference)
+        # Load PRICE weights finetuned with frozen LLM (llm_mode=inference).
+        # That finetune ran with --freeze_llm, which contributes a "freezeLLM"
+        # token to the saved arch suffix; inject it here since the inference
+        # run itself doesn't set --freeze_llm.
         task_str = "card" if argsP.card else "time"
-        price_weight_path = f"finetuned_models/{argsP.db}{_gsub}/{argsP.canonical_wl_prefix}_{task_str}_inference_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_path_suffix}_llm_price{arch_path_suffix}{rand_init_suffix}{epoch_suffix}{seed_suffix}_price.pt"
+        _orig_frz = getattr(argsP, 'freeze_llm', False)
+        argsP.freeze_llm = True
+        _frz_arch_suffix = _arch_path_suffix_local(argsP)
+        argsP.freeze_llm = _orig_frz
+        price_weight_path = f"finetuned_models/{argsP.db}{_gsub}/{argsP.canonical_wl_prefix}_{task_str}_inference_{argsP.model_name.replace('/','-')}_b{ft_bs}{price_path_suffix}_llm_price{_frz_arch_suffix}{rand_init_suffix}{epoch_suffix}{seed_suffix}_price.pt"
         price_sd = torch.load(price_weight_path, map_location=device)
         _partial_init_load(price_embedder, price_sd, f"Loaded frozen-joint finetuned PRICE weights from {price_weight_path}")
     elif source == "joint_frozen_init":
@@ -4313,11 +4343,16 @@ class FrozenLLMPriceDataset(Dataset):
     """
     Dataset for PRICE+MLP finetuning with pre-computed (frozen) LLM embeddings.
     Each item returns (llm_embedding, price_feat_tensor, padding_mask,
-                       n_join_col, n_fanout, n_table, n_filter_col, label).
+                       n_join_col, n_fanout, n_table, n_filter_col, label)
+    or, when num_clauses_per_query is provided (--price_n_or mode):
+                      (llm_embedding, price_feat_tensor, padding_mask,
+                       n_join_col, n_fanout, n_table, n_filter_col,
+                       num_clauses_i, label)
     Unlike LLMPriceDataset, stores LLM embeddings as tensors instead of text.
     """
     def __init__(self, llm_embeddings, price_features, padding_masks,
-                 n_join_cols, n_fanouts, n_tables, n_filter_cols, labels):
+                 n_join_cols, n_fanouts, n_tables, n_filter_cols, labels,
+                 num_clauses_per_query=None):
         assert len(llm_embeddings) == len(labels)
         self.llm_embeddings = llm_embeddings
         self.price_features = price_features
@@ -4327,19 +4362,22 @@ class FrozenLLMPriceDataset(Dataset):
         self.n_tables = n_tables
         self.n_filter_cols = n_filter_cols
         self.labels = labels
+        self.num_clauses_per_query = num_clauses_per_query  # list[int] or None
 
     def __len__(self):
         return len(self.labels)
 
     def __getitem__(self, idx):
-        return (self.llm_embeddings[idx],
+        base = (self.llm_embeddings[idx],
                 self.price_features[idx],
                 self.padding_masks[idx],
                 self.n_join_cols[idx],
                 self.n_fanouts[idx],
                 self.n_tables[idx],
-                self.n_filter_cols[idx],
-                self.labels[idx])
+                self.n_filter_cols[idx])
+        if self.num_clauses_per_query is not None:
+            return base + (self.num_clauses_per_query[idx], self.labels[idx])
+        return base + (self.labels[idx],)
 
 
 class PriceOnlyDataset(Dataset):
@@ -5202,13 +5240,24 @@ def get_frozen_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_te
     Build datasets for PRICE+MLP finetuning with pre-computed (frozen) LLM embeddings.
 
     Instead of storing raw text (which requires a live LLM forward pass each batch),
-    this calls get_embeddings() to load cached LLM embeddings and stores them as tensors.
-    The cached embeddings are reused from prior LLM inference runs (algo=llm).
+    this calls get_embeddings() to load cached LLM embeddings and stores them as
+    tensors. The LLM here is the PRETRAINED model (llm_mode=inference, frozen for
+    the whole run), so the embedding cache is shared byte-for-byte with mode-1
+    (pretrained inference) runs: algo and llm_pretrained are temporarily overridden
+    to ("llm", None) so the cache filename matches mode 1 exactly.
+
+    Mirrors get_llm_price_ds_from_csv (incl. --price_n_or multi-clause DNF and
+    train_ratio subsampling); only the LLM text -> embedding swap differs.
+    --use_qrt_cross_attn is NOT supported here (QRT needs the live LLM tokenizer).
 
     Returns same signature as get_llm_price_ds_from_csv:
         ds_train, ds_val, ds_test, costs_val, costs_test, lengths_test, templates_test
     """
     import price_data_utils as pdu
+
+    if getattr(argsP, 'use_qrt_cross_attn', False):
+        raise ValueError("--freeze_llm is incompatible with --use_qrt_cross_attn "
+                         "(QRT needs the live LLM tokenizer per batch)")
 
     argsP.inference_logger.info(f"Getting frozen-LLM+PRICE dataset from {dat_path_train_list} and {dat_path_test}")
 
@@ -5216,15 +5265,26 @@ def get_frozen_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_te
     db_name = pdu.get_db_name_for_workload(workload)
     bin_size = getattr(argsP, 'price_bin_size', 40)
 
-    # ---- Step 1: Get LLM embeddings via get_embeddings() (cached) ----
-    # Temporarily override algo so cache key matches prior "llm" inference runs
-    orig_algo = argsP.algo
-    argsP.algo = "llm"
+    def _get_pretrained_embeddings(dat_path):
+        # Cache key must match a mode-1 (pretrained inference) run: algo="llm",
+        # llm_pretrained=None. The predictor IS the pretrained LLM (frozen the
+        # whole run; fresh LoRA adapters are identity at init), so reusing or
+        # creating the mode-1 cache is exact, not an approximation.
+        orig_algo = argsP.algo
+        orig_pretrained = getattr(argsP, 'llm_pretrained', None)
+        argsP.algo = "llm"
+        argsP.llm_pretrained = None
+        try:
+            out = get_embeddings(predictor, ds_info, dat_path, argsP,
+                                 batch_size=16, normalize_feats=False)
+        finally:
+            argsP.algo = orig_algo
+            argsP.llm_pretrained = orig_pretrained
+        return out
+
+    # ---- Step 1: pretrained LLM embeddings for test (mode-1 cache) ----
     print(f"[FrozenLLM+PRICE] Step 1: Loading cached LLM embeddings for test...", flush=True)
-    embeddings_test, costs_test, lengths_test, templates_test = get_embeddings(
-        predictor, ds_info, dat_path_test, argsP, batch_size=16, normalize_feats=False
-    )
-    argsP.algo = orig_algo
+    embeddings_test, costs_test, lengths_test, templates_test = _get_pretrained_embeddings(dat_path_test)
 
     llm_embed_size = embeddings_test.shape[1]
     print(f"[FrozenLLM+PRICE] Step 1 done: {embeddings_test.shape[0]} embeddings, dim={llm_embed_size}", flush=True)
@@ -5256,6 +5316,8 @@ def get_frozen_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_te
     # ---- Step 3: Generate PRICE features ----
     print(f"[FrozenLLM+PRICE] Step 3: Generating PRICE features for {len(sql_list_test)} test queries...", flush=True)
     _price_n_pairwise_flp = getattr(argsP, 'price_n_pairwise', False)
+    _price_n_or_flp = getattr(argsP, 'price_n_or', False)
+    _price_n_or_max_clauses_flp = getattr(argsP, 'price_n_or_max_clauses', 16)
     _gpf_test_flp = pdu.generate_price_features(
         workload, sql_list_test, db_name, bin_size,
         price_m=getattr(argsP, 'price_m', False),
@@ -5264,49 +5326,92 @@ def get_frozen_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_te
         price_n_filter=getattr(argsP, 'price_n_filter', False),
         price_n_fanout=getattr(argsP, 'price_n_fanout', False),
         price_n_pairwise=_price_n_pairwise_flp,
+        price_n_or=_price_n_or_flp,
+        price_n_or_max_clauses=_price_n_or_max_clauses_flp,
         already_price_format=is_cross_wl_test,
         price_b=getattr(argsP, 'price_b', False),
     )
-    if _price_n_pairwise_flp:
+    if _price_n_or_flp or _price_n_pairwise_flp:
+        # --price_n_or: data_features_test is list[list[6-tuple]] (per-query list
+        # of per-clause feature tuples); the other lists stay per-query.
         data_features_test, n_join_cols_test, n_fanouts_test, n_tables_test, n_filter_cols_test, _n_pi_test_flp = _gpf_test_flp
     else:
         data_features_test, n_join_cols_test, n_fanouts_test, n_tables_test, n_filter_cols_test = _gpf_test_flp
         _n_pi_test_flp = None
 
-    # ---- Step 4: Split train/val/test and pad ----
-    print(f"[FrozenLLM+PRICE] Step 4: Splitting train/val/test...", flush=True)
-    if len(dat_path_train_list) == 1 and dat_path_train_list[0] == dat_path_test:
-        # Same file for train/test
-        _use_pn_flp = any(getattr(argsP, f, False) for f in
-                          ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise'))
-        _pn_filter_dim_flp = 75 if _use_pn_flp else (
+    # ---- Step 4: pad helpers (mirror get_llm_price_ds_from_csv) ----
+    def _pack_multi_clause(flat_pf, flat_pm, max_clauses, n_queries):
+        pf_per_q, pm_per_q = [], []
+        for qi in range(n_queries):
+            slc = flat_pf[qi * max_clauses: (qi + 1) * max_clauses]
+            pf_per_q.append(torch.stack([
+                f if isinstance(f, torch.Tensor) else torch.tensor(f, dtype=torch.float32)
+                for f in slc]))
+            ms = flat_pm[qi * max_clauses: (qi + 1) * max_clauses]
+            pm_per_q.append(torch.stack([
+                m if isinstance(m, torch.Tensor) else torch.tensor(m)
+                for m in ms]))
+        return pf_per_q, pm_per_q
+
+    def _pad_and_unpack(raw_feats, njc, nfo, ntb, nfc, *, n_pairwise_intras):
+        _use_pn = any(getattr(argsP, f, False) for f in
+                      ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise'))
+        _filter_dim = 75 if _use_pn else (
             (bin_size + 21) if getattr(argsP, 'price_m', False) else (bin_size + 3))
-        _pad_out_flp_same = pdu.pad_and_cache_features(
-            data_features_test, n_join_cols_test, n_fanouts_test, n_tables_test, n_filter_cols_test,
+        pad_kwargs = dict(
             bin_size=bin_size,
-            filter_dim=_pn_filter_dim_flp,
+            filter_dim=_filter_dim,
             price_m=getattr(argsP, 'price_m', False),
             price_n_pairwise=_price_n_pairwise_flp,
-            fanout_dim=42 if any(getattr(argsP, f, False) for f in ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise')) else None,
+            fanout_dim=42 if _use_pn else None,
             pairwise_intra_dim=70 if _price_n_pairwise_flp else None,
+            n_pairwise_intras=n_pairwise_intras,
+        )
+        if _price_n_or_flp:
+            pad_kwargs["multi_clause_data"] = raw_feats
+            out = pdu.pad_and_cache_features([], [], [], [], [], **pad_kwargs)
+            flat_pf = out["padded_features"]
+            flat_pm = out["padding_masks"]
+            max_njc_o = out["max_n_join_col"]
+            max_nfo_o = out["max_n_fanout"]
+            max_ntb_o = out["max_n_table"]
+            max_nfc_o = out["max_n_filter_col"]
+            ncl_t = out["num_clauses"]
+            max_nc = int(out["max_n_clauses"])
+            n_q = len(ncl_t)
+            padded_features_o, padding_masks_o = _pack_multi_clause(flat_pf, flat_pm, max_nc, n_q)
+            num_clauses_o = ncl_t.tolist()
+        else:
+            out = pdu.pad_and_cache_features(raw_feats, njc, nfo, ntb, nfc, **pad_kwargs)
+            if _price_n_pairwise_flp:
+                padded_features_o, padding_masks_o, max_njc_o, max_nfo_o, max_ntb_o, max_nfc_o, _ = out
+            else:
+                padded_features_o, padding_masks_o, max_njc_o, max_nfo_o, max_ntb_o, max_nfc_o = out
+            num_clauses_o = None
+        return (padded_features_o, padding_masks_o,
+                max_njc_o, max_nfo_o, max_ntb_o, max_nfc_o,
+                num_clauses_o)
+
+    # ---- Step 5: Split train/val/test and pad ----
+    n_emb = embeddings_test.shape[0]
+    if len(dat_path_train_list) == 1 and dat_path_train_list[0] == dat_path_test:
+        # Same file for train/test
+        (padded_features, padding_masks,
+         max_njc, max_nfo, max_ntb, max_nfc,
+         num_clauses_per_query_all) = _pad_and_unpack(
+            data_features_test, n_join_cols_test, n_fanouts_test,
+            n_tables_test, n_filter_cols_test,
             n_pairwise_intras=_n_pi_test_flp,
         )
-        if _price_n_pairwise_flp:
-            padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc, _max_n_pi_flp_same = _pad_out_flp_same
-        else:
-            padded_features, padding_masks, max_njc, max_nfo, max_ntb, max_nfc = _pad_out_flp_same
 
         train_ids, val_ids, test_ids = train_val_test(n_emb, argsP)
 
         def _subset(lst, ids):
             return [lst[i] for i in ids]
 
-        def _subset_tensor(t, ids):
-            return t[ids]
-
-        emb_train = _subset_tensor(embeddings_test, train_ids)
-        emb_val = _subset_tensor(embeddings_test, val_ids)
-        emb_test = _subset_tensor(embeddings_test, test_ids)
+        emb_train = embeddings_test[train_ids]
+        emb_val = embeddings_test[val_ids]
+        emb_test = embeddings_test[test_ids]
 
         costs_train = _subset(costs_test, train_ids)
         costs_val = _subset(costs_test, val_ids)
@@ -5338,22 +5443,23 @@ def get_frozen_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_te
         nfc_train = _subset(n_filter_cols_test, train_ids)
         nfc_val = _subset(n_filter_cols_test, val_ids)
         nfc_test = _subset(n_filter_cols_test, test_ids)
+
+        if num_clauses_per_query_all is not None:
+            nc_train = _subset(num_clauses_per_query_all, train_ids)
+            nc_val = _subset(num_clauses_per_query_all, val_ids)
+            nc_test = _subset(num_clauses_per_query_all, test_ids)
+        else:
+            nc_train = nc_val = nc_test = None
     else:
-        # Separate train / test files
-        emb_train_all, costs_train_all = [], []
-        raw_feats_train_all = []
+        # Separate train / test files — collect all raw features, pad together
+        emb_train_parts, costs_train_all = [], []
+        raw_feats_train_all = []  # under --price_n_or this is list[list[6-tuple]]
         njc_train_all, nfo_train_all, ntb_train_all, nfc_train_all = [], [], [], []
+        npi_train_all = []
 
         for idx_dp, dat_path_train in enumerate(dat_path_train_list):
             print(f"[FrozenLLM+PRICE] Loading cached LLM embeddings for train: {dat_path_train}...", flush=True)
-            orig_algo2 = argsP.algo
-            argsP.algo = "llm"
-            emb_part, costs_part, _, _ = get_embeddings(
-                predictor, ds_info, dat_path_train, argsP, batch_size=16, normalize_feats=False
-            )
-            argsP.algo = orig_algo2
-            emb_train_all.append(emb_part)
-            costs_train_all.extend(costs_part)
+            emb_part, costs_part, _, _ = _get_pretrained_embeddings(dat_path_train)
 
             is_cross_wl_train = dat_path_train.endswith("c8220.json")
             if is_cross_wl_train:
@@ -5371,6 +5477,7 @@ def get_frozen_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_te
             min_len = min(len(train_sqls), emb_part.shape[0])
             train_sqls = train_sqls[:min_len]
 
+            print(f"[FrozenLLM+PRICE] Generating PRICE features for {min_len} training queries...", flush=True)
             _gpf_tr_flp = pdu.generate_price_features(
                 train_wl, train_sqls, train_db, bin_size,
                 price_m=getattr(argsP, 'price_m', False),
@@ -5379,63 +5486,71 @@ def get_frozen_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_te
                 price_n_filter=getattr(argsP, 'price_n_filter', False),
                 price_n_fanout=getattr(argsP, 'price_n_fanout', False),
                 price_n_pairwise=_price_n_pairwise_flp,
+                price_n_or=_price_n_or_flp,
+                price_n_or_max_clauses=_price_n_or_max_clauses_flp,
                 already_price_format=is_cross_wl_train,
                 price_b=getattr(argsP, 'price_b', False),
             )
-            if _price_n_pairwise_flp:
+            if _price_n_or_flp or _price_n_pairwise_flp:
                 df_feats, njc, nfo, ntb, nfc, _npi_tr_flp = _gpf_tr_flp
             else:
                 df_feats, njc, nfo, ntb, nfc = _gpf_tr_flp
-            raw_feats_train_all.extend(df_feats[:min_len])
-            njc_train_all.extend(njc[:min_len])
-            nfo_train_all.extend(nfo[:min_len])
-            ntb_train_all.extend(ntb[:min_len])
-            nfc_train_all.extend(nfc[:min_len])
+                _npi_tr_flp = None
+            # All parallel lists (embeddings, costs, feats, dims) must end at the
+            # same length (feature generation may return fewer on parse failures).
+            n_aligned = min(min_len, len(df_feats), len(njc), len(nfo), len(ntb), len(nfc))
+            if n_aligned != min_len:
+                print(f"[FrozenLLM+PRICE] WARNING — feature generation returned {len(df_feats)} "
+                      f"(expected {min_len}); truncating parallel lists to {n_aligned}.", flush=True)
+            emb_train_parts.append(emb_part[:n_aligned])
+            costs_train_all.extend(costs_part[:n_aligned])
+            raw_feats_train_all.extend(df_feats[:n_aligned])
+            njc_train_all.extend(njc[:n_aligned])
+            nfo_train_all.extend(nfo[:n_aligned])
+            ntb_train_all.extend(ntb[:n_aligned])
+            nfc_train_all.extend(nfc[:n_aligned])
+            if _price_n_pairwise_flp and _npi_tr_flp is not None:
+                npi_train_all.extend(_npi_tr_flp[:n_aligned])
 
-        emb_train_cat = torch.cat(emb_train_all, dim=0)
+        emb_train_cat = torch.cat(emb_train_parts, dim=0)
 
-        # Pad all features with unified max dims
+        # Pad ALL features (train + test) together for unified max dims
         all_raw_feats = raw_feats_train_all + list(data_features_test)
         all_njc_list = njc_train_all + n_join_cols_test
         all_nfo_list = nfo_train_all + n_fanouts_test
         all_ntb_list = ntb_train_all + n_tables_test
         all_nfc_list = nfc_train_all + n_filter_cols_test
-
-        _use_pn_flp_multi = any(getattr(argsP, f, False) for f in
-                                ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise'))
-        _pn_filter_dim_flp_multi = 75 if _use_pn_flp_multi else (
-            (bin_size + 21) if getattr(argsP, 'price_m', False) else (bin_size + 3))
-        _pad_out_flp_multi = pdu.pad_and_cache_features(
-            all_raw_feats, all_njc_list, all_nfo_list, all_ntb_list, all_nfc_list,
-            bin_size=bin_size,
-            filter_dim=_pn_filter_dim_flp_multi,
-            price_m=getattr(argsP, 'price_m', False),
-            price_n_pairwise=_price_n_pairwise_flp,
-            fanout_dim=42 if any(getattr(argsP, f, False) for f in ('price_n_parsing', 'price_n_filter', 'price_n_fanout', 'price_n_pairwise')) else None,
-            pairwise_intra_dim=70 if _price_n_pairwise_flp else None,
-            n_pairwise_intras=_n_pi_test_flp,
-        )
         if _price_n_pairwise_flp:
-            all_padded, all_masks, max_njc, max_nfo, max_ntb, max_nfc, _max_n_pi_flp_multi = _pad_out_flp_multi
+            all_npi_list = list(npi_train_all) + list(_n_pi_test_flp or [])
         else:
-            all_padded, all_masks, max_njc, max_nfo, max_ntb, max_nfc = _pad_out_flp_multi
+            all_npi_list = None
+
+        (all_padded, all_masks,
+         max_njc, max_nfo, max_ntb, max_nfc,
+         num_clauses_per_query_all) = _pad_and_unpack(
+            all_raw_feats, all_njc_list, all_nfo_list, all_ntb_list, all_nfc_list,
+            n_pairwise_intras=all_npi_list,
+        )
 
         n_train = len(raw_feats_train_all)
         pf_train_all = all_padded[:n_train]
         pm_train_all = all_masks[:n_train]
         pf_test = all_padded[n_train:]
         pm_test = all_masks[n_train:]
+        if num_clauses_per_query_all is not None:
+            num_clauses_train_all = num_clauses_per_query_all[:n_train]
+            nc_test = num_clauses_per_query_all[n_train:]
+        else:
+            num_clauses_train_all = None
+            nc_test = None
 
         train_ids, val_ids = train_val(n_train, argsP)
 
         def _subset(lst, ids):
             return [lst[i] for i in ids]
 
-        def _subset_tensor(t, ids):
-            return t[ids]
-
-        emb_val = _subset_tensor(emb_train_cat, val_ids)
-        emb_train = _subset_tensor(emb_train_cat, train_ids)
+        emb_val = emb_train_cat[val_ids]
+        emb_train = emb_train_cat[train_ids]
 
         costs_val = _subset(costs_train_all, val_ids)
         costs_train = _subset(costs_train_all, train_ids)
@@ -5458,6 +5573,30 @@ def get_frozen_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_te
         nfc_val = _subset(nfc_train_all, val_ids)
         nfc_train = _subset(nfc_train_all, train_ids)
 
+        if num_clauses_train_all is not None:
+            nc_train = _subset(num_clauses_train_all, train_ids)
+            nc_val = _subset(num_clauses_train_all, val_ids)
+        else:
+            nc_train = nc_val = None
+
+        # Apply train_ratio subsampling (consistent with get_llm_price_ds_from_csv)
+        if hasattr(argsP, 'train_ratio') and 0.0 < argsP.train_ratio < 1.0:
+            n_before = len(costs_train)
+            sample_ids, _ = train_test_split(
+                list(range(n_before)), train_size=argsP.train_ratio, random_state=42
+            )
+            emb_train = emb_train[sample_ids]
+            costs_train = [costs_train[i] for i in sample_ids]
+            pf_train = [pf_train[i] for i in sample_ids]
+            pm_train = [pm_train[i] for i in sample_ids]
+            njc_train = [njc_train[i] for i in sample_ids]
+            nfo_train = [nfo_train[i] for i in sample_ids]
+            ntb_train = [ntb_train[i] for i in sample_ids]
+            nfc_train = [nfc_train[i] for i in sample_ids]
+            if nc_train is not None:
+                nc_train = [nc_train[i] for i in sample_ids]
+            print(f"[FrozenLLM+PRICE] Subsampled training set: {n_before} -> {len(costs_train)} (train_ratio={argsP.train_ratio})", flush=True)
+
         njc_test = n_join_cols_test
         nfo_test = n_fanouts_test
         ntb_test = n_tables_test
@@ -5475,8 +5614,8 @@ def get_frozen_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_te
     argsP.embed_size = llm_embed_size
     print(f"[FrozenLLM+PRICE] Model dims: n_join_col={max_njc}, n_fanout={max_nfo}, n_table={max_ntb}, n_filter_col={max_nfc}, llm_dim={llm_embed_size}", flush=True)
 
-    # ---- Step 5: Normalize labels and create datasets ----
-    print(f"[FrozenLLM+PRICE] Step 5: Creating datasets (train={len(emb_train)}, val={len(emb_val)}, test={len(emb_test)})...", flush=True)
+    # ---- Step 6: Normalize labels and create datasets ----
+    print(f"[FrozenLLM+PRICE] Step 6: Creating datasets (train={len(emb_train)}, val={len(emb_val)}, test={len(emb_test)})...", flush=True)
     update_ds_info_minmax(ds_info, costs_train + costs_val + costs_test,
                           costs_train + costs_val + costs_test)
     prepare_ds_info_norm(ds_info)
@@ -5491,10 +5630,13 @@ def get_frozen_llm_price_ds_from_csv(predictor, dat_path_train_list, dat_path_te
         yte = ds_info.card_norm.normalize_labels(costs_test)
 
     ds_train = FrozenLLMPriceDataset(emb_train, pf_train, pm_train,
-                                     njc_train, nfo_train, ntb_train, nfc_train, ytr)
+                                     njc_train, nfo_train, ntb_train, nfc_train, ytr,
+                                     num_clauses_per_query=nc_train)
     ds_val = FrozenLLMPriceDataset(emb_val, pf_val, pm_val,
-                                   njc_val, nfo_val, ntb_val, nfc_val, yva)
+                                   njc_val, nfo_val, ntb_val, nfc_val, yva,
+                                   num_clauses_per_query=nc_val)
     ds_test = FrozenLLMPriceDataset(emb_test, pf_test, pm_test,
-                                    njc_test, nfo_test, ntb_test, nfc_test, yte)
+                                    njc_test, nfo_test, ntb_test, nfc_test, yte,
+                                    num_clauses_per_query=nc_test)
 
     return ds_train, ds_val, ds_test, costs_val, costs_test, lengths_test, templates_test

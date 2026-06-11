@@ -1295,46 +1295,66 @@ if [ "$finetune" == "PriceFTwithLLM" ]; then
   PRICE_MODEL_PATH=${PRICE_MODEL_PATH:-"$SCRIPT_DIR_LLM/experiments/price_statistics/model/model_params.pth"}
   PRICE_BIN_SIZE=${PRICE_BIN_SIZE:-40}
 
-  # Step 1: Finetune PRICE+MLP with frozen LLM
-  FROZEN_JOINT_FILE="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_inference_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}_llm_price${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}_price.pt"
-  if [ -f "$FROZEN_JOINT_FILE" ]; then
-    echo "Frozen-joint finetuned PRICE weights already exist: $FROZEN_JOINT_FILE"
-  else
-    algo=llm_price_finetune
-    hid_units=2048
-    lr=${LLM_LR:-0.0001}
-    price_lr=${PRICE_LR:-$PRICE_LR_DEFAULT}
-    batch_size=$FT_BATCH_SIZE
-
-    echo "PriceFTwithLLM: finetune PRICE+MLP with frozen LLM (time)"
-
-    setup_args_and_suffixes
-
-    python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                        --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_frozen_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${EPOCH_SUFFIX}.log \
-                                        --db $DB_ENGINE \
-                                        --workloads_train "${TRAIN_WLS[@]}" \
-                                        --workload_test ${WORKLOAD_TEST} \
-                                        --algo ${algo} \
-                                        --learning_rate $lr \
-                                        --price_lr $price_lr \
-                                        --batch_size $batch_size \
-                                        --hid_units $hid_units \
-                                        --model_name $model_name \
-                                        --train_ratio $train_ratio \
-                                        --llm_mode inference \
-                                        --freeze_llm \
-                                        --num_epoch $FT_NUM_EPOCH \
-                                        --seed $SEED \
-                                        --price_model_path $PRICE_MODEL_PATH \
-                                        --price_bin_size $PRICE_BIN_SIZE \
-                                        $BUCKETIZE_ARG \
-                                        $QUANTIFICATION_ARG \
-                                        $REMOVED_FIELDS_ARG \
-                                        $PRICE_M_ARG $PRICE_S_ARG $PRICE_B_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
-                                        $PRICE_RANDOM_INIT_FLAG \
-                                        $CHECKPOINT_INTERVAL_ARG
+  # Step 1: Finetune PRICE+MLP with frozen LLM (no LLM forward per batch —
+  # train.py's --freeze_llm path trains FrozenLLMPriceModel on pre-computed
+  # pooled LLM embeddings, loaded from / saved to the SAME embedding cache as a
+  # mode-1 pretrained-inference run: pretrained-None, algo=llm).
+  # Weight prefix must match train.py's llm_price_finetune save (llm_mode=inference).
+  FROZEN_JOINT_PREFIX="finetuned_models/${DB_ENGINE}${SUBDIR_PART}/${CANONICAL_TRAIN_HYPHEN}_time_inference_${model_name1}_b${FT_BATCH_SIZE}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}_llm_price${NO_LLM_RESIDUAL_SUFFIX}_freezeLLM${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${EPOCH_SUFFIX}_seed${SEED}"
+  SKIP_TRAIN_ARG=""
+  if [ -f "${FROZEN_JOINT_PREFIX}_price.pt" ] && [ -f "${FROZEN_JOINT_PREFIX}_mlp.pt" ]; then
+    echo "Frozen-joint finetuned PRICE weights already exist: ${FROZEN_JOINT_PREFIX}_price.pt"
+    SKIP_TRAIN_ARG="--skip_train_load_finetuned_weights"
   fi
+  algo=llm_price_finetune
+  hid_units=2048
+  lr=${LLM_LR:-0.0001}
+  price_lr=${PRICE_LR:-$PRICE_LR_DEFAULT}
+  batch_size=$FT_BATCH_SIZE
+  grad_accum_steps=${GRAD_ACCUM_STEPS:-1}
+
+  GRAD_ACCUM_ARG=""
+  if [[ "$grad_accum_steps" -gt 1 ]]; then
+    GRAD_ACCUM_ARG="--grad_accum_steps $grad_accum_steps"
+    echo "  Gradient accumulation: ${grad_accum_steps} steps (effective batch = ${batch_size} * ${grad_accum_steps})"
+  fi
+
+  echo "PriceFTwithLLM: finetune PRICE+MLP with frozen LLM (time)"
+
+  setup_args_and_suffixes
+
+  python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
+                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_frozen_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${EPOCH_SUFFIX}_seed${SEED}.log \
+                                      --db $DB_ENGINE \
+                                      --workloads_train "${TRAIN_WLS[@]}" \
+                                      --workload_test ${WORKLOAD_TEST} \
+                                      --algo ${algo} \
+                                      --learning_rate $lr \
+                                      --price_lr $price_lr \
+                                      --batch_size $batch_size \
+                                      --hid_units $hid_units \
+                                      --model_name $model_name \
+                                      --train_ratio $train_ratio \
+                                      --llm_mode inference \
+                                      --freeze_llm \
+                                      --num_epoch $FT_NUM_EPOCH \
+                                      --seed $SEED \
+                                      --price_model_path $PRICE_MODEL_PATH \
+                                      --price_bin_size $PRICE_BIN_SIZE \
+                                      $BUCKETIZE_ARG \
+                                      $QUANTIFICATION_ARG \
+                                      $REMOVED_FIELDS_ARG \
+                                      $PRICE_M_ARG $PRICE_S_ARG $PRICE_B_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
+                                      $PRICE_RANDOM_INIT_FLAG \
+                                      $CHECKPOINT_INTERVAL_ARG \
+                                      $GRAD_ACCUM_ARG \
+                                      $PRICE_N_LAYERS_ARG \
+                                      $PRICE_FFN_RATIO_ARG $OR_N_LAYERS_ARG $OR_N_HEADS_ARG $OR_FFN_RATIO_ARG \
+                                      $EARLY_STOP_ARG \
+                                      $PRICE_WARMUP_ARG \
+                                      $PRICE_LR_ARG \
+                                      $SUBDIR_ARG \
+                                      $SKIP_TRAIN_ARG
 
   # Step 2: Inference with frozen LLM + frozen-joint finetuned PRICE
   algo=llm_price
@@ -1348,9 +1368,9 @@ if [ "$finetune" == "PriceFTwithLLM" ]; then
   setup_args_and_suffixes
 
   python train.py --dat_paths_train "${DAT_PATHS[@]}" --dat_path_test $DAT_PATH_TEST \
-                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-None_priceFTwithLLM_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${FREEZE_LLM_SUFFIX}${FREEZE_ODD_SUFFIX}${FREEZE_ALL_SUFFIX}${FREEZE_EVEN_SUFFIX}${MLP_BEFORE_CA_SUFFIX}${EVAL_FRZ_SUFFIX}${RESEED_SUFFIX}${POOL_ALL_SUFFIX}${UNIF_POOL_SUFFIX}${PRICE_WARMUP_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.csv \
-                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-None_priceFTwithLLM_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${FREEZE_LLM_SUFFIX}${FREEZE_ODD_SUFFIX}${FREEZE_ALL_SUFFIX}${FREEZE_EVEN_SUFFIX}${MLP_BEFORE_CA_SUFFIX}${EVAL_FRZ_SUFFIX}${RESEED_SUFFIX}${POOL_ALL_SUFFIX}${UNIF_POOL_SUFFIX}${PRICE_WARMUP_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}_abs.txt \
-                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-None_priceFTwithLLM_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${FREEZE_LLM_SUFFIX}${FREEZE_ODD_SUFFIX}${FREEZE_ALL_SUFFIX}${FREEZE_EVEN_SUFFIX}${MLP_BEFORE_CA_SUFFIX}${EVAL_FRZ_SUFFIX}${RESEED_SUFFIX}${POOL_ALL_SUFFIX}${UNIF_POOL_SUFFIX}${PRICE_WARMUP_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.log \
+                                      --output_dir_qerror ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-None_priceFTwithLLM_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${FREEZE_LLM_SUFFIX}${FREEZE_ODD_SUFFIX}${FREEZE_ALL_SUFFIX}${FREEZE_EVEN_SUFFIX}${MLP_BEFORE_CA_SUFFIX}${EVAL_FRZ_SUFFIX}${RESEED_SUFFIX}${POOL_ALL_SUFFIX}${UNIF_POOL_SUFFIX}${PRICE_WARMUP_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.csv \
+                                      --output_dir_abs ${RESULTS_DIR}/results_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-None_priceFTwithLLM_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${FREEZE_LLM_SUFFIX}${FREEZE_ODD_SUFFIX}${FREEZE_ALL_SUFFIX}${FREEZE_EVEN_SUFFIX}${MLP_BEFORE_CA_SUFFIX}${EVAL_FRZ_SUFFIX}${RESEED_SUFFIX}${POOL_ALL_SUFFIX}${UNIF_POOL_SUFFIX}${PRICE_WARMUP_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}_abs.txt \
+                                      --log_file ${LOGS_DIR}/logs_Train_"${TRAIN_WLS_HYPHEN}"_Test_"$WORKLOAD_TEST"_ours${SUBDIR_PART}/time_${algo}_pretrained-None_priceFTwithLLM_${train_ratio}_cdf_${DB_ENGINE}_${lr}_b${batch_size}_h${hid_units}_${model_name1}_emb${embed_size}${BUCKETIZE_SUFFIX}${QUANTIFICATION_SUFFIX}${REMOVED_FIELDS_SUFFIX}${PRICE_M_SUFFIX}${PRICE_S_SUFFIX}${PRICE_B_SUFFIX}${PRICE_N_SUFFIX}${PRICE_RAND_INIT_SUFFIX}${PRICE_N_LAYERS_SUFFIX}${PRICE_FFN_RATIO_SUFFIX}${FREEZE_LLM_SUFFIX}${FREEZE_ODD_SUFFIX}${FREEZE_ALL_SUFFIX}${FREEZE_EVEN_SUFFIX}${MLP_BEFORE_CA_SUFFIX}${EVAL_FRZ_SUFFIX}${RESEED_SUFFIX}${POOL_ALL_SUFFIX}${UNIF_POOL_SUFFIX}${PRICE_WARMUP_SUFFIX}_e${FT_NUM_EPOCH}_ftb${FT_BATCH_SIZE}_seed${SEED}.log \
                                       --db $DB_ENGINE \
                                       --workloads_train "${TRAIN_WLS[@]}" \
                                       --workload_test ${WORKLOAD_TEST} \
@@ -1374,7 +1394,10 @@ if [ "$finetune" == "PriceFTwithLLM" ]; then
                                       $EMBEDDINGS_ARG \
                                       $REMOVED_FIELDS_ARG \
                                       $PRICE_M_ARG $PRICE_S_ARG $PRICE_B_ARG $PRICE_N_ARGS $NO_LLM_RESIDUAL_ARG $NO_OR_TRANSFORMER_ARG \
-                                      $PRICE_RANDOM_INIT_FLAG
+                                      $PRICE_RANDOM_INIT_FLAG \
+                                      $PRICE_N_LAYERS_ARG \
+                                      $PRICE_FFN_RATIO_ARG $OR_N_LAYERS_ARG $OR_N_HEADS_ARG $OR_FFN_RATIO_ARG \
+                                      $SUBDIR_ARG
 fi
 
 if [ "$finetune" == "GatedJointPrice" ]; then

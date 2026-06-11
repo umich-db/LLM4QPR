@@ -113,13 +113,16 @@ Query Plans (JSON/CSV in queryPlans/)
 
 `experiment_scripts/_compare_modes_lib.sh` is the shared library (sourced, not run) that defines the comparison "modes" and drives multi-`(db × workload × mode)` sweeps via `run_ablation`. Callers set `DB_ENGINES`, `WORKLOADS_ARR`, `MODES_ARR`, `MODEL`, `SEEDS`, then call `run_ablation`.
 
-Mode taxonomy (modes 7/7b/12/12w are `--algo llm_price_finetune`):
+Mode taxonomy (modes 7/7b/8/12/12w are `--algo llm_price_finetune`):
 - **1** — pretrained LLM inference, no LoRA, no PRICE (`--finetune_mode 1`)
 - **2** — LoRA finetune, no PRICE (`--finetune_mode 2`)
 - **7** — JointPrice with PRICE_N (`PRICE_N_FLAGS = --price_n --price_n_or --price_random_init`)
 - **7b** — JointPrice with original PRICE_B (`PRICE_B_FLAGS = --price_b --price_random_init`)
+- **8** — frozen-LLM concat (PriceFTwithLLM): mode 7's PRICE_N recipe but the LLM stays **pretrained/frozen the whole run and is never forwarded per batch** — `--freeze_llm` makes train.py build `FrozenLLMPriceModel` (PRICE+MLP only) over pooled LLM embeddings loaded from the **mode-1 cache** (`get_frozen_llm_price_ds_from_csv` overrides algo→`llm`, llm_pretrained→`None`, so the cache filename is byte-identical to mode 1's `pretrained-None` file; default seeds ≤44 add no seed suffix). Equivalent to mode 7 + frzLLM999 minus the LLM forward. Weights save with a `freezeLLM` arch token (`…_time_inference_<model>_b<bs>_priceN_priceNor_llm_price_freezeLLM_randInit_e<N>_seed<S>_{price,mlp}.pt`); step-2 inference (`--price_weights_source frozen_joint`) injects that token when resolving the load path, reuses the mode-1 LLM cache via the `_algo-llm_price` fallback in `get_embeddings`, and its combined cache carries a `pws-frozen_joint` tag so it can't collide with mode-3/5 (`pretrained`/`separate`) combined caches.
 - **12** — biCrossAttn + inflatePRICE + cx4 **with** warmup schedule (`MODE12_SCHED = --price_warmup_epochs 5 --freeze_llm_until_epoch 5`)
 - **12w** — mode 12 **without** the warmup/freeze schedule (`MODE12W_SCHED = --price_warmup_epochs 0 --freeze_llm_until_epoch 0`)
+
+Mode-8 gotchas: `--freeze_llm` is validated incompatible with all cross-attn flags (needs live LLM tokens); the retrainMLP early-stop default (patience 5 after epoch 20) explicitly excludes `algo=llm_price_finetune` so the frozen 30-epoch finetune doesn't early-stop; the frozen builder mirrors `get_llm_price_ds_from_csv` including `--price_n_or` multi-clause packing (`num_clauses` threaded through `frozen_llm_price_or_collate` → `FrozenLLMPriceModel.forward` → `PRICEEmbedder(num_clauses=…)`) and `train_ratio` subsampling.
 
 Notes:
 - `CUDA_VISIBLE_DEVICES` defaults to **0** (was 1; on single-GPU hosts the old default hid the GPU → silent CPU fallback).

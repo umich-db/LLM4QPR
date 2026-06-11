@@ -217,6 +217,15 @@ if getattr(argsP, 'no_llm_residual', False) and argsP.algo == "llm_price_finetun
     print("[no_llm_residual] Rerouting algo: llm_price_finetune → price_finetune")
     argsP.algo = "price_finetune"
 
+# --freeze_llm trains PRICE+MLP on pre-computed pooled LLM embeddings (no LLM
+# in the model), so any flag that needs LLM token sequences per batch is out.
+if getattr(argsP, 'freeze_llm', False):
+    for _flag in ('use_cross_attention', 'use_bi_cross_attention',
+                  'use_reverse_cross_attention', 'use_qrt_cross_attn'):
+        if getattr(argsP, _flag, False):
+            raise SystemExit(f"--freeze_llm is incompatible with --{_flag} "
+                             "(cross-attention needs live LLM token sequences per batch)")
+
 if getattr(argsP, 'baseline_price_cross', False):
     if argsP.algo != "qf":
         raise SystemExit("--baseline_price_cross requires --algo qf (only QueryFormer "
@@ -562,6 +571,33 @@ def frozen_llm_price_collate(batch):
     nfcs = torch.tensor(nfc, dtype=torch.float32, device=device).unsqueeze(1)
     return (llm_embs_tensor, price_feats, pad_masks, njcs, nfos, ntbs, nfcs), labels_tensor
 
+
+def frozen_llm_price_or_collate(batch):
+    """Collate function for FrozenLLMPriceDataset under --price_n_or (multi-clause DNF).
+    Each item: (llm_emb, price_feat, pad_mask, njc, nfo, ntb, nfc, num_clauses_i, label)
+        where price_feat has shape (max_clauses, flat_size) and pad_mask matches —
+        the dataset stores per-query packed tensors (same layout as llm_price_or_collate).
+    Returns: ((llm_embs, price_feats, pad_masks, njcs, nfos, ntbs, nfcs, num_clauses), labels_tensor)
+        with price_feats/pad_masks flattened to (batch * max_clauses, *).
+    """
+    llm_embs, pf, pm, njc, nfo, ntb, nfc, nc, labels = zip(*batch)
+    labels_tensor = torch.tensor(labels, dtype=torch.float32, device=device).unsqueeze(1)
+    llm_embs_tensor = torch.stack([e if isinstance(e, torch.Tensor) else torch.tensor(e, dtype=torch.float32) for e in llm_embs]).float().to(device)
+    price_feats = torch.stack([f if isinstance(f, torch.Tensor) else torch.tensor(f, dtype=torch.float32) for f in pf]).float().to(device)
+    pad_masks = torch.stack([m if isinstance(m, torch.Tensor) else torch.tensor(m) for m in pm]).float().to(device)
+    njcs = torch.tensor(njc, dtype=torch.float32, device=device).unsqueeze(1)
+    nfos = torch.tensor(nfo, dtype=torch.float32, device=device).unsqueeze(1)
+    ntbs = torch.tensor(ntb, dtype=torch.float32, device=device).unsqueeze(1)
+    nfcs = torch.tensor(nfc, dtype=torch.float32, device=device).unsqueeze(1)
+    num_clauses = torch.tensor(nc, dtype=torch.long, device=device)
+    if price_feats.dim() == 3:
+        bsz, max_c, flat_size = price_feats.shape
+        price_feats = price_feats.view(bsz * max_c, flat_size)
+    if pad_masks.dim() == 3:
+        bsz, max_c, mask_len = pad_masks.shape
+        pad_masks = pad_masks.view(bsz * max_c, mask_len)
+    return (llm_embs_tensor, price_feats, pad_masks, njcs, nfos, ntbs, nfcs, num_clauses), labels_tensor
+
 if argsP.algo == "price_finetune":
   from utilsLLM import get_price_only_ds_from_csv
   ds, val_ds, test_ds, val_costs, test_costs = get_price_only_ds_from_csv(
@@ -589,13 +625,17 @@ elif argsP.algo == "llm_price_finetune" and getattr(argsP, 'freeze_llm', False):
       LLM, dat_paths_train_list, dat_path_test, dat_dict['ds_info'], argsP
   )
   ds_info = dat_dict['ds_info']
+  # Under --price_n_or the dataset emits 9-tuples with num_clauses_i for the
+  # OR-Transformer's multi-clause path (mirrors _llm_price_active_collate below).
+  _frozen_collate = (frozen_llm_price_or_collate if getattr(argsP, 'price_n_or', False)
+                     else frozen_llm_price_collate)
   train_loader = DataLoader(dataset=ds, batch_size=argsP.batch_size, shuffle=True,
-                            collate_fn=frozen_llm_price_collate,
+                            collate_fn=_frozen_collate,
                             generator=torch.Generator().manual_seed(argsP.seed))
   val_loader = DataLoader(dataset=val_ds, batch_size=argsP.batch_size, shuffle=False,
-                          collate_fn=frozen_llm_price_collate)
+                          collate_fn=_frozen_collate)
   test_loader = DataLoader(dataset=test_ds, batch_size=1, shuffle=False,
-                           collate_fn=frozen_llm_price_collate)
+                           collate_fn=_frozen_collate)
   train_roots = train_js_nodes = train_costs = None
   val_roots = val_js_nodes = None
   test_roots = test_js_nodes = None
@@ -1476,9 +1516,12 @@ elif _baseline_cached:
 else:
     # retrainMLP inference phase (the fresh MLP trained on the cached post-cross-attn
     # combined embeddings): default to early stopping on val p90 — patience 5, first
-    # allowed after epoch 20 — unless the user set it explicitly. The joint finetune
-    # (--llm_mode lora) is unaffected.
+    # allowed after epoch 20 — unless the user set it explicitly. Finetunes are
+    # unaffected: the joint finetune runs with --llm_mode lora, and the frozen-LLM
+    # finetune (--freeze_llm) is algo=llm_price_finetune with --llm_mode inference,
+    # so it's excluded by algo.
     if (getattr(argsP, 'llm_mode', '') == 'inference'
+            and argsP.algo != "llm_price_finetune"
             and not getattr(argsP, 'no_retrain_mlp_at_inference', False)):
         if not int(getattr(argsP, 'early_stop_patience', 0) or 0):
             argsP.early_stop_patience = 5

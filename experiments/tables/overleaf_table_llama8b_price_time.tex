@@ -1,6 +1,6 @@
 % Cost estimation, 50th/95th Q-error. Baselines + Llama-8B: 3-seed avgs from
 % /root/doug/results. Llama-8B+PRICE: mode 8b (frozen LLM, priceB), avg over
-% seeds found per cell: [('tpch', 3), ('tpcds', 1), ('syn', 1), ('job', 1), ('job_full', 1), ('stats', 1)].
+% seeds found per cell: [('tpch', 3), ('tpcds', 3), ('syn', 1), ('job', 1), ('job_full', 1), ('stats', 1)].
 % JOB uses the jointMLP head; all other cells retrainMLP.
 \begin{tabular}{l|cc|cc|cc|cc|cc|cc}
 \toprule
@@ -11,6 +11,6 @@ E2E-Cost & \cellcolor{green1}{1.095} & \cellcolor{green1}{1.901} & \cellcolor{gr
 QueryFormer & \cellcolor{green2}{1.046} & \cellcolor{green3}{1.091} & \cellcolor{green4}{1.084} & \cellcolor{green4}{1.393} & \cellcolor{green1}{1.190} & \cellcolor{green2}{2.611} & \cellcolor{green1}{1.931} & \cellcolor{green1}{19.204} & \cellcolor{green1}{7.360} & \cellcolor{green1}{161.33} & \cellcolor{green1}{5.934} & \cellcolor{green1}{393.80} \\
 \midrule
 Llama-8B & \cellcolor{green4}{1.021} & \cellcolor{green4}{1.059} & \cellcolor{green3}{1.091} & \cellcolor{green3}{1.618} & \cellcolor{green3}{1.064} & \cellcolor{green3}{1.778} & \cellcolor{green3}{1.557} & \cellcolor{green2}{15.110} & \cellcolor{green3}{3.803} & \cellcolor{green2}{79.339} & \cellcolor{green3}{1.597} & \cellcolor{green2}{46.982} \\
-Llama-8B + PRICE & \cellcolor{green3}{1.039} & \cellcolor{green2}{1.100} & \cellcolor{green2}{1.287} & \cellcolor{green2}{1.980} & \cellcolor{green4}{1.049} & \cellcolor{green4}{1.363} & \cellcolor{green4}{1.455} & \cellcolor{green3}{12.732} & \cellcolor{green4}{3.117} & \cellcolor{green3}{52.717} & \cellcolor{green4}{1.408} & \cellcolor{green4}{5.126} \\
+Llama-8B + Statistics & \cellcolor{green3}{1.039} & \cellcolor{green2}{1.100} & \cellcolor{green2}{1.253} & \cellcolor{green2}{2.118} & \cellcolor{green4}{1.049} & \cellcolor{green4}{1.363} & \cellcolor{green4}{1.455} & \cellcolor{green3}{12.732} & \cellcolor{green4}{3.117} & \cellcolor{green3}{52.717} & \cellcolor{green4}{1.408} & \cellcolor{green4}{5.126} \\
 \bottomrule
 \end{tabular}

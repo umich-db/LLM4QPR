@@ -144,7 +144,7 @@ def main():
             'Llama-8B': doug_quantiles(args.doug_results, ds, 'time',
                                        'time_llm_pretrained-None_1.0', 'Llama-3.1-8B'),
         }
-        time_data[ds]['Llama-8B + PRICE'], time_seeds[ds] = \
+        time_data[ds]['Llama-8B + Statistics'], time_seeds[ds] = \
             mode8b_quantiles(args.results, 'time', ds)
 
     # ---- card ----
@@ -157,14 +157,14 @@ def main():
             d[label] = [float(r.iloc[0].q50), float(r.iloc[0].q95)] if len(r) else None
         d['Llama-8B'] = doug_quantiles(args.doug_results, ds, 'card',
                                        'card_llm_pretrained-None_1.0', 'Llama-3.1-8B')
-        d['Llama-8B + PRICE'], card_seeds[ds] = mode8b_quantiles(args.results, 'card', ds)
+        d['Llama-8B + Statistics'], card_seeds[ds] = mode8b_quantiles(args.results, 'card', ds)
         card_data[ds] = d
 
     t_time = render(time_data, TIME_DS,
-                    ['E2E-Cost', 'QueryFormer', 'Llama-8B', 'Llama-8B + PRICE'],
+                    ['E2E-Cost', 'QueryFormer', 'Llama-8B', 'Llama-8B + Statistics'],
                     'QueryFormer', header_label='\\textbf{Cost Estimation}')
     t_card = render(card_data, CARD_DS,
-                    ['ALECE', 'PRICE', 'Llama-8B', 'Llama-8B + PRICE'],
+                    ['ALECE', 'PRICE', 'Llama-8B', 'Llama-8B + Statistics'],
                     'PRICE', header_label='\\textbf{Cardinality Estimation}')
 
     out = Path(args.out_dir)

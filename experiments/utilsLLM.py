@@ -2602,8 +2602,12 @@ def train_val_test(num_rows, argsP):
     total_rows = num_rows
     indices = list(range(total_rows))
 
-    # TPC-DS template-based split (90 templates × 10 queries = 900)
-    if (getattr(argsP, 'workload_test', '') == 'tpcds' and total_rows == 900):
+    # TPC-DS template-based split (90 templates × 10 queries = 900).
+    # TPCDS_RANDOM_SPLIT=1 (env) disables it so tpcds splits with the same
+    # random 67/16.5/16.5 rule as tpch (temporary, for experiments that need
+    # split parity across the TPC workloads).
+    if (getattr(argsP, 'workload_test', '') == 'tpcds' and total_rows == 900
+            and os.environ.get('TPCDS_RANDOM_SPLIT') != '1'):
         import random as _random
         _rng = _random.Random(42)
         _all_templates = list(range(90))
@@ -2637,9 +2641,11 @@ def train_val(num_rows, argsP):
     total_rows = num_rows
     indices = list(range(total_rows))
 
-    # TPC-DS template-based split: drop the test 9 templates, split rest 90/10
+    # TPC-DS template-based split: drop the test 9 templates, split rest 90/10.
+    # Disabled by TPCDS_RANDOM_SPLIT=1 (see train_val_test).
     if (getattr(argsP, 'workloads_train', None) and
-        'tpcds' in argsP.workloads_train and total_rows == 900):
+        'tpcds' in argsP.workloads_train and total_rows == 900
+        and os.environ.get('TPCDS_RANDOM_SPLIT') != '1'):
         import random as _random
         _rng = _random.Random(42)
         _all_templates = list(range(90))

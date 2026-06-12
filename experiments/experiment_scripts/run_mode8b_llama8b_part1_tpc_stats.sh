@@ -16,6 +16,9 @@ source ~/venvs/tmpenv/bin/activate 2>/dev/null || source ~/venvs/py312/bin/activ
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-1}
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export EMBED_BATCH_SIZE="${EMBED_BATCH_SIZE:-1}"   # safety net for any cache miss
+# TEMPORARY for this experiment: tpcds splits train/test with the same random
+# rule as tpch (disables the template-based unseen-template split).
+export TPCDS_RANDOM_SPLIT=1
 
 MODEL="meta-llama/Llama-3.1-8B"
 SEEDS="${SEEDS:-42}"

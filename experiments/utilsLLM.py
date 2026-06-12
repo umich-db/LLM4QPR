@@ -3452,6 +3452,12 @@ def get_embeddings(predictor, ds_info, dat_path, argsP, batch_size=1, normalize_
         _lp = getattr(argsP, 'llm_pretrained', None)
         if _pws != 'pretrained' and (_lp is None or _lp == 'None'):
             _arch.append(f"pws-{_pws}")
+            # The loaded PRICE weights are also per-SEED (…_seed{N}_price.pt),
+            # but cache_file only carries a seed token for seeds > 44 — without
+            # this, seeds 42/43/44 would share one combined cache and reuse the
+            # first seed's PRICE embeddings.
+            if getattr(argsP, 'seed', None) is not None:
+                _arch.append(f"seed{int(argsP.seed)}")
             # The loaded PRICE weights are keyed by (ft_batch, ft_epochs), but
             # the pretrained-None cache_file carries neither (its ftEp suffix
             # is gated on llm_pretrained being set). Without these tokens, two

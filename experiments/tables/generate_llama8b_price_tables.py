@@ -36,19 +36,27 @@ CARD_DS = ['syn', 'job', 'stats']
 DISP = {'tpch': 'TPC-H', 'tpcds': 'TPC-DS', 'syn': 'Synthetic',
         'job': 'JOB-light', 'job_full': 'JOB', 'stats': 'STATS'}
 JOINTMLP_WORKLOADS = {('time', 'job_full')}   # use the jointMLP head here
-QUANTS = (50, 95)
+TIME_QUANTS = (50, 95)
+CARD_QUANTS = (50, 90, 95, 'max')
 
 
-def cdf_quantiles(path):
+def qlabel(q):
+    return 'Max' if q == 'max' else f'{q}th'
+
+
+def cdf_quantiles(path, quants):
     df = pd.read_csv(path).sort_values('percentage')
     out = []
-    for t in QUANTS:
+    for t in quants:
+        if t == 'max':
+            out.append(float(df.Qerror.max()))
+            continue
         sub = df[df.percentage >= t]
         out.append(float(sub.iloc[0].Qerror) if not sub.empty else float(df.Qerror.max()))
     return out
 
 
-def doug_quantiles(doug_results, ds, task, col_prefix, must_contain=None):
+def doug_quantiles(doug_results, ds, task, col_prefix, must_contain=None, quants=TIME_QUANTS):
     f = (Path(doug_results) / f'results_Train_{ds}_Test_{ds}_ours' /
          f'quantile_table_results_results_Train_{ds}_Test_{ds}_ours_{task}.csv')
     df = pd.read_csv(f, index_col=0)
@@ -58,10 +66,10 @@ def doug_quantiles(doug_results, ds, task, col_prefix, must_contain=None):
     if not cands:
         return None
     c = cands[0]
-    return [float(df.loc[str(q), c]) for q in QUANTS]
+    return [float(df.loc[str(q), c]) for q in quants]
 
 
-def mode8b_quantiles(results_dir, task, ds):
+def mode8b_quantiles(results_dir, task, ds, quants=TIME_QUANTS):
     """Average across all seeds found. Returns (values, n_seeds)."""
     tr = 'job' if ds in ('job', 'syn', 'job_full') else ds
     d = Path(results_dir) / f'results_Train_{tr}_Test_{ds}_ours'
@@ -74,7 +82,7 @@ def mode8b_quantiles(results_dir, task, ds):
     files = [f for f in glob.glob(pat) if 'length' not in f]
     if not files:
         return None, 0
-    per_seed = [cdf_quantiles(f) for f in sorted(files)]
+    per_seed = [cdf_quantiles(f, quants) for f in sorted(files)]
     return list(np.mean(per_seed, axis=0)), len(per_seed)
 
 
@@ -86,24 +94,25 @@ def fmt(v):
     return f"{v:.2f}"
 
 
-def render(data, ds_list, methods, sep_after, header_label="Algorithm"):
+def render(data, ds_list, methods, sep_after, header_label="Algorithm", quants=TIME_QUANTS):
     n = len(ds_list)
     lines = []
-    lines.append("\\begin{tabular}{l|" + "|".join(["cc"] * n) + "}")
+    lines.append("\\begin{tabular}{l|" + "|".join(["c" * len(quants)] * n) + "}")
     lines.append("\\toprule")
     h1 = f"\\multirow{{2}}{{*}}{{{header_label}}}"
     for i, ds in enumerate(ds_list):
         bar = '|' if i < n - 1 else ''
-        h1 += f" & \\multicolumn{{2}}{{c{bar}}}{{{DISP[ds]}}}"
+        h1 += f" & \\multicolumn{{{len(quants)}}}{{c{bar}}}{{{DISP[ds]}}}"
     lines.append(h1 + " \\\\")
-    lines.append(" & " + " & ".join(["50th & 95th"] * n) + " \\\\")
+    _qh = " & ".join(qlabel(q) for q in quants)
+    lines.append(" & " + " & ".join([_qh] * n) + " \\\\")
     lines.append("\\midrule")
     # Per-column rank -> green shading: best=green4, 2nd=green3, 3rd=green2,
     # 4th=green1 (requires the green1..green4 color definitions used by the
     # other overleaf tables).
     ranks = {}
     for ds in ds_list:
-        for qi in range(len(QUANTS)):
+        for qi in range(len(quants)):
             vals = sorted({data[ds][m][qi] for m in methods if data[ds].get(m)})
             for m in methods:
                 if data[ds].get(m):
@@ -113,7 +122,7 @@ def render(data, ds_list, methods, sep_after, header_label="Algorithm"):
         cells = [m]
         for ds in ds_list:
             vals = data[ds].get(m)
-            for qi in range(len(QUANTS)):
+            for qi in range(len(quants)):
                 if vals is None:
                     cells.append('-')
                     continue
@@ -154,10 +163,13 @@ def main():
         d = {}
         for label, algo in [('ALECE', 'alece'), ('PRICE', 'price')]:
             r = rep[(rep.dataset == ds) & (rep.task == 'card') & (rep.algo == algo)]
-            d[label] = [float(r.iloc[0].q50), float(r.iloc[0].q95)] if len(r) else None
+            d[label] = ([float(r.iloc[0].q50), float(r.iloc[0].q90),
+                         float(r.iloc[0].q95), float(r.iloc[0].qmax)] if len(r) else None)
         d['Llama-8B'] = doug_quantiles(args.doug_results, ds, 'card',
-                                       'card_llm_pretrained-None_1.0', 'Llama-3.1-8B')
-        d['Llama-8B + Statistics'], card_seeds[ds] = mode8b_quantiles(args.results, 'card', ds)
+                                       'card_llm_pretrained-None_1.0', 'Llama-3.1-8B',
+                                       quants=CARD_QUANTS)
+        d['Llama-8B + Statistics'], card_seeds[ds] = mode8b_quantiles(
+            args.results, 'card', ds, quants=CARD_QUANTS)
         card_data[ds] = d
 
     t_time = render(time_data, TIME_DS,
@@ -165,7 +177,8 @@ def main():
                     'QueryFormer', header_label='\\textbf{Cost Estimation}')
     t_card = render(card_data, CARD_DS,
                     ['ALECE', 'PRICE', 'Llama-8B', 'Llama-8B + Statistics'],
-                    'PRICE', header_label='\\textbf{Cardinality Estimation}')
+                    'PRICE', header_label='\\textbf{Cardinality Estimation}',
+                    quants=CARD_QUANTS)
 
     out = Path(args.out_dir)
     hdr_t = ("% Cost estimation, 50th/95th Q-error. Baselines + Llama-8B: 3-seed avgs from\n"

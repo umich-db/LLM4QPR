@@ -2,15 +2,15 @@
 % /root/doug/combined_timing_accuracy_report.csv; Llama-8B: 3-seed avg. Llama-8B+PRICE: mode 8b retrainMLP,
 % avg over seeds found per cell: [('syn', 1), ('job', 1), ('stats', 1)].
 % Cells shaded green4 (best) .. green1 (4th) per column.
-\begin{tabular}{l|cc|cc|cc}
+\begin{tabular}{l|cccc|cccc|cccc}
 \toprule
-\multirow{2}{*}{\textbf{Cardinality Estimation}} & \multicolumn{2}{c|}{Synthetic} & \multicolumn{2}{c|}{JOB-light} & \multicolumn{2}{c}{STATS} \\
- & 50th & 95th & 50th & 95th & 50th & 95th \\
+\multirow{2}{*}{\textbf{Cardinality Estimation}} & \multicolumn{4}{c|}{Synthetic} & \multicolumn{4}{c|}{JOB-light} & \multicolumn{4}{c}{STATS} \\
+ & 50th & 90th & 95th & Max & 50th & 90th & 95th & Max & 50th & 90th & 95th & Max \\
 \midrule
-ALECE & \cellcolor{green1}{1.870} & \cellcolor{green1}{21.400} & \cellcolor{green1}{2.630} & \cellcolor{green1}{212.72} & \cellcolor{green3}{2.780} & \cellcolor{green4}{25.150} \\
-PRICE & \cellcolor{green2}{1.680} & \cellcolor{green2}{10.440} & \cellcolor{green3}{2.030} & \cellcolor{green2}{32.510} & \cellcolor{green1}{4.170} & \cellcolor{green1}{195.94} \\
+ALECE & \cellcolor{green1}{1.870} & \cellcolor{green1}{9.600} & \cellcolor{green1}{21.400} & \cellcolor{green1}{3.00e+08} & \cellcolor{green1}{2.630} & \cellcolor{green1}{14.990} & \cellcolor{green1}{212.72} & \cellcolor{green1}{7.15e+10} & \cellcolor{green3}{2.780} & \cellcolor{green4}{13.360} & \cellcolor{green4}{25.150} & \cellcolor{green2}{7.58e+03} \\
+PRICE & \cellcolor{green2}{1.680} & \cellcolor{green2}{7.140} & \cellcolor{green2}{10.440} & \cellcolor{green3}{5.10e+03} & \cellcolor{green3}{2.030} & \cellcolor{green2}{13.990} & \cellcolor{green2}{32.510} & \cellcolor{green3}{309.66} & \cellcolor{green1}{4.170} & \cellcolor{green2}{28.690} & \cellcolor{green1}{195.94} & \cellcolor{green3}{1.81e+03} \\
 \midrule
-Llama-8B & \cellcolor{green4}{1.395} & \cellcolor{green3}{7.543} & \cellcolor{green2}{2.048} & \cellcolor{green3}{17.331} & \cellcolor{green4}{2.653} & \cellcolor{green2}{163.16} \\
-Llama-8B + Statistics & \cellcolor{green3}{1.636} & \cellcolor{green4}{4.881} & \cellcolor{green4}{1.776} & \cellcolor{green4}{8.866} & \cellcolor{green2}{3.081} & \cellcolor{green3}{28.231} \\
+Llama-8B & \cellcolor{green4}{1.395} & \cellcolor{green3}{4.159} & \cellcolor{green3}{7.543} & \cellcolor{green2}{9.03e+03} & \cellcolor{green2}{2.048} & \cellcolor{green3}{8.565} & \cellcolor{green3}{17.331} & \cellcolor{green2}{510.50} & \cellcolor{green4}{2.653} & \cellcolor{green1}{43.296} & \cellcolor{green2}{163.16} & \cellcolor{green1}{5.76e+12} \\
+Llama-8B + Statistics & \cellcolor{green3}{1.636} & \cellcolor{green4}{3.651} & \cellcolor{green4}{4.881} & \cellcolor{green4}{77.836} & \cellcolor{green4}{1.776} & \cellcolor{green4}{5.427} & \cellcolor{green4}{8.866} & \cellcolor{green4}{32.072} & \cellcolor{green2}{3.081} & \cellcolor{green3}{15.968} & \cellcolor{green3}{28.231} & \cellcolor{green4}{732.27} \\
 \bottomrule
 \end{tabular}

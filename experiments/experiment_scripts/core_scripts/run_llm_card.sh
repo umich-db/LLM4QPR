@@ -1169,7 +1169,8 @@ if [ "$finetune" == "PriceFTwithLLM" ]; then
                                         $REMOVED_FIELDS_ARG \
                                         $PRICE_M_ARG $PRICE_S_ARG $PRICE_B_ARG \
                                         $PRICE_RANDOM_INIT_FLAG \
-                                        $CHECKPOINT_INTERVAL_ARG
+                                        $CHECKPOINT_INTERVAL_ARG \
+                                        $EMBED_BS_ARG
   fi
 
   # Step 2: Inference with frozen LLM + frozen-joint finetuned PRICE
@@ -1211,7 +1212,8 @@ if [ "$finetune" == "PriceFTwithLLM" ]; then
                                       $EMBEDDINGS_ARG \
                                       $REMOVED_FIELDS_ARG \
                                       $PRICE_M_ARG $PRICE_S_ARG $PRICE_B_ARG \
-                                      $PRICE_RANDOM_INIT_FLAG
+                                      $PRICE_RANDOM_INIT_FLAG \
+                                      $EMBED_BS_ARG
 fi
 
 if [ "$finetune" == "PriceFTthenJoint" ]; then

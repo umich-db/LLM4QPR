@@ -1359,7 +1359,8 @@ if [ "$finetune" == "PriceFTwithLLM" ]; then
                                       $PRICE_WARMUP_ARG \
                                       $PRICE_LR_ARG \
                                       $SUBDIR_ARG \
-                                      $SKIP_TRAIN_ARG
+                                      $SKIP_TRAIN_ARG \
+                                      $EMBED_BS_ARG
 
   # Step 2: Inference with frozen LLM + frozen-joint finetuned PRICE
   algo=llm_price
@@ -1402,7 +1403,8 @@ if [ "$finetune" == "PriceFTwithLLM" ]; then
                                       $PRICE_RANDOM_INIT_FLAG \
                                       $PRICE_N_LAYERS_ARG \
                                       $PRICE_FFN_RATIO_ARG $OR_N_LAYERS_ARG $OR_N_HEADS_ARG $OR_FFN_RATIO_ARG \
-                                      $SUBDIR_ARG
+                                      $SUBDIR_ARG \
+                                      $EMBED_BS_ARG
 fi
 
 if [ "$finetune" == "GatedJointPrice" ]; then

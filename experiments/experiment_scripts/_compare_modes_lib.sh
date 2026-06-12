@@ -12,7 +12,7 @@
 # Callers set:
 #   DB_ENGINES   array (e.g. (postgres duckdb spark))
 #   WORKLOADS_ARR  array
-#   MODES_ARR    array (subset of 1, 2, 7, 7b, 8, 12, 12w)
+#   MODES_ARR    array (subset of 1, 2, 7, 7b, 8, 8b, 12, 12w)
 #   MODEL        e.g. "sentence-transformers/all-MiniLM-L12-v2"
 #   SEEDS        e.g. "42"
 #   FT_BATCH_SIZE, FT_NUM_EPOCH, ...  (or accept defaults)
@@ -118,6 +118,12 @@ run_mode () {
             # the per-batch LLM forward.
             bash "$RUN_SCRIPT" "${SHARED[@]}" --finetune_mode 8 "${PRICE_N_FLAGS[@]}"
             ;;
+        8b)
+            # Frozen-LLM concat with the original PRICE_B encoding (mode 7b's
+            # frozen analog): LLM stays pretrained/frozen, PRICE+MLP train on
+            # cached embeddings.
+            bash "$RUN_SCRIPT" "${SHARED[@]}" --finetune_mode 8 "${PRICE_B_FLAGS[@]}"
+            ;;
         12)
             bash "$RUN_SCRIPT" "${SHARED[@]}" --finetune_mode 12 \
                 "${PRICE_N_FLAGS[@]}" "${CX4_FLAGS[@]}" "${MODE12_SCHED[@]}"
@@ -127,7 +133,7 @@ run_mode () {
                 "${PRICE_N_FLAGS[@]}" "${CX4_FLAGS[@]}" "${MODE12W_SCHED[@]}"
             ;;
         *)
-            echo "Unknown mode: $m   (expected 1, 2, 7, 7b, 8, 12, 12w)" >&2
+            echo "Unknown mode: $m   (expected 1, 2, 7, 7b, 8, 8b, 12, 12w)" >&2
             exit 1
             ;;
     esac

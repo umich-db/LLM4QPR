@@ -86,22 +86,29 @@ def fmt(v):
     return f"{v:.2f}"
 
 
-def render(data, ds_list, methods, sep_after, resize=None):
+def render(data, ds_list, methods, sep_after, header_label="Algorithm"):
     n = len(ds_list)
     lines = []
-    if resize:
-        lines.append(f"\\resizebox{{{resize}}}{{!}}{{%")
     lines.append("\\begin{tabular}{l|" + "|".join(["cc"] * n) + "}")
     lines.append("\\toprule")
-    h1 = "\\multirow{2}{*}{Algorithm}"
+    h1 = f"\\multirow{{2}}{{*}}{{{header_label}}}"
     for i, ds in enumerate(ds_list):
         bar = '|' if i < n - 1 else ''
         h1 += f" & \\multicolumn{{2}}{{c{bar}}}{{{DISP[ds]}}}"
     lines.append(h1 + " \\\\")
     lines.append(" & " + " & ".join(["50th & 95th"] * n) + " \\\\")
     lines.append("\\midrule")
-    best = {(ds, qi): min(data[ds][m][qi] for m in methods if data[ds].get(m))
-            for ds in ds_list for qi in range(len(QUANTS))}
+    # Per-column rank -> green shading: best=green4, 2nd=green3, 3rd=green2,
+    # 4th=green1 (requires the green1..green4 color definitions used by the
+    # other overleaf tables).
+    ranks = {}
+    for ds in ds_list:
+        for qi in range(len(QUANTS)):
+            vals = sorted({data[ds][m][qi] for m in methods if data[ds].get(m)})
+            for m in methods:
+                if data[ds].get(m):
+                    r = vals.index(data[ds][m][qi])  # 0 = best
+                    ranks[(ds, qi, m)] = max(1, 4 - r)  # green4..green1
     for m in methods:
         cells = [m]
         for ds in ds_list:
@@ -110,17 +117,13 @@ def render(data, ds_list, methods, sep_after, resize=None):
                 if vals is None:
                     cells.append('-')
                     continue
-                s = fmt(vals[qi])
-                if vals[qi] == best[(ds, qi)]:
-                    s = f"\\textbf{{{s}}}"
-                cells.append(s)
+                g = ranks[(ds, qi, m)]
+                cells.append(f"\\cellcolor{{green{g}}}{{{fmt(vals[qi])}}}")
         lines.append(" & ".join(cells) + " \\\\")
         if m == sep_after:
             lines.append("\\midrule")
     lines.append("\\bottomrule")
     lines.append("\\end{tabular}")
-    if resize:
-        lines.append("}")
     return "\n".join(lines)
 
 
@@ -159,10 +162,10 @@ def main():
 
     t_time = render(time_data, TIME_DS,
                     ['E2E-Cost', 'QueryFormer', 'Llama-8B', 'Llama-8B + PRICE'],
-                    'QueryFormer')
+                    'QueryFormer', header_label='\\textbf{Cost Estimation}')
     t_card = render(card_data, CARD_DS,
                     ['ALECE', 'PRICE', 'Llama-8B', 'Llama-8B + PRICE'],
-                    'PRICE', resize='0.5\\textwidth')
+                    'PRICE', header_label='\\textbf{Cardinality Estimation}')
 
     out = Path(args.out_dir)
     hdr_t = ("% Cost estimation, 50th/95th Q-error. Baselines + Llama-8B: 3-seed avgs from\n"
@@ -172,7 +175,7 @@ def main():
     hdr_c = ("% Cardinality estimation, 50th/95th Q-error. ALECE/PRICE from\n"
              f"% {args.report}; Llama-8B: 3-seed avg. Llama-8B+PRICE: mode 8b retrainMLP,\n"
              f"% avg over seeds found per cell: {[(d, card_seeds[d]) for d in CARD_DS]}.\n"
-             "% Wrapped in \\resizebox{0.5\\textwidth} so it takes half the text width.\n")
+             "% Cells shaded green4 (best) .. green1 (4th) per column.\n")
     (out / 'overleaf_table_llama8b_price_time.tex').write_text(hdr_t + t_time + "\n")
     (out / 'overleaf_table_llama8b_price_card.tex').write_text(hdr_c + t_card + "\n")
     print(t_time)

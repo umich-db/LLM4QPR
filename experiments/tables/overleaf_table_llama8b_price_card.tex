@@ -1,0 +1,16 @@
+% Cardinality estimation, 50th/95th Q-error. ALECE/PRICE from
+% /root/doug/combined_timing_accuracy_report.csv; Llama-8B: 3-seed avg. Llama-8B+PRICE: mode 8b retrainMLP,
+% avg over seeds found per cell: [('syn', 1), ('job', 1), ('stats', 1)].
+% Cells shaded green4 (best) .. green1 (4th) per column.
+\begin{tabular}{l|cc|cc|cc}
+\toprule
+\multirow{2}{*}{\textbf{Cardinality Estimation}} & \multicolumn{2}{c|}{Synthetic} & \multicolumn{2}{c|}{JOB-light} & \multicolumn{2}{c}{STATS} \\
+ & 50th & 95th & 50th & 95th & 50th & 95th \\
+\midrule
+ALECE & \cellcolor{green1}{1.870} & \cellcolor{green1}{21.400} & \cellcolor{green1}{2.630} & \cellcolor{green1}{212.72} & \cellcolor{green3}{2.780} & \cellcolor{green4}{25.150} \\
+PRICE & \cellcolor{green2}{1.680} & \cellcolor{green2}{10.440} & \cellcolor{green3}{2.030} & \cellcolor{green2}{32.510} & \cellcolor{green1}{4.170} & \cellcolor{green1}{195.94} \\
+\midrule
+Llama-8B & \cellcolor{green4}{1.395} & \cellcolor{green3}{7.543} & \cellcolor{green2}{2.048} & \cellcolor{green3}{17.331} & \cellcolor{green4}{2.653} & \cellcolor{green2}{163.16} \\
+Llama-8B + PRICE & \cellcolor{green3}{1.636} & \cellcolor{green4}{4.881} & \cellcolor{green4}{1.776} & \cellcolor{green4}{8.866} & \cellcolor{green2}{3.081} & \cellcolor{green3}{28.231} \\
+\bottomrule
+\end{tabular}

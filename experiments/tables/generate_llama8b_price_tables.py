@@ -37,7 +37,7 @@ DISP = {'tpch': 'TPC-H', 'tpcds': 'TPC-DS', 'syn': 'Synthetic',
         'job': 'JOB-light', 'job_full': 'JOB', 'stats': 'STATS'}
 JOINTMLP_WORKLOADS = {('time', 'job_full')}   # use the jointMLP head here
 TIME_QUANTS = (50, 95)
-CARD_QUANTS = (50, 95)
+CARD_QUANTS = (50, 90, 95, 'max')
 
 
 def qlabel(q):
